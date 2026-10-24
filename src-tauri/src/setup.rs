@@ -233,6 +233,7 @@ pub fn install(layout: &Layout, profile: Profile, hw: &Hardware, app_version: &s
         s.error = None;
     }
     fs::create_dir_all(&layout.data).map_err(err)?;
+    check_disk(layout, profile, apple, shared)?;
 
     let uv = run_step(shared, "uv", || ensure_uv(layout, shared, cancel))?;
 
@@ -278,6 +279,33 @@ pub fn install(layout: &Layout, profile: Profile, hw: &Hardware, app_version: &s
     s.progress = None;
     log_locked(&mut s, "Setup finished".into());
     Ok(())
+}
+
+/// Stops before downloading anything when the disk can't hold the install. Needs about twice the
+/// installed size, because uv keeps a download cache next to the environment.
+fn check_disk(layout: &Layout, profile: Profile, apple: bool, shared: &Shared) -> Result<(), String> {
+    const GB: u64 = 1 << 30;
+    let needed = match profile {
+        Profile::Chat => GB / 2,
+        Profile::Train if apple => 3 * GB / 2,
+        Profile::Train => 12 * GB,
+    };
+    // If the free space can't be read, let the install run; a full disk still gets a clear error.
+    let Ok(free) = fs4::available_space(&layout.data) else { return Ok(()) };
+    if free >= needed {
+        return Ok(());
+    }
+    let gb = |b: u64| format!("{:.1} GB", b as f64 / GB as f64);
+    let message = format!(
+        "Temper needs about {} of free disk space for this setup, and {} is free on the disk that holds {}. Free up some space and try again.",
+        gb(needed),
+        gb(free),
+        layout.data.display()
+    );
+    let mut s = shared.lock().unwrap();
+    log_locked(&mut s, message.clone());
+    s.error = Some(message.clone());
+    Err(message)
 }
 
 fn run_step<T>(shared: &Shared, id: &str, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
