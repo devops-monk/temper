@@ -304,6 +304,9 @@ SYMBOL = {"ok": "✓", "warn": "!", "fail": "✗", "info": "·"}
 
 def report() -> int:
     """Prints the checks for `temper doctor`; exits 1 when any check failed."""
+    # Windows pipes default to a legacy code page that has no ✓ or →.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     checks = run()
     width = max(len(c["title"]) for c in checks)
     for c in checks:
