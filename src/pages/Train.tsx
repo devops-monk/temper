@@ -1,6 +1,7 @@
 import { FolderOpen, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LossChart } from "../components/LossChart";
+import { MemoryEstimate, type Budget, type Estimate, type Verdict } from "../components/MemoryEstimate";
 import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { duration } from "../lib/format";
@@ -163,6 +164,67 @@ function RunPanel({ job }: { job: Job }) {
   );
 }
 
+interface TrainEstimate {
+  weights: number;
+  adapters_and_optimizer: number;
+  activations: number;
+  overhead: number;
+  total: number;
+  budget: Budget;
+  verdict: Verdict;
+  advice: string[];
+  measured: boolean;
+}
+
+/** Re-estimates training memory as the form changes, after a short pause in typing. */
+function useTrainEstimate(form: Form, enabled: boolean) {
+  const [estimate, setEstimate] = useState<Estimate | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { base_model, method, lora_r, batch_size, max_seq_length } = form;
+
+  useEffect(() => {
+    if (!enabled || !base_model.trim()) {
+      setEstimate(null);
+      return;
+    }
+    let stale = false;
+    const t = setTimeout(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const e = await api<TrainEstimate>("/api/memory/train", { json: { base_model, method, lora_r, batch_size, max_seq_length } });
+        if (stale) return;
+        setEstimate({
+          total: e.total,
+          budget: e.budget,
+          verdict: e.verdict,
+          advice: e.advice,
+          measured: e.measured,
+          parts: [
+            ["Model weights", e.weights],
+            ["Activations", e.activations],
+            [method === "full" ? "Gradients and optimizer" : "Adapters and optimizer", e.adapters_and_optimizer],
+            ["Runtime", e.overhead],
+          ],
+        });
+      } catch (e) {
+        if (stale) return;
+        setEstimate(null);
+        setError((e as Error).message);
+      } finally {
+        if (!stale) setLoading(false);
+      }
+    }, 600);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
+  }, [enabled, base_model, method, lora_r, batch_size, max_seq_length]);
+
+  return { estimate, error, loading };
+}
+
 export function TrainPage() {
   const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
@@ -171,6 +233,7 @@ export function TrainPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const set = <K extends keyof Form>(k: K) => (v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const memory = useTrainEstimate(form, !!trainer);
 
   // Hardware info can arrive after mount; swap to the MLX default unless the user already edited it.
   useEffect(() => {
@@ -190,6 +253,7 @@ export function TrainPage() {
   const running = trainJobs.some((j) => j.status === "running");
 
   async function start() {
+    if (memory.estimate?.verdict === "too_large" && !confirm("This run probably needs more memory than this computer has, and may fail or slow your computer to a crawl. Start anyway?")) return;
     setError(null);
     setStarting(true);
     try {
@@ -329,6 +393,11 @@ export function TrainPage() {
               <NumberField label="Warmup steps" value={form.warmup_steps} onChange={set("warmup_steps")} />
             </div>
           </Section>
+          {trainer && (
+            <Section title="Memory">
+              {memory.error ? <p className="text-[13px] text-muted">{memory.error}</p> : <MemoryEstimate estimate={memory.estimate} loading={memory.loading} />}
+            </Section>
+          )}
           {error && <Notice tone="error">{error}</Notice>}
         </div>
 

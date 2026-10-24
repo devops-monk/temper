@@ -4,11 +4,35 @@ import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Togg
 import { api } from "../lib/engine";
 import { bytes, compact, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
+import type { Budget, Verdict } from "../components/MemoryEstimate";
 import type { HubModel, Job, LocalModel, RepoFile } from "../lib/types";
 import { useJob } from "../lib/useJob";
 
-/** Rough check: a GGUF needs about its file size plus ~20% for context and runtime buffers. */
-function fit(size: number, memory: number): { label: string; tone: "ok" | "warn" | "neutral" } {
+/** Temper loads chat models with this context (runtime.LoadRequest), so estimates use it too. */
+const CHAT_CONTEXT = 8192;
+
+interface ChatEstimate {
+  weights: number;
+  kv_cache: number;
+  overhead: number;
+  total: number;
+  context: number;
+  budget: Budget;
+  verdict: Verdict;
+  advice: string[];
+}
+
+/** Whether a GGUF of `size` bytes fits: the file, plus the KV cache and compute buffers for the model's
+ * shape (same for every quantization in a repo), against what the GPU can use. Without an estimate,
+ * falls back to the file size plus 20%. */
+function fit(size: number, memory: number, est: ChatEstimate | null): { label: string; tone: "ok" | "warn" | "neutral"; title?: string } {
+  if (est) {
+    const need = size + est.kv_cache + est.overhead;
+    const title = `About ${bytes(need)} with a ${est.context.toLocaleString()}-token context; ${bytes(est.budget.free)} of ${bytes(est.budget.total)} free now.`;
+    if (need <= est.budget.free * 0.9) return { label: "Fits", tone: "ok", title };
+    if (need <= est.budget.total) return { label: "Tight fit", tone: "warn", title };
+    return { label: "Too large", tone: "neutral", title };
+  }
   if (!memory) return { label: "", tone: "neutral" };
   const need = size * 1.2;
   if (need < memory * 0.7) return { label: "Fits", tone: "ok" };
@@ -74,6 +98,11 @@ function LoadButton({ path, name }: { path: string; name: string }) {
         onClick={async () => {
           if (loaded) return go("chat");
           setError(null);
+          const est = await api<ChatEstimate>("/api/memory/chat", { json: { path, context: CHAT_CONTEXT } }).catch(() => null);
+          if (est?.verdict === "too_large") {
+            const tips = est.advice.length ? `\n\n${est.advice.join("\n")}` : "";
+            if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
+          }
           try {
             await api("/api/runtime/load", { json: { path } });
             await refreshRuntime();
@@ -95,10 +124,18 @@ function RepoDetail({ id }: { id: string }) {
   const [files, setFiles] = useState<RepoFile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState<Set<string>>(new Set());
+  const [estimate, setEstimate] = useState<ChatEstimate | null>(null);
 
   useEffect(() => {
     api<{ gguf: RepoFile[] }>(`/api/models/repo?id=${encodeURIComponent(id)}`)
-      .then((r) => setFiles(r.gguf))
+      .then((r) => {
+        setFiles(r.gguf);
+        // Every quantization shares the model's shape, so one header gives the KV cache for all of them.
+        if (r.gguf.length)
+          void api<ChatEstimate>("/api/memory/chat", { json: { repo_id: id, filename: r.gguf[0].name, context: CHAT_CONTEXT } })
+            .then(setEstimate)
+            .catch(() => setEstimate(null));
+      })
       .catch((e) => setError(e.message));
   }, [id]);
 
@@ -124,12 +161,14 @@ function RepoDetail({ id }: { id: string }) {
     <table className="w-full text-[13px]">
       <tbody>
         {files.map((f) => {
-          const f2 = fit(f.size, memory);
+          const f2 = fit(f.size, memory, estimate);
           return (
             <tr key={f.name} className="border-t border-line/70">
               <td className="py-1.5 pr-3 font-mono text-[12px]">{quantLabel(f.name)}</td>
               <td className="py-1.5 pr-3 text-muted tabular-nums">{bytes(f.size)}</td>
-              <td className="py-1.5 pr-3">{f2.label && <Badge tone={f2.tone}>{f2.label}</Badge>}</td>
+              <td className="py-1.5 pr-3" title={f2.title}>
+                {f2.label && <Badge tone={f2.tone}>{f2.label}</Badge>}
+              </td>
               <td className="py-1.5 text-right">
                 <Button size="sm" onClick={() => download([f.name], f.name)} disabled={started.has(f.name)}>
                   <Download className="size-3.5" /> {started.has(f.name) ? "Downloading" : "Download"}
