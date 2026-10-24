@@ -231,7 +231,9 @@ def _port_owner(port: int) -> str | None:
         r = httpx.get(f"http://127.0.0.1:{port}/api/health", timeout=2)
         if r.headers.get("content-type", "").startswith("application/json") and r.json().get("ok"):
             return "Temper"
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        # Nothing listens there. (Windows takes seconds to refuse a closed loopback port; a program
+        # that is listening accepts at once, so a connect timeout means the port is free too.)
         return None
     except (httpx.HTTPError, ValueError):
         pass
