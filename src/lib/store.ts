@@ -4,7 +4,7 @@ import type { EngineInfo, Job, Page, RuntimeStatus, SystemInfo } from "./types";
 
 type Theme = "system" | "light" | "dark";
 
-const PAGES: Page[] = ["chat", "models", "train", "datasets", "export", "connect", "settings"];
+const PAGES: Page[] = ["chat", "models", "train", "datasets", "recipes", "export", "connect", "settings"];
 
 /** `#train` opens the Train page; used by deep links and screenshots. */
 function initialPage(): Page {

@@ -16,6 +16,7 @@ fine-tuning does to a base model.
 - **Models**: search Hugging Face, pick a GGUF quant with a memory-fit check, download in the background, load
 - **Train**: LoRA, QLoRA and full fine-tuning on NVIDIA and AMD GPUs; LoRA with MLX on Apple Silicon; live loss chart and logs
 - **Datasets**: preview Hugging Face or local CSV/JSON/JSONL datasets and detect their chat format
+- **Recipes**: generate training data with a model from PDFs, Word files, web pages, GitHub repos or topics you choose, then train on it
 - **Export**: LoRA adapter, merged 16-bit/4-bit and GGUF (q4_k_m, q5_k_m, q8_0 and more)
 - **Connect**: ready-made config for Codex, OpenCode, Continue, Aider, Python and curl
 - **Hardware**: NVIDIA, AMD and Apple Silicon detection with a live memory meter

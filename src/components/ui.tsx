@@ -131,7 +131,7 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
   return (
     <span
       className={cx(
-        "inline-flex items-center rounded px-1.5 py-px text-[11.5px] font-medium",
+        "inline-flex items-center rounded px-1.5 py-px text-[11.5px] font-medium whitespace-nowrap",
         tone === "neutral" && "bg-surface-2 text-muted",
         tone === "ok" && "bg-ok/12 text-ok",
         tone === "warn" && "bg-straw/15 text-straw",

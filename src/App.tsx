@@ -8,6 +8,7 @@ import { ConnectPage } from "./pages/Connect";
 import { DatasetsPage } from "./pages/Datasets";
 import { ExportPage } from "./pages/Export";
 import { ModelsPage } from "./pages/Models";
+import { RecipesPage } from "./pages/Recipes";
 import { SettingsPage } from "./pages/Settings";
 import { TrainPage } from "./pages/Train";
 
@@ -52,6 +53,7 @@ export function App() {
               {page === "models" && <ModelsPage />}
               {page === "train" && <TrainPage />}
               {page === "datasets" && <DatasetsPage />}
+              {page === "recipes" && <RecipesPage />}
               {page === "export" && <ExportPage />}
               {page === "connect" && <ConnectPage />}
             </>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -94,11 +95,16 @@ class Registry:
     def run_worker(self, job: Job, module: str, config_path: str) -> None:
         """Run `python -m <module> <config>` and translate its JSON lines into job events.
 
-        Workers import torch and training libraries, which are slow to load and can crash the interpreter,
-        so they never run inside the engine process.
+        Workers import torch and training libraries, which are slow to load and can crash the
+        interpreter, so they never run inside the engine process.
         """
+        self.run_command(job, [sys.executable, "-u", "-m", module, config_path])
+
+    def run_command(self, job: Job, cmd: list[str], env: dict[str, str] | None = None) -> None:
+        """Run any worker command that prints `@@{json}` event lines (see emit_from_worker)."""
         proc = subprocess.Popen(
-            [sys.executable, "-u", "-m", module, config_path],
+            cmd,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -107,6 +113,7 @@ class Registry:
             errors="replace",
         )
         job.process = proc
+        keep_awake(proc)
 
         def pump() -> None:
             assert proc.stdout
@@ -150,6 +157,37 @@ class Registry:
 
 
 registry = Registry()
+
+
+def keep_awake(proc: subprocess.Popen) -> None:
+    """Stop the computer idle-sleeping while a worker runs; sleep pauses training and generation.
+
+    The display may still turn off. Each mechanism ends by itself when the worker exits.
+    """
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["caffeinate", "-i", "-w", str(proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif sys.platform == "win32":
+            threading.Thread(target=_windows_keep_awake, args=(proc,), daemon=True).start()
+        elif shutil.which("systemd-inhibit"):
+            subprocess.Popen(
+                ["systemd-inhibit", "--what=idle:sleep", "--who=Temper", "--why=A job is running", "--mode=block",
+                 "tail", f"--pid={proc.pid}", "-f", "/dev/null"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except OSError:
+        pass  # staying awake is a convenience; never fail the job over it
+
+
+def _windows_keep_awake(proc: subprocess.Popen) -> None:
+    import ctypes
+
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    # The request belongs to the calling thread, so this thread holds it until the worker exits.
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+    proc.wait()
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
 
 
 def emit_from_worker(event: str, **data: Any) -> None:

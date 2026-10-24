@@ -208,8 +208,8 @@ temper/
 - [x] **7.1 Dataset preview**: open a Hugging Face dataset or a local CSV, JSON or JSONL and see rows and columns.
 - [ ] **7.2 Column mapping**: map columns to chat roles (Alpaca, ShareGPT, ChatML, OpenAI messages) with live preview.
 - [ ] **7.3 Format conversion and cleaning**: deduplicate, filter by length, split train/eval, shuffle.
-- [ ] **7.4 Data Recipes**: build datasets from PDFs, DOCX, CSV, web pages and GitHub repos using a visual pipeline of steps.
-- [ ] **7.5 Synthetic data generation**: use a local or cloud model to generate Q&A, conversations or reasoning traces from source documents, with validators.
+- [x] **7.4 Data Recipes**: build datasets from PDFs, DOCX, text files, folders, web pages and GitHub repos using a pipeline of steps (Recipes page). Built on NVIDIA data-designer (Apache-2.0) in its own uv environment; six templates (document Q&A, topic Q&A, graded answers, text to SQL, Python tasks, instructions for existing text); save, preview 3 rows, generate, then train on the result in one click.
+- [~] **7.5 Synthetic data generation**: use a local or cloud model to generate Q&A, conversations or reasoning traces from source documents, with validators. Generated text, fields, code and grades, random-choice and template columns, and code checks all work with the local chat model; OpenAI-compatible cloud providers are wired up but not yet tested against a live service.
 - [ ] **7.6 Push to Hub**: upload finished datasets to Hugging Face.
 - [ ] **7.7 S3 and remote sources.**
 
@@ -261,6 +261,7 @@ temper/
 - [ ] **12.6 Docs site and notebooks**: getting-started guides plus Colab/Kaggle notebooks for every training method.
 - [ ] **12.7 Launch**: website, download page, release notes.
 - [ ] **12.8 Desktop integration** *(audit)*: menu-bar/tray icon, "Open with Temper" and drag-and-drop for models and datasets, `temper://` deep links, and native clipboard and file dialogs everywhere.
+- [x] **12.9 Stay awake during jobs**: training, export and recipe workers stop the computer idle-sleeping until they finish (caffeinate on macOS, SetThreadExecutionState on Windows, systemd-inhibit on Linux).
 
 ---
 

@@ -246,11 +246,17 @@ def convert_command(model_dir: Path, outfile: Path, outtype: str = "f16") -> tup
         "--with-requirements", str(conv / "requirements" / "requirements-convert_hf_to_gguf.txt"),
         "python", str(conv / "convert_hf_to_gguf.py"), str(model_dir), "--outfile", str(outfile), "--outtype", outtype,
     ]
+    return cmd, uv_env()
+
+
+def uv_env() -> dict[str, str]:
+    """Environment for `uv run --no-project` tools: Temper's own Python, outside the engine's venv."""
     env = dict(os.environ)
     if (home() / "python").is_dir():  # reuse the Python first-run setup installed
         env["UV_PYTHON_INSTALL_DIR"] = str(home() / "python")
     env.pop("VIRTUAL_ENV", None)
-    return cmd, env
+    env["PYTHONUNBUFFERED"] = "1"
+    return env
 
 
 def quantize_command(src: Path, dst: Path, quant: str) -> list[str]:

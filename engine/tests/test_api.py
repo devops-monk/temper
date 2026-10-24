@@ -86,3 +86,62 @@ def test_downgrade_tokenizer_config(tmp_path):
     assert "extra_special_tokens" not in config
     assert config["additional_special_tokens"] == ["<|im_start|>", "<|im_end|>"]
     assert config["eos_token"] == "<|im_end|>"
+
+
+def test_recipe_templates_are_consistent():
+    from temper_engine.recipes import TEMPLATES, Recipe, check
+
+    for template in TEMPLATES:
+        recipe = Recipe(**template)
+        if recipe.seed and recipe.seed.get("type") == "documents":
+            recipe.seed["sources"] = ["notes.md"]
+        if recipe.seed and recipe.seed.get("type") == "file":
+            recipe.seed["path"] = "rows.jsonl"
+        check(recipe)  # raises HTTPException on a broken template
+        names = [c["name"] for c in recipe.columns if not c.get("drop")]
+        assert {"instruction", "output"} <= set(names), template["id"]  # trainable as Alpaca
+
+
+def test_recipe_check_rejects_unknown_model():
+    import pytest
+    from fastapi import HTTPException
+
+    from temper_engine.recipes import Recipe, check
+
+    recipe = Recipe(name="x", models=[], columns=[{"column_type": "llm-text", "name": "a", "model_alias": "writer", "prompt": "hi"}])
+    with pytest.raises(HTTPException):
+        check(recipe)
+
+
+def test_recipe_run_needs_loaded_model(tmp_path, monkeypatch):
+    from temper_engine.recipes import TEMPLATES
+
+    monkeypatch.setenv("TEMPER_HOME", str(tmp_path))
+    client = TestClient(create_app())
+    template = next(t for t in TEMPLATES if t["id"] == "topic-qa")
+    r = client.post("/api/recipes/run", json={"recipe": template, "mode": "preview", "num_records": 2})
+    assert r.status_code == 409
+
+
+def test_chunking_overlaps_and_breaks_on_whitespace():
+    from temper_engine.recipe_worker import chunk
+
+    text = " ".join(f"word{i}" for i in range(500))
+    parts = chunk(text, 300, 50)
+    assert len(parts) > 5
+    assert all(len(p) <= 300 for p in parts)
+    assert all(not p.startswith("ord") for p in parts)  # never splits inside a word
+    assert parts[0][-20:].split()[-1] in parts[1]  # neighbours share text
+
+
+def test_recipe_config_from_file_seed(tmp_path):
+    from temper_engine.recipe_worker import build_config
+
+    recipe = {
+        "models": [{"alias": "writer", "provider": "local", "temperature": 0.5}],
+        "seed": {"type": "file", "path": str(tmp_path / "rows.jsonl"), "sampling": "shuffle"},
+        "columns": [{"column_type": "llm-text", "name": "a", "model_alias": "writer", "prompt": "{{ text }}"}],
+    }
+    config = build_config(recipe, tmp_path)
+    assert config["seed_config"] == {"source": {"seed_type": "local", "path": str(tmp_path / "rows.jsonl")}, "sampling_strategy": "shuffle"}
+    assert config["model_configs"][0]["inference_parameters"] == {"temperature": 0.5}

@@ -162,7 +162,7 @@ function RunPanel({ job }: { job: Job }) {
 }
 
 export function TrainPage() {
-  const { system, jobs, refreshJobs, pendingDataset, setPendingDataset } = useApp();
+  const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
   const [form, setForm] = useState<Form>(() => ({ ...DEFAULTS, base_model: system?.backend === "metal" ? MLX_DEFAULT_MODEL : DEFAULTS.base_model }));
   const [error, setError] = useState<string | null>(null);
@@ -223,12 +223,16 @@ export function TrainPage() {
           {!trainer && system && (
             <div className="pt-5">
               <Notice>
-                {system.backend === "metal" ? (
-                  <>Training on Apple Silicon uses MLX. Install it with <code>cd engine && uv sync --extra mlx</code>, then restart the engine.</>
-                ) : system.backend === "cpu" ? (
+                {system.backend === "cpu" ? (
                   <>No supported GPU was found. Training needs an NVIDIA, AMD or Intel GPU, or an Apple Silicon Mac.</>
                 ) : (
-                  <>Install the training stack with <code>cd engine && uv sync --extra train</code>, then restart the engine.</>
+                  <>
+                    Training support isn't installed yet.{" "}
+                    <button className="font-medium text-accent hover:underline" onClick={() => go("settings")}>
+                      Add it in Settings
+                    </button>
+                    .
+                  </>
                 )}
               </Notice>
             </div>

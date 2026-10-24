@@ -75,7 +75,7 @@ export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
-  kind: "download" | "train" | "export";
+  kind: "download" | "train" | "export" | "recipe";
   title: string;
   status: JobStatus;
   progress: number | null;
@@ -126,4 +126,56 @@ export interface Run {
   path: string;
 }
 
-export type Page = "chat" | "models" | "train" | "datasets" | "export" | "connect" | "settings";
+export type Page = "chat" | "models" | "train" | "datasets" | "recipes" | "export" | "connect" | "settings";
+
+/** A recipe column in data-designer's format; the editor knows the common fields of each type. */
+export interface RecipeColumn {
+  column_type: "sampler" | "llm-text" | "llm-structured" | "llm-code" | "llm-judge" | "expression" | "validation";
+  name: string;
+  drop?: boolean;
+  [key: string]: unknown;
+}
+
+export interface RecipeSeed {
+  type: "documents" | "file" | "hf";
+  sources?: string[];
+  chunk_size?: number;
+  chunk_overlap?: number;
+  path?: string;
+  sampling?: "ordered" | "shuffle";
+}
+
+export interface RecipeModel {
+  alias: string;
+  provider: string;
+  model: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface RecipeProvider {
+  name: string;
+  endpoint: string;
+  api_key?: string;
+}
+
+export interface Recipe {
+  id: string | null;
+  name: string;
+  description: string;
+  seed: RecipeSeed | null;
+  models: RecipeModel[];
+  providers: RecipeProvider[];
+  columns: RecipeColumn[];
+  processors: Record<string, unknown>[];
+  template?: string | null;
+  updated?: number;
+}
+
+export interface GeneratedDataset {
+  name: string;
+  path: string;
+  rows: number;
+  size: number;
+  modified: number;
+}

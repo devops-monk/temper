@@ -1,4 +1,4 @@
-import { Boxes, Cable, Database, FlaskConical, MessageSquare, PackageOpen, Settings } from "lucide-react";
+import { Boxes, Cable, ChefHat, Database, FlaskConical, MessageSquare, PackageOpen, Settings } from "lucide-react";
 import type { ComponentType } from "react";
 import { useApp } from "../lib/store";
 import type { Page } from "../lib/types";
@@ -10,6 +10,7 @@ const ITEMS: { page: Page; label: string; icon: ComponentType<{ className?: stri
   { page: "models", label: "Models", icon: Boxes },
   { page: "train", label: "Train", icon: FlaskConical },
   { page: "datasets", label: "Datasets", icon: Database },
+  { page: "recipes", label: "Recipes", icon: ChefHat },
   { page: "export", label: "Export", icon: PackageOpen },
   { page: "connect", label: "Connect", icon: Cable },
 ];
@@ -17,7 +18,7 @@ const ITEMS: { page: Page; label: string; icon: ComponentType<{ className?: stri
 export function Rail() {
   const { page, go, jobs } = useApp();
   const running = (kind: string) => jobs.some((j) => j.kind === kind && j.status === "running");
-  const busy: Partial<Record<Page, boolean>> = { models: running("download"), train: running("train"), export: running("export") };
+  const busy: Partial<Record<Page, boolean>> = { models: running("download"), train: running("train"), export: running("export"), recipes: running("recipe") };
 
   const item = (p: Page, label: string, Icon: ComponentType<{ className?: string }>) => (
     <button
