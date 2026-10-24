@@ -145,7 +145,7 @@ function RepoDetail({ id }: { id: string }) {
 
 function FindModels() {
   const [query, setQuery] = useState("");
-  const [author, setAuthor] = useState("unsloth");
+  const [author, setAuthor] = useState("");
   const [ggufOnly, setGgufOnly] = useState(true);
   const [results, setResults] = useState<HubModel[] | null>(null);
   const [error, setError] = useState<string | null>(null);

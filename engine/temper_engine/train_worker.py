@@ -62,10 +62,10 @@ def to_messages(row: dict, fmt: str) -> list[dict] | str:
     return out
 
 
-# ---------------------------------------------------------------- unsloth (CUDA / ROCm / XPU)
+# ---------------------------------------------------------------- PyTorch GPUs (CUDA / ROCm / XPU)
 
 
-def train_unsloth(cfg: dict, out: Path) -> None:
+def train_gpu(cfg: dict, out: Path) -> None:
     emit("phase", name="Loading model")
     from unsloth import FastLanguageModel  # must be imported before transformers/trl
 
@@ -214,7 +214,7 @@ def train_mlx(cfg: dict, out: Path) -> None:
     iters = cfg["max_steps"] or int(steps_per_epoch * cfg["epochs"])
     adapter = out / "adapter"
     # mlx-lm takes LoRA shape only from a config file (JSON is valid YAML). Its `scale` multiplies the
-    # update directly; alpha / rank is the standard LoRA scaling, matching the Unsloth path.
+    # update directly; alpha / rank is the standard LoRA scaling, matching the GPU path.
     lora_cfg = out / "lora_config.yaml"
     lora_cfg.write_text(json.dumps({
         "lora_parameters": {"rank": cfg["lora_r"], "scale": cfg["lora_alpha"] / cfg["lora_r"], "dropout": cfg["lora_dropout"]},
@@ -263,7 +263,7 @@ def main() -> None:
     cfg = json.loads(cfg_path.read_text())
     out = cfg_path.parent
     try:
-        (train_mlx if cfg["backend"] == "mlx" else train_unsloth)(cfg, out)
+        (train_mlx if cfg["backend"] == "mlx" else train_gpu)(cfg, out)
     except Exception as exc:
         emit("error", message=f"{type(exc).__name__}: {exc}")
         raise

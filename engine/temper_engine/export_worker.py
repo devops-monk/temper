@@ -12,7 +12,7 @@ from .jobs import emit_from_worker as emit
 from .llamacpp import run_streamed
 
 
-def export_unsloth(cfg: dict, out: Path) -> None:
+def export_gpu(cfg: dict, out: Path) -> None:
     from unsloth import FastLanguageModel
 
     emit("phase", name="Loading adapter")
@@ -101,7 +101,7 @@ def main() -> None:
     cfg = json.loads(cfg_path.read_text())
     out = Path(cfg["output_dir"])
     try:
-        (export_mlx if cfg["backend"] == "mlx" else export_unsloth)(cfg, out)
+        (export_mlx if cfg["backend"] == "mlx" else export_gpu)(cfg, out)
         emit("result", output_dir=str(out), gguf=sorted(str(p) for p in out.rglob("*.gguf")))
     except Exception as exc:
         emit("error", message=f"{type(exc).__name__}: {exc}")

@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/train", tags=["training"])
 
 
 class TrainConfig(BaseModel):
-    base_model: str = "unsloth/Qwen3-4B-Instruct-2507"
+    base_model: str = "Qwen/Qwen3-4B-Instruct-2507"
     dataset: str = "mlabonne/FineTome-100k"
     dataset_split: str = "train"
     # auto: detect messages / conversations / instruction+output / text columns.
@@ -59,9 +59,9 @@ def start(cfg: TrainConfig):
     trainer = info["capabilities"]["trainer"]
     if trainer is None:
         if info["backend"] == "metal":
-            hint = "Install the MLX extra: cd engine && uv sync --extra mlx"
+            hint = "Add training support in Settings."
         elif info["backend"] in ("cuda", "rocm"):
-            hint = "Install the training extra: cd engine && uv sync --extra train"
+            hint = "Add training support in Settings."
         else:
             hint = "Training needs an NVIDIA, AMD or Intel GPU, or an Apple Silicon Mac."
         raise HTTPException(409, f"No trainer is available on this machine. {hint}")

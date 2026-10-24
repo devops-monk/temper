@@ -4,7 +4,7 @@
 <p align="center">Run, fine-tune and ship open-weight AI models on your own computer.</p>
 
 Temper is a desktop app for macOS, Windows and Linux. Download a model from Hugging Face, chat with it,
-fine-tune it on your own data with [Unsloth](https://github.com/unslothai/unsloth) (or MLX on Apple
+fine-tune it on your own data (on NVIDIA and AMD GPUs, or with MLX on Apple
 Silicon), export it to GGUF, and serve it to coding agents through an OpenAI-compatible API.
 
 Tempering is the step after hardening steel. It tunes the metal for a specific job, which is what
@@ -14,13 +14,13 @@ fine-tuning does to a base model.
 
 - **Chat** with any GGUF model through llama.cpp, with streaming output and generation settings
 - **Models**: search Hugging Face, pick a GGUF quant with a memory-fit check, download in the background, load
-- **Train**: LoRA, QLoRA and full fine-tuning with Unsloth; LoRA with MLX on Apple Silicon; live loss chart and logs
+- **Train**: LoRA, QLoRA and full fine-tuning on NVIDIA and AMD GPUs; LoRA with MLX on Apple Silicon; live loss chart and logs
 - **Datasets**: preview Hugging Face or local CSV/JSON/JSONL datasets and detect their chat format
 - **Export**: LoRA adapter, merged 16-bit/4-bit and GGUF (q4_k_m, q5_k_m, q8_0 and more)
 - **Connect**: ready-made config for Codex, OpenCode, Continue, Aider, Python and curl
 - **Hardware**: NVIDIA, AMD and Apple Silicon detection with a live memory meter
 
-Everything else Unsloth offers is planned feature by feature in [PLAN.md](PLAN.md).
+Everything else is planned feature by feature in [PLAN.md](PLAN.md).
 
 ## Develop
 

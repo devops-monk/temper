@@ -1,17 +1,9 @@
 import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
-
-/** In the desktop app, links open in the system browser instead of the app window. */
-async function openExternal(e: MouseEvent<HTMLAnchorElement>) {
-  if (!inTauri) return;
-  e.preventDefault();
-  const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(e.currentTarget.href);
-}
 
 const STATUS_LABEL = {
   running: "Running",
@@ -127,7 +119,7 @@ export function SettingsPage() {
                 ))}
                 <Row label="Free disk space">{bytes(system.disk.free)}</Row>
                 <Row label="Chat runtime">{system.capabilities.gguf_inference ? <Badge tone="ok">llama.cpp found</Badge> : <Badge tone="warn">llama.cpp not installed</Badge>}</Row>
-                <Row label="Trainer">{system.capabilities.trainer ? <Badge tone="ok">{system.capabilities.trainer === "mlx" ? "MLX" : "Unsloth"}</Badge> : <Badge tone="warn">Not installed</Badge>}</Row>
+                <Row label="Trainer">{system.capabilities.trainer ? <Badge tone="ok">{system.capabilities.trainer === "mlx" ? "MLX" : "PyTorch"}</Badge> : <Badge tone="warn">Not installed</Badge>}</Row>
               </div>
             </Section>
           )}
@@ -135,13 +127,7 @@ export function SettingsPage() {
           <Section title="About">
             <div className="rounded-lg border border-line bg-surface px-4">
               <Row label="Version">Temper 0.1.0</Row>
-              <Row label="Training">
-                Powered by{" "}
-                <a className="text-accent hover:underline" href="https://github.com/unslothai/unsloth" target="_blank" rel="noreferrer" onClick={openExternal}>
-                  Unsloth
-                </a>{" "}
-                (Apache-2.0) and MLX
-              </Row>
+              <Row label="Training">PyTorch, TRL and MLX</Row>
               <Row label="Chat">llama.cpp (MIT)</Row>
             </div>
           </Section>

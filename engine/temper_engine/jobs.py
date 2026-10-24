@@ -94,7 +94,7 @@ class Registry:
     def run_worker(self, job: Job, module: str, config_path: str) -> None:
         """Run `python -m <module> <config>` and translate its JSON lines into job events.
 
-        Workers import torch/unsloth, which are slow to load and can crash the interpreter,
+        Workers import torch and training libraries, which are slow to load and can crash the interpreter,
         so they never run inside the engine process.
         """
         proc = subprocess.Popen(

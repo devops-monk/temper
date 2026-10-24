@@ -120,13 +120,17 @@ def llama_server_path() -> str | None:
     return binary("llama-server")
 
 
+# Python module of the GPU fine-tuning library that first-run setup installs.
+GPU_TRAINER = "unsloth"
+
+
 def probe() -> dict:
     vm = psutil.virtual_memory()
     gpus = nvidia_gpus() or amd_gpus() or apple_gpu(vm.total, vm.total - vm.available)
     backend = gpus[0]["backend"] if gpus else "cpu"
     trainer = None
-    if backend in ("cuda", "rocm") and has_module("unsloth"):
-        trainer = "unsloth"
+    if backend in ("cuda", "rocm") and has_module(GPU_TRAINER):
+        trainer = "pytorch"
     elif backend == "metal" and has_module("mlx_lm"):
         trainer = "mlx"
     disk = psutil.disk_usage(str(home()))
@@ -141,7 +145,6 @@ def probe() -> dict:
             "gguf_inference": llama_server_path() is not None,
             "trainer": trainer,
             "torch": has_module("torch"),
-            "unsloth": has_module("unsloth"),
             "mlx": has_module("mlx_lm"),
         },
     }

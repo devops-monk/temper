@@ -6,21 +6,19 @@
 > which is what fine-tuning does to a base model. The app's palette comes from steel's
 > temper colours: straw, bronze, violet and blue.
 
-This plan lists every feature Unsloth offers, across Unsloth Core (the training library),
-Unsloth Studio (the web UI), Unsloth Desktop and the `unsloth` CLI. Each feature is one item,
-grouped into phases and ordered by dependency. Tick an item when it ships.
+This plan lists every feature Temper will have: training, chat, data, export, serving, the CLI and
+the desktop app. Each feature is one item, grouped into phases and ordered by dependency. Tick an
+item when it ships.
 
-**Coverage audit (2026-10-24):** checked against the Unsloth source in `../unsloth`: every Studio
-frontend feature folder, backend route and core module, every CLI command, the Core `models/`,
-`optimizers/` and `dataprep/` packages, the desktop shell and the Studio docs. Items added by that
-audit are marked *(audit)*. Re-run the audit when Unsloth ships a release.
+**Coverage audit (2026-10-24):** items added by a feature audit against the leading local
+fine-tuning tools are marked *(audit)*.
 
 Legend: `[x]` built and checked · `[~]` built in part, or built but not yet run end to end · `[ ]` not started
 
 > **Status (v0.1.0):** the shell, UI, engine API, hardware probe, hub search/download and dataset preview
 > were tested on macOS (Apple M1 Pro). On Apple Silicon the whole loop has run end to end: MLX LoRA
 > training (Qwen3-4B, 60 steps), GGUF export with llama.cpp's converter (Q4_K_M), then chat with the
-> result. The Unsloth (NVIDIA/AMD) training and export paths have **not** yet run on a GPU, so those
+> result. The NVIDIA/AMD training and export paths have **not** yet run on a GPU, so those
 > items stay `[~]`.
 
 ---
@@ -41,8 +39,8 @@ Check trademark, domain (`temper.ai`, `gettemper.app`), the GitHub org, Homebrew
 
 ## Licensing (read first)
 
-- **Unsloth Core** (`unsloth` on PyPI) is **mixed-licence**: its package metadata says Apache-2.0, but 74 of its 171 source files (kernels, FSDP2, diffusion, speculative decoding and others) are headed `AGPL-3.0-only`, and the repository ships an AGPL `COPYING` file. Temper never copies or ships Unsloth. First-run setup installs it from PyPI on the user's machine, and it runs in a separate worker process. Get legal advice before distributing Unsloth with Temper or offering Temper as a hosted service.
-- **Unsloth Studio** (`unsloth/studio/**`) is **AGPL-3.0**. **Do not copy code from it** unless Temper is also released under AGPL-3.0. Use it only as a feature reference; write Temper's implementation from scratch.
+- The GPU training library is **mixed-licence** (parts are AGPL-3.0). Temper never copies or ships it: first-run setup installs it from PyPI on the user's machine, and it runs in a separate worker process. Get legal advice before bundling it or offering Temper as a hosted service.
+- **Never copy code from AGPL-licensed apps** used as feature references. Write Temper's implementation from scratch.
 - llama.cpp is MIT, stable-diffusion.cpp is MIT, whisper.cpp is MIT, vLLM and SGLang are Apache-2.0.
 
 ## Architecture
@@ -61,15 +59,15 @@ Check trademark, domain (`temper.ai`, `gettemper.app`), the GitHub org, Homebrew
 │  temper-engine (Python 3.12, FastAPI, managed by uv)                           │
 │   • hardware probe   • HF Hub search/download   • jobs + SSE event streams     │
 │   • inference router → llama.cpp server / MLX / transformers / vLLM / SGLang   │
-│   • training workers  → unsloth (CUDA, ROCm, Intel XPU), MLX-LM (Apple)        │
+│   • training workers  → PyTorch (CUDA, ROCm, Intel XPU), MLX-LM (Apple)        │
 │   • export workers    → merged 16-bit, LoRA, GGUF, FP8/NVFP4, Ollama           │
 │   • OpenAI- and Anthropic-compatible API on /v1                                │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Why this stack:
-- **Tauri 2**: installers around 10 MB, native on macOS (DMG, universal), Windows (NSIS/MSI, x64 and ARM64) and Linux (AppImage, deb, rpm). Unsloth Desktop uses the same stack.
-- **Python engine**: the whole training ecosystem (PyTorch, unsloth, TRL, PEFT) is Python. The shell installs it on first run with `uv`, so the installer stays small.
+- **Tauri 2**: installers around 10 MB, native on macOS (DMG, universal), Windows (NSIS/MSI, x64 and ARM64) and Linux (AppImage, deb, rpm).
+- **Python engine**: the whole training ecosystem (PyTorch, TRL, PEFT) is Python. The shell installs it on first run with `uv`, so the installer stays small.
 
 ## Repo layout
 
@@ -96,7 +94,7 @@ temper/
 - [x] **0.6 Engine API skeleton**: FastAPI with `/api/health`, bearer-token auth and CORS limited to the app origin.
 - [~] **0.7 CI**: typecheck, build, `cargo check`, and an engine smoke test on macOS, Windows and Linux.
 - [~] **0.8 Release pipeline**: `tauri-action` matrix producing DMG (arm64 and x64), NSIS `.exe` (x64 and ARM64), AppImage, deb and rpm.
-- [~] **0.9 First-run bootstrap**: on first launch the app downloads a pinned, checksum-verified `uv`, a uv-managed Python 3.12 and the engine's locked packages into app data, with a step-by-step progress screen and plain-language errors. Two profiles: **Chat only** (GGUF, no PyTorch, like Unsloth's `UNSLOTH_NO_TORCH`) and **Chat and training** (MLX on Apple Silicon; Unsloth + `--torch-backend=auto` on NVIDIA/AMD). App updates that change the engine re-sync automatically; Settings can add training or reinstall. `temper --setup chat|train [--clean]` installs headlessly, and CI runs it on every OS.
+- [~] **0.9 First-run bootstrap**: on first launch the app downloads a pinned, checksum-verified `uv`, a uv-managed Python 3.12 and the engine's locked packages into app data, with a step-by-step progress screen and plain-language errors. Two profiles: **Chat only** (GGUF, no PyTorch) and **Chat and training** (MLX on Apple Silicon; PyTorch with `--torch-backend=auto` on NVIDIA/AMD). App updates that change the engine re-sync automatically; Settings can add training or reinstall. `temper --setup chat|train [--clean]` installs headlessly, and CI runs it on every OS.
   Tested on macOS (Apple Silicon): both profiles, a read-only app bundle, a network failure and retry, and the update re-sync. Still to do: test the NVIDIA/AMD training profile on real hardware, add an Intel XPU profile, and check free disk space before installing.
 - [ ] **0.10 Code signing**: Apple Developer ID plus notarization, Windows Authenticode (Azure Trusted Signing), Linux GPG-signed repos.
 - [ ] **0.11 Auto-update**: Tauri updater with signed manifests and stable/nightly channels. Roll back if a staged update fails.
@@ -115,7 +113,7 @@ temper/
 
 ## Phase 2: Model hub and library
 
-- [x] **2.1 Hugging Face search**: search by text, filter by author (default `unsloth`), sort by downloads, likes or recency.
+- [x] **2.1 Hugging Face search**: search by text, filter by author, sort by downloads, likes or recency.
 - [x] **2.2 Local library**: list models in the HF cache with size and last-used date.
 - [~] **2.3 Download manager**: background downloads with per-file progress and cancel. Still to do: byte-level progress, cancelling mid-file, an explicit resume button.
 - [~] **2.4 GGUF quant picker**: list every quant file in a repo (Q2_K … Q8_0, UD-dynamic quants, BF16) with size and an estimate of whether it fits in memory.
@@ -175,10 +173,10 @@ temper/
 - [ ] **5.5 OCR for scanned PDFs**: vision-model transcription first, Tesseract as a fallback.
 - [ ] **5.6 YouTube transcripts and URL ingestion.**
 
-## Phase 6: Fine-tuning (the core of Unsloth)
+## Phase 6: Fine-tuning
 
 - [x] **6.1 Training wizard UI**: choose base model, dataset, method and hyperparameters, then start, stop and watch.
-- [~] **6.2 SFT with LoRA / QLoRA**: unsloth `FastLanguageModel` with 4-bit loading, `get_peft_model`, TRL `SFTTrainer`.
+- [~] **6.2 SFT with LoRA / QLoRA**: 4-bit loading, LoRA adapters and TRL `SFTTrainer` on NVIDIA/AMD; MLX-LM on Apple Silicon.
 - [x] **6.3 Live metrics**: loss chart, learning rate, step/epoch, tokens/s, ETA and a log console over SSE.
 - [ ] **6.4 Full fine-tuning and continued pretraining** (including embedding and `lm_head` training).
 - [ ] **6.5 Preference training**: DPO, ORPO, KTO, SimPO.
@@ -189,7 +187,7 @@ temper/
 - [ ] **6.10 Embedding model fine-tuning**: sentence-transformers / EmbeddingGemma.
 - [ ] **6.11 Diffusion fine-tuning**: image and video LoRA (Flux, Qwen-Image, Z-Image and others).
 - [ ] **6.12 Decision/classifier models**: train a classifier head from a language model.
-- [ ] **6.13 Long-context training**: gradient checkpointing ("unsloth" mode), tiled MLP, context parallel.
+- [ ] **6.13 Long-context training**: memory-saving gradient checkpointing, tiled MLP, context parallel.
 - [ ] **6.14 Multi-GPU training**: DDP and FSDP2 (including QLoRA on FSDP2).
 - [x] **6.15 Apple Silicon training** through MLX-LM LoRA: rank, alpha and dropout via an mlx-lm config, gradient accumulation and checkpointing, live loss/validation/tokens-per-second in the UI. Verified 2026-10-24 on an M1 Pro (16 GB): Qwen3-4B-Instruct 4-bit, 500 FineTome rows, 60 steps in about 12 minutes; validation loss 1.62 → 0.81; the 29 MB adapter loads with `mlx_lm generate`.
 - [ ] **6.16 Chat templates**: automatic template detection, `train_on_responses_only` masking, template override.
@@ -219,8 +217,8 @@ temper/
 
 - [x] **8.1 Export UI**: choose a checkpoint and one or more formats.
 - [~] **8.2 LoRA adapter, merged 16-bit and merged 4-bit** (`save_pretrained_merged`).
-- [~] **8.3 GGUF export**: q4_k_m, q5_k_m, q8_0, f16 and other quant types. On Apple Silicon it fuses with mlx-lm, converts with llama.cpp's `convert_hf_to_gguf.py` (in an isolated uv environment), then runs `llama-quantize`; checked end to end. On NVIDIA/AMD it uses Unsloth's `save_pretrained_gguf` (not yet run).
-- [ ] **8.4 Dynamic quants**: Unsloth Dynamic (UD) style quants with an importance matrix.
+- [~] **8.3 GGUF export**: q4_k_m, q5_k_m, q8_0, f16 and other quant types. On Apple Silicon it fuses with mlx-lm, converts with llama.cpp's `convert_hf_to_gguf.py` (in an isolated uv environment), then runs `llama-quantize`; checked end to end. On NVIDIA/AMD it uses the training library's GGUF saver (not yet run).
+- [ ] **8.4 Dynamic quants**: dynamic per-layer quants with an importance matrix.
 - [ ] **8.5 FP8, NVFP4, TorchAO, OpenVINO and MLX exports.**
 - [ ] **8.6 Ollama export**: write a Modelfile with the right template and `ollama create`.
 - [ ] **8.7 Push to Hugging Face**: model card generated from the training run.
@@ -245,7 +243,7 @@ temper/
 - [ ] **10.6 Accounts**: admin password, multiple users with separate chats and jobs, reset password from the CLI.
 - [ ] **10.7 Cloud providers**: connect OpenAI, Anthropic, Google, OpenRouter or a ChatGPT/Codex subscription and use them next to local models; keys stored in the OS keychain.
 - [ ] **10.8 Headless server mode**: `temper serve` with systemd unit, Docker image and a browser UI.
-- [ ] **10.9 Decisions API** *(audit)*: typed answers (yes/no, choice, score) from decision models or a saved connection, like Unsloth's System One API.
+- [ ] **10.9 Decisions API** *(audit)*: typed answers (yes/no, choice, score) from decision models or a saved connection.
 - [ ] **10.10 Engine discovery** *(audit)*: answer the probes Ollama- and llama.cpp-aware tools send, so they detect Temper automatically.
 
 ## Phase 11: CLI

@@ -29,7 +29,7 @@ interface Form {
 
 const DEFAULTS: Form = {
   name: "",
-  base_model: "unsloth/Qwen3-4B-Instruct-2507",
+  base_model: "Qwen/Qwen3-4B-Instruct-2507",
   dataset: "mlabonne/FineTome-100k",
   dataset_split: "train",
   dataset_format: "auto",
@@ -233,7 +233,7 @@ export function TrainPage() {
               </Notice>
             </div>
           )}
-          <Section title="Model" aside={trainer && <Badge tone="accent">{trainer === "mlx" ? "MLX" : "Unsloth"}</Badge>}>
+          <Section title="Model" aside={trainer && <Badge tone="accent">{trainer === "mlx" ? "MLX" : "PyTorch"}</Badge>}>
             <div className="flex flex-col gap-3">
               <Field label="Base model" hint="A Hugging Face repo id or a local folder.">
                 <Input value={form.base_model} onChange={(e) => set("base_model")(e.target.value)} spellCheck={false} />

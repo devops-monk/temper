@@ -13,8 +13,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# NVIDIA / AMD / Intel GPUs. Unsloth pulls in torch, transformers, trl, peft and datasets.
-train = ["unsloth"]
 # Apple Silicon training through MLX.
 mlx = ["mlx-lm>=0.20", "datasets>=3.0"]
 dev = ["pytest>=8"]

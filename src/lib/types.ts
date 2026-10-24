@@ -57,9 +57,8 @@ export interface SystemInfo {
   backend: "cuda" | "rocm" | "metal" | "xpu" | "cpu";
   capabilities: {
     gguf_inference: boolean;
-    trainer: "unsloth" | "mlx" | null;
+    trainer: "pytorch" | "mlx" | null;
     torch: boolean;
-    unsloth: boolean;
     mlx: boolean;
   };
 }

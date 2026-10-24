@@ -16,7 +16,7 @@ api = HfApi()
 
 
 @router.get("/search")
-def search(q: str = "", author: str | None = "unsloth", sort: str = "downloads", limit: int = 30, gguf: bool = False):
+def search(q: str = "", author: str | None = None, sort: str = "downloads", limit: int = 30, gguf: bool = False):
     try:
         models = api.list_models(
             search=q or None,

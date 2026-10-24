@@ -34,7 +34,7 @@ const UV_ARCHIVES: &[(&str, &str, &str)] = &[
 pub enum Profile {
     /// GGUF chat through llama.cpp; no PyTorch.
     Chat,
-    /// Chat plus fine-tuning: MLX on Apple Silicon, Unsloth + PyTorch on NVIDIA/AMD.
+    /// Chat plus fine-tuning: MLX on Apple Silicon, PyTorch on NVIDIA/AMD.
     Train,
 }
 
@@ -172,7 +172,7 @@ pub fn detect() -> Hardware {
         let name = out.lines().next().map(str::to_string);
         return Hardware { kind: "nvidia", name, can_train: true };
     }
-    // Unsloth supports AMD GPUs through ROCm on Linux only.
+    // GPU training supports AMD through ROCm on Linux only.
     if cfg!(target_os = "linux") && Path::new("/dev/kfd").exists() {
         let name = output("rocm-smi", &["--showproductname"]).and_then(|o| {
             o.lines().find(|l| l.contains("Card Series")).map(|l| l.rsplit(':').next().unwrap_or(l).trim().to_string())
@@ -185,7 +185,7 @@ pub fn detect() -> Hardware {
 pub fn options(hw: &Hardware) -> Vec<ProfileOption> {
     let (train_desc, train_size) = match hw.kind {
         "apple" => ("Adds MLX for fine-tuning models on Apple Silicon.", "about 600 MB"),
-        _ => ("Adds Unsloth and PyTorch for fine-tuning models on your GPU.", "about 6 GB"),
+        _ => ("Adds PyTorch and training libraries for fine-tuning models on your GPU.", "about 6 GB"),
     };
     vec![
         ProfileOption {
@@ -222,7 +222,7 @@ pub fn install(layout: &Layout, profile: Profile, hw: &Hardware, app_version: &s
         ("engine", if profile == Profile::Train && apple { "Install the engine and MLX" } else { "Install the engine" }.to_string()),
     ];
     if gpu_training {
-        steps.push(("training", "Install Unsloth and PyTorch".to_string()));
+        steps.push(("training", "Install PyTorch and training libraries".to_string()));
     }
     {
         let mut s = shared.lock().unwrap();
