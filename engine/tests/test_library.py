@@ -1,4 +1,5 @@
 import json
+import os
 import struct
 
 from fastapi.testclient import TestClient
@@ -83,7 +84,8 @@ def test_hugging_face_cache_paths(tmp_path):
     snap = repo / "snapshots" / "abc"
     snap.mkdir(parents=True)
     gguf(repo / "blobs" / "f00d", name="")
-    (snap / "tiny-Q4_0.gguf").symlink_to("../../blobs/f00d")
+    # A native relative target, as huggingface_hub writes it (Windows doesn't resolve "/" in symlinks).
+    (snap / "tiny-Q4_0.gguf").symlink_to(os.path.join("..", "..", "blobs", "f00d"))
     r = post(snap / "tiny-Q4_0.gguf").json()
     assert r["kind"] == "gguf" and r["name"] == "org/Tiny-GGUF" and r["path"].endswith("tiny-Q4_0.gguf")
     assert post(repo).json()["path"] == str(snap)
