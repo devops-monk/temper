@@ -51,15 +51,23 @@ then run `npm run dev` and open http://localhost:1420.
 
 Tests: `cd engine && uv run --extra dev pytest`. Typecheck and build the UI: `npm run build`.
 
+
 ## Icons
 
 `assets/icon.svg` is the master. `npm run icons` renders every platform size into `src-tauri/icons/`.
 
 ## Release
 
-Push a tag such as `v0.1.0`. The Release workflow builds installers into a draft GitHub release:
-DMG for Apple Silicon and Intel Macs, NSIS installers for Windows x64 and ARM64, and AppImage, deb and
-rpm for Linux x64 and ARM64.
+Bump `version` in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, commit, then tag and push:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The Release workflow checks that the tag matches the version, builds installers for macOS, Windows and Linux
+(x64 and ARM64), and publishes the GitHub release once every platform has built. If a platform fails, the release
+stays a draft; re-run the failed job to finish it. Running the workflow by hand from the Actions tab builds the
+installers as artifacts without releasing anything.
 
 ## License
 
