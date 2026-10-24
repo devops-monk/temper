@@ -99,7 +99,8 @@ temper/
 - [ ] **0.10 Code signing**: Apple Developer ID plus notarization, Windows Authenticode (Azure Trusted Signing), Linux GPG-signed repos.
 - [~] **0.11 Auto-update**: Tauri updater with signed manifests and stable/nightly channels. Roll back if a staged update fails.
   Done: releases publish signed update bundles and `latest.json`; Temper checks on launch and every 6 hours (can be turned off in Settings), shows a new version in the status bar and Settings, warns before restarting during a running job, and installs and relaunches. On Linux only the AppImage updates itself; deb and rpm installs update through the package manager. Still to do: a nightly channel and rollback.
-- [ ] **0.12 Distribution channels**: Homebrew cask, winget, Flathub, `.deb`/`.rpm` repos, `curl | sh` and `irm | iex` installers, Docker image (`temper/temper`, plus a ROCm variant).
+- [~] **0.12 Distribution channels**: Homebrew cask, winget, Flathub, `.deb`/`.rpm` repos, `curl | sh` and `irm | iex` installers, Docker image (`temper/temper`, plus a ROCm variant).
+  Done: `curl -fsSL https://temper.devops-monk.com/install.sh | sh` (macOS, Linux AppImage) and `irm https://temper.devops-monk.com/install.ps1 | iex` (Windows, per-user), both checked against the release's SHA-256 and tested in CI on macOS (Apple Silicon and Intel), Linux and Windows (x64 and ARM64) after every release. Still to do: Homebrew cask, winget, Flathub and package repos (each needs an account or submission), and a Docker image of the engine.
 
 ## Phase 1: Hardware and system
 
