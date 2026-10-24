@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from temper_engine.app import create_app
@@ -72,3 +74,15 @@ def test_worker_logs_are_plain_text():
     from temper_engine.jobs import ANSI
 
     assert ANSI.sub("", "\x1b[38;5;244m  12\x1b[0m    \x1b[1;32m0.731 ▼\x1b[0m\x1b[?25l") == "  12    0.731 ▼"
+
+
+def test_downgrade_tokenizer_config(tmp_path):
+    from temper_engine.export_worker import downgrade_tokenizer_config
+
+    path = tmp_path / "tokenizer_config.json"
+    path.write_text(json.dumps({"extra_special_tokens": ["<|im_start|>", "<|im_end|>"], "eos_token": "<|im_end|>"}))
+    downgrade_tokenizer_config(tmp_path)
+    config = json.loads(path.read_text())
+    assert "extra_special_tokens" not in config
+    assert config["additional_special_tokens"] == ["<|im_start|>", "<|im_end|>"]
+    assert config["eos_token"] == "<|im_end|>"

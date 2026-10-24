@@ -58,7 +58,7 @@ class RuntimeManager:
         binary = llama_server_path()
         if not binary:
             raise HTTPException(
-                409, "llama-server was not found. Install llama.cpp (brew install llama.cpp, or winget install llama.cpp) and try again."
+                409, "llama.cpp is not installed. Install it from the Models page and try again."
             )
         if not Path(req.path).is_file():
             raise HTTPException(404, f"Model file not found: {req.path}")

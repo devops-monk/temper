@@ -10,11 +10,18 @@ This plan lists every feature Unsloth offers, across Unsloth Core (the training 
 Unsloth Studio (the web UI), Unsloth Desktop and the `unsloth` CLI. Each feature is one item,
 grouped into phases and ordered by dependency. Tick an item when it ships.
 
+**Coverage audit (2026-10-24):** checked against the Unsloth source in `../unsloth`: every Studio
+frontend feature folder, backend route and core module, every CLI command, the Core `models/`,
+`optimizers/` and `dataprep/` packages, the desktop shell and the Studio docs. Items added by that
+audit are marked *(audit)*. Re-run the audit when Unsloth ships a release.
+
 Legend: `[x]` built and checked · `[~]` built in part, or built but not yet run end to end · `[ ]` not started
 
 > **Status (v0.1.0):** the shell, UI, engine API, hardware probe, hub search/download and dataset preview
-> were tested on macOS (Apple M1 Pro). The training and export workers are written against the Unsloth
-> and MLX-LM APIs but have **not** yet run end to end on a GPU, so those items are marked `[~]`.
+> were tested on macOS (Apple M1 Pro). On Apple Silicon the whole loop has run end to end: MLX LoRA
+> training (Qwen3-4B, 60 steps), GGUF export with llama.cpp's converter (Q4_K_M), then chat with the
+> result. The Unsloth (NVIDIA/AMD) training and export paths have **not** yet run on a GPU, so those
+> items stay `[~]`.
 
 ---
 
@@ -34,7 +41,7 @@ Check trademark, domain (`temper.ai`, `gettemper.app`), the GitHub org, Homebrew
 
 ## Licensing (read first)
 
-- **Unsloth Core** (`unsloth` on PyPI) is **Apache-2.0**. Temper depends on it as a library. That is allowed; keep the notice in `THIRD_PARTY.md`.
+- **Unsloth Core** (`unsloth` on PyPI) is **mixed-licence**: its package metadata says Apache-2.0, but 74 of its 171 source files (kernels, FSDP2, diffusion, speculative decoding and others) are headed `AGPL-3.0-only`, and the repository ships an AGPL `COPYING` file. Temper never copies or ships Unsloth. First-run setup installs it from PyPI on the user's machine, and it runs in a separate worker process. Get legal advice before distributing Unsloth with Temper or offering Temper as a hosted service.
 - **Unsloth Studio** (`unsloth/studio/**`) is **AGPL-3.0**. **Do not copy code from it** unless Temper is also released under AGPL-3.0. Use it only as a feature reference; write Temper's implementation from scratch.
 - llama.cpp is MIT, stable-diffusion.cpp is MIT, whisper.cpp is MIT, vLLM and SGLang are Apache-2.0.
 
@@ -104,6 +111,7 @@ temper/
 - [ ] **1.5 iGPU memory carve-out helper**: explain and adjust shared-memory limits on APUs.
 - [ ] **1.6 Doctor**: `temper doctor` and a Settings → Diagnostics page that checks drivers, CUDA/ROCm versions, disk space, ports and engine packages, with fix suggestions.
 - [ ] **1.7 VRAM estimator**: before load or training, estimate memory for a given model, quantization, context, LoRA rank and batch size, and warn before running out of memory.
+- [ ] **1.8 In-app runtime updates** *(audit)*: update the bundled llama.cpp build and upgrade `transformers` in place when a newly released model needs it, with rollback.
 
 ## Phase 2: Model hub and library
 
@@ -117,11 +125,13 @@ temper/
 - [ ] **2.8 Import local files**: drag in a `.gguf`, a safetensors folder or an MLX folder.
 - [ ] **2.9 Disk management**: show cache usage and delete or move models; choose a custom models folder.
 - [ ] **2.10 Import from other tools**: chats and settings from Claude Code, Codex, Cursor and Ollama.
+- [ ] **2.11 Pre-quantized and unusual checkpoints** *(audit)*: load FP8 (ModelOpt), MXFP4, NVFP4 and compressed-tensors checkpoints, and Mistral-format folders (`params.json` + `consolidated*.safetensors`).
+- [ ] **2.12 Library** *(audit)*: one place for uploads, chat attachments, generated images and audio, fine-tuned models and sandbox files, with folders, favourites and rename.
 
 ## Phase 3: Inference and chat
 
 - [x] **3.1 Chat UI**: streaming responses, Markdown rendering, stop, regenerate, copy, clear.
-- [~] **3.2 llama.cpp runtime**: start and supervise `llama-server` for GGUF models; OpenAI-compatible streaming.
+- [x] **3.2 llama.cpp runtime**: start and supervise `llama-server` for GGUF models; OpenAI-compatible streaming. Temper downloads a pinned llama.cpp release (checksummed binaries for each OS and GPU backend) with one click on the Models page, so nobody needs Homebrew or winget.
 - [x] **3.3 Generation settings**: temperature, top-p, top-k, min-p, repeat penalty, max tokens, system prompt.
 - [ ] **3.4 Chat history**: threads stored in SQLite, search, rename, pin, folders/projects, export as Markdown or JSON.
 - [ ] **3.5 Reasoning view**: collapsible thinking blocks and a per-model reasoning-effort control.
@@ -136,6 +146,11 @@ temper/
 - [ ] **3.14 Multiple loaded models**: load several models and route between them; unload when idle.
 - [ ] **3.15 Find in chat, keyboard shortcuts, interface zoom.**
 - [ ] **3.16 Localisation (i18n)**: string catalog with parity checks; start with English, Hindi, Spanish, Chinese and Japanese.
+- [ ] **3.17 Resumable generations** *(audit)*: replies keep generating in the engine if the window closes; reopening the chat shows the finished answer.
+- [ ] **3.18 Prompt library** *(audit)*: save, name and reuse prompts.
+- [ ] **3.19 AGENTS.md instructions** *(audit)*: a global instructions file plus each project folder's `AGENTS.md`, read the way Codex reads them.
+- [ ] **3.20 Keep chat context across GPU swaps** *(audit)*: save and restore the KV cache when image or video generation temporarily takes the GPU.
+- [ ] **3.21 Context-fit explanations** *(audit)*: when a prompt doesn't fit the context window, say why and what to change.
 
 ## Phase 4: Agents, tools and MCP
 
@@ -148,6 +163,8 @@ temper/
 - [ ] **4.7 Ready-made integrations**: Blender MCP, file system, GitHub.
 - [~] **4.8 Connect coding agents**: copy-paste config for Codex, OpenCode, VS Code (Continue), Aider, Python and curl, pointing at the local `/v1` endpoint. Claude Code waits on 10.2; one-click setup waits on 4.9.
 - [ ] **4.9 `temper start <agent>` CLI** that does the same from a terminal.
+- [ ] **4.10 Terminal tool and OS sandbox** *(audit)*: a terminal tool alongside Python, and a page showing which OS sandbox (Seatbelt, bubblewrap, AppContainer) protects tool runs on this machine.
+- [ ] **4.11 `temper mcp add <agent>`** *(audit)*: register Temper's MCP server with Claude Code, Codex and other agents, and check it with `temper doctor --mcp`.
 
 ## Phase 5: Search, research and RAG
 
@@ -182,6 +199,11 @@ temper/
 - [ ] **6.20 Training history**: every run stored with config, metrics, dataset hash and provenance; re-run with one click.
 - [ ] **6.21 VRAM-aware defaults**: choose batch size, rank and context automatically from the hardware probe.
 - [ ] **6.22 Remote and cloud training**: launch the same job on a remote machine, Colab, Kaggle or a cloud GPU and stream its metrics back.
+- [ ] **6.23 Text-diffusion language models** *(audit)*: train and run diffusion LMs such as DiffusionGemma and Dream.
+- [ ] **6.24 Memory-saving optimizers** *(audit)*: 8-bit AdamW, Q-GaLore, FlashAdamW and optimizer-state CPU offload.
+- [ ] **6.25 Drafter and MTP-head fine-tuning** *(audit)*: fine-tune a model's multi-token-prediction head or a draft model so speculative decoding still works after fine-tuning.
+- [ ] **6.26 Checkpoint preview** *(audit)*: chat with any checkpoint during or after training through a per-checkpoint `/v1` endpoint.
+- [ ] **6.27 Raw-text continued pretraining** *(audit)*: chunk plain documents into training text, with no chat format needed.
 
 ## Phase 7: Datasets and Data Recipes
 
@@ -197,12 +219,13 @@ temper/
 
 - [x] **8.1 Export UI**: choose a checkpoint and one or more formats.
 - [~] **8.2 LoRA adapter, merged 16-bit and merged 4-bit** (`save_pretrained_merged`).
-- [~] **8.3 GGUF export**: q4_k_m, q5_k_m, q8_0, f16 and other quant types (`save_pretrained_gguf`).
+- [~] **8.3 GGUF export**: q4_k_m, q5_k_m, q8_0, f16 and other quant types. On Apple Silicon it fuses with mlx-lm, converts with llama.cpp's `convert_hf_to_gguf.py` (in an isolated uv environment), then runs `llama-quantize`; checked end to end. On NVIDIA/AMD it uses Unsloth's `save_pretrained_gguf` (not yet run).
 - [ ] **8.4 Dynamic quants**: Unsloth Dynamic (UD) style quants with an importance matrix.
 - [ ] **8.5 FP8, NVFP4, TorchAO, OpenVINO and MLX exports.**
 - [ ] **8.6 Ollama export**: write a Modelfile with the right template and `ollama create`.
 - [ ] **8.7 Push to Hugging Face**: model card generated from the training run.
-- [ ] **8.8 Load the exported model in Chat** in one click, to try it right away.
+- [x] **8.8 Load the exported model in Chat** in one click, to try it right away.
+- [ ] **8.9 MoE expert pruning (REAP)** *(audit)*: drop rarely used experts from mixture-of-experts models to shrink them before export.
 
 ## Phase 9: Image, video and audio
 
@@ -222,6 +245,8 @@ temper/
 - [ ] **10.6 Accounts**: admin password, multiple users with separate chats and jobs, reset password from the CLI.
 - [ ] **10.7 Cloud providers**: connect OpenAI, Anthropic, Google, OpenRouter or a ChatGPT/Codex subscription and use them next to local models; keys stored in the OS keychain.
 - [ ] **10.8 Headless server mode**: `temper serve` with systemd unit, Docker image and a browser UI.
+- [ ] **10.9 Decisions API** *(audit)*: typed answers (yes/no, choice, score) from decision models or a saved connection, like Unsloth's System One API.
+- [ ] **10.10 Engine discovery** *(audit)*: answer the probes Ollama- and llama.cpp-aware tools send, so they detect Temper automatically.
 
 ## Phase 11: CLI
 
@@ -237,6 +262,7 @@ temper/
 - [ ] **12.5 Tests**: engine unit tests (pytest), UI tests (Vitest + Playwright), end-to-end smoke test of a tiny model on CI.
 - [ ] **12.6 Docs site and notebooks**: getting-started guides plus Colab/Kaggle notebooks for every training method.
 - [ ] **12.7 Launch**: website, download page, release notes.
+- [ ] **12.8 Desktop integration** *(audit)*: menu-bar/tray icon, "Open with Temper" and drag-and-drop for models and datasets, `temper://` deep links, and native clipboard and file dialogs everywhere.
 
 ---
 

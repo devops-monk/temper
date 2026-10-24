@@ -115,14 +115,9 @@ def apple_gpu(ram_total: int, ram_used: int) -> list[dict]:
 
 
 def llama_server_path() -> str | None:
-    for name in ("llama-server", "llama-server.exe"):
-        found = shutil.which(name)
-        if found:
-            return found
-    for candidate in ("/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"):
-        if shutil.which(candidate):
-            return candidate
-    return None
+    from .llamacpp import binary
+
+    return binary("llama-server")
 
 
 def probe() -> dict:

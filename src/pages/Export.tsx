@@ -1,4 +1,4 @@
-import { FolderOpen, PackageOpen } from "lucide-react";
+import { FolderOpen, MessageSquare, PackageOpen } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, EmptyState, Notice, PageHeader, ProgressBar, Section, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
@@ -27,12 +27,42 @@ async function reveal(path: string) {
   await revealItemInDir(path);
 }
 
+/** Loads an exported GGUF into the chat runtime and opens Chat. */
+function ChatButton({ path }: { path: string }) {
+  const { refreshRuntime, go } = useApp();
+  const [error, setError] = useState<string | null>(null);
+  const quant = path.match(/-([A-Z0-9_]+)\.gguf$/)?.[1];
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="primary"
+        onClick={async () => {
+          setError(null);
+          try {
+            await api("/api/runtime/load", { json: { path } });
+            await refreshRuntime();
+            go("chat");
+          } catch (e) {
+            setError(String(e instanceof Error ? e.message : e));
+          }
+        }}
+      >
+        <MessageSquare className="size-3.5" /> Chat with {quant ?? "it"}
+      </Button>
+      {error && <span className="text-[12px] text-danger">{error}</span>}
+    </>
+  );
+}
+
 function ExportJob({ job }: { job: Job }) {
   const { events, status } = useJob(job.id);
   const phase = [...events].reverse().find((e) => e.event === "phase")?.name as string | undefined;
   const logs = events.filter((e) => e.event === "log").map((e) => e.line as string);
   const state = status ?? job.status;
   const out = (job.result.output_dir as string) ?? "";
+  const result = events.find((e) => e.event === "result");
+  const ggufs = ((result?.gguf ?? job.result.gguf) as string[] | undefined) ?? [];
   return (
     <div className="rounded-lg border border-line bg-surface p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -41,10 +71,17 @@ function ExportJob({ job }: { job: Job }) {
       </div>
       {state === "running" && <ProgressBar value={job.progress} />}
       {state === "failed" && job.error && <Notice tone="error">{job.error}</Notice>}
-      {state === "done" && inTauri && (
-        <Button size="sm" className="mt-1" onClick={() => reveal(out)}>
-          <FolderOpen className="size-3.5" /> Show in folder
-        </Button>
+      {state === "done" && (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {ggufs.map((path) => (
+            <ChatButton key={path} path={path} />
+          ))}
+          {inTauri && (
+            <Button size="sm" onClick={() => reveal(out)}>
+              <FolderOpen className="size-3.5" /> Show in folder
+            </Button>
+          )}
+        </div>
       )}
       {logs.length > 0 && (
         <details className="mt-2 text-[12.5px]">
@@ -159,7 +196,7 @@ export function ExportPage() {
                   </label>
                 ))}
               </div>
-              {mlx && <p className="mt-2 text-[12.5px] text-muted">On Apple Silicon, quantized GGUFs need llama.cpp's <code className="font-mono">llama-quantize</code>.</p>}
+              <p className="mt-2 text-[12.5px] text-muted">The first GGUF export also downloads llama.cpp's converter and PyTorch, which takes a few minutes.</p>
             </Section>
           )}
           {error && <Notice tone="error">{error}</Notice>}

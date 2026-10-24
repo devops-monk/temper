@@ -4,7 +4,8 @@ import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Togg
 import { api } from "../lib/engine";
 import { bytes, compact, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
-import type { HubModel, LocalModel, RepoFile } from "../lib/types";
+import type { HubModel, Job, LocalModel, RepoFile } from "../lib/types";
+import { useJob } from "../lib/useJob";
 
 /** Rough check: a GGUF needs about its file size plus ~20% for context and runtime buffers. */
 function fit(size: number, memory: number): { label: string; tone: "ok" | "warn" | "neutral" } {
@@ -20,6 +21,44 @@ function useMemoryBudget() {
   const gpu = system?.gpus[0];
   // Discrete GPUs can spill to system RAM, but slowly; use VRAM as the budget.
   return gpu ? gpu.memory_total : (system?.memory.total ?? 0);
+}
+
+/** Downloads Temper's pinned llama.cpp build (checksummed release binaries) into the app's data folder. */
+function InstallRuntime() {
+  const { refreshRuntime, refreshSystem } = useApp();
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { status } = useJob(jobId);
+  // Until the stream's first event arrives, a job that was just started is running.
+  const running = jobId !== null && (status === null || status === "running");
+
+  useEffect(() => {
+    if (status === "done") void Promise.all([refreshRuntime(), refreshSystem()]);
+    if (status === "failed") setError("The download failed. Check your connection and try again.");
+  }, [status, refreshRuntime, refreshSystem]);
+
+  return (
+    <Notice>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span>{error ?? "Chat runs models with llama.cpp, which isn't installed yet. It's a one-time download."}</span>
+        <Button
+          size="sm"
+          disabled={running}
+          onClick={async () => {
+            setError(null);
+            try {
+              setJobId((await api<Job>("/api/llamacpp/install", { json: {} })).id);
+            } catch (e) {
+              setError(String(e instanceof Error ? e.message : e));
+            }
+          }}
+        >
+          <Download className="size-3.5" />
+          {running ? "Installing llama.cpp…" : "Install llama.cpp"}
+        </Button>
+      </div>
+    </Notice>
+  );
 }
 
 function LoadButton({ path, name }: { path: string; name: string }) {
@@ -288,9 +327,7 @@ export function ModelsPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {runtime && !runtime.available && (
           <div className="mx-7 mt-5">
-            <Notice>
-              Chat needs llama.cpp. Install it with <code>brew install llama.cpp</code> on macOS or <code>winget install llama.cpp</code> on Windows, then restart Temper.
-            </Notice>
+            <InstallRuntime />
           </div>
         )}
         {runtime?.state === "failed" && runtime.error && (

@@ -240,9 +240,11 @@ def train_mlx(cfg: dict, out: Path) -> None:
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     assert proc.stdout
+    last = ""
     for line in proc.stdout:
         line = line.rstrip()
         print(line, flush=True)
+        last = line.strip() or last
         metrics = parse_mlx_line(line)
         if metrics and "loss" in metrics:
             step = metrics["step"]
@@ -252,7 +254,7 @@ def train_mlx(cfg: dict, out: Path) -> None:
         elif metrics:
             emit("eval", **metrics)
     if proc.wait() != 0:
-        raise RuntimeError("mlx_lm lora failed; see the log above")
+        raise RuntimeError(f"mlx_lm lora failed: {last[:300]}")
     emit("result", adapter=str(adapter), base_model=cfg["base_model"])
 
 

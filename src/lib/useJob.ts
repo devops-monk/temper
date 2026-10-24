@@ -3,7 +3,10 @@ import { stream } from "./engine";
 import { useApp } from "./store";
 import type { JobEvent, JobStatus } from "./types";
 
-/** Follows one job's event stream. Returns every event so far plus the latest status. */
+/**
+ * Follows one job's event stream. Returns every event so far plus the status from the stream, which
+ * stays null until the stream reports one; callers fall back to the job's listed status meanwhile.
+ */
 export function useJob(jobId: string | null) {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [status, setStatus] = useState<JobStatus | null>(null);
@@ -11,7 +14,7 @@ export function useJob(jobId: string | null) {
 
   useEffect(() => {
     setEvents([]);
-    setStatus(jobId ? "running" : null);
+    setStatus(null);
     if (!jobId) return;
     const ctrl = new AbortController();
     const buffer: JobEvent[] = [];
