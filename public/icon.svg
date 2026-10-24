@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2B323C"/>
+      <stop offset="1" stop-color="#151A20"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".10"/>
+      <stop offset=".5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- steel temper colours, hottest at the tip -->
+    <linearGradient id="temper" x1="0" y1="250" x2="0" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F3DD9A"/>
+      <stop offset=".28" stop-color="#D9A55C"/>
+      <stop offset=".52" stop-color="#B0683E"/>
+      <stop offset=".72" stop-color="#8459B8"/>
+      <stop offset="1" stop-color="#3A7BDB"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+  <!-- macOS-style safe area: 824px tile centred in 1024 -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#sheen)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184.5" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width="3"/>
+  <g id="mark">
+    <path d="M300 250 H724 a42 42 0 0 1 0 84 H568 V700 L512 820 L456 700 V334 H300 a42 42 0 0 1 0 -84 Z" fill="url(#temper)" filter="url(#glow)" opacity=".45"/>
+    <path d="M300 250 H724 a42 42 0 0 1 0 84 H568 V700 L512 820 L456 700 V334 H300 a42 42 0 0 1 0 -84 Z" fill="url(#temper)"/>
+    <!-- bevel line down the blade -->
+    <path d="M512 334 V790" stroke="#FFFFFF" stroke-opacity=".28" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

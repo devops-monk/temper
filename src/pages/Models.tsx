@@ -1,0 +1,308 @@
+import { ChevronDown, Download, Heart, Lock, Play, Search, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Toggle, cx } from "../components/ui";
+import { api } from "../lib/engine";
+import { bytes, compact, quantLabel, relativeDate } from "../lib/format";
+import { useApp } from "../lib/store";
+import type { HubModel, LocalModel, RepoFile } from "../lib/types";
+
+/** Rough check: a GGUF needs about its file size plus ~20% for context and runtime buffers. */
+function fit(size: number, memory: number): { label: string; tone: "ok" | "warn" | "neutral" } {
+  if (!memory) return { label: "", tone: "neutral" };
+  const need = size * 1.2;
+  if (need < memory * 0.7) return { label: "Fits", tone: "ok" };
+  if (need < memory * 0.95) return { label: "Tight fit", tone: "warn" };
+  return { label: "Too large", tone: "neutral" };
+}
+
+function useMemoryBudget() {
+  const system = useApp((s) => s.system);
+  const gpu = system?.gpus[0];
+  // Discrete GPUs can spill to system RAM, but slowly; use VRAM as the budget.
+  return gpu ? gpu.memory_total : (system?.memory.total ?? 0);
+}
+
+function LoadButton({ path, name }: { path: string; name: string }) {
+  const { refreshRuntime, go, runtime } = useApp();
+  const [error, setError] = useState<string | null>(null);
+  const loaded = runtime?.state === "ready" && runtime.model === name;
+  return (
+    <span className="flex items-center gap-2">
+      {error && <span className="max-w-[260px] truncate text-[12px] text-danger" title={error}>{error}</span>}
+      <Button
+        size="sm"
+        variant={loaded ? "secondary" : "primary"}
+        onClick={async () => {
+          if (loaded) return go("chat");
+          setError(null);
+          try {
+            await api("/api/runtime/load", { json: { path } });
+            await refreshRuntime();
+            go("chat");
+          } catch (e) {
+            setError((e as Error).message);
+          }
+        }}
+      >
+        <Play className="size-3.5" /> {loaded ? "Open chat" : "Load"}
+      </Button>
+    </span>
+  );
+}
+
+function RepoDetail({ id }: { id: string }) {
+  const memory = useMemoryBudget();
+  const refreshJobs = useApp((s) => s.refreshJobs);
+  const [files, setFiles] = useState<RepoFile[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [started, setStarted] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    api<{ gguf: RepoFile[] }>(`/api/models/repo?id=${encodeURIComponent(id)}`)
+      .then((r) => setFiles(r.gguf))
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  async function download(patterns: string[], key: string) {
+    await api("/api/models/download", { json: { repo_id: id, patterns } });
+    setStarted((s) => new Set(s).add(key));
+    void refreshJobs();
+  }
+
+  if (error) return <Notice tone="error">{error}</Notice>;
+  if (!files) return <p className="py-2 text-[13px] text-muted">Reading repository…</p>;
+  if (!files.length) {
+    return (
+      <div className="flex items-center justify-between gap-3 py-1 text-[13px]">
+        <span className="text-muted">No GGUF files. Download the full repository to fine-tune it, or pick its -GGUF sibling to chat.</span>
+        <Button size="sm" onClick={() => download([], "all")} disabled={started.has("all")}>
+          <Download className="size-3.5" /> {started.has("all") ? "Downloading" : "Download all"}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <table className="w-full text-[13px]">
+      <tbody>
+        {files.map((f) => {
+          const f2 = fit(f.size, memory);
+          return (
+            <tr key={f.name} className="border-t border-line/70">
+              <td className="py-1.5 pr-3 font-mono text-[12px]">{quantLabel(f.name)}</td>
+              <td className="py-1.5 pr-3 text-muted tabular-nums">{bytes(f.size)}</td>
+              <td className="py-1.5 pr-3">{f2.label && <Badge tone={f2.tone}>{f2.label}</Badge>}</td>
+              <td className="py-1.5 text-right">
+                <Button size="sm" onClick={() => download([f.name], f.name)} disabled={started.has(f.name)}>
+                  <Download className="size-3.5" /> {started.has(f.name) ? "Downloading" : "Download"}
+                </Button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function FindModels() {
+  const [query, setQuery] = useState("");
+  const [author, setAuthor] = useState("unsloth");
+  const [ggufOnly, setGgufOnly] = useState(true);
+  const [results, setResults] = useState<HubModel[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  const search = useCallback(async () => {
+    setError(null);
+    try {
+      const params = new URLSearchParams({ q: query, author, gguf: String(ggufOnly), limit: "40" });
+      setResults(await api<HubModel[]>(`/api/models/search?${params}`));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [query, author, ggufOnly]);
+
+  useEffect(() => {
+    const t = setTimeout(search, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  return (
+    <div className="px-7 py-5">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[260px] flex-1">
+          <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models, e.g. qwen, gemma, llama" className="pl-9" autoFocus />
+        </div>
+        <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Any author" className="w-40" aria-label="Author" />
+        <div className="w-36">
+          <Toggle checked={ggufOnly} onChange={setGgufOnly} label="GGUF only" />
+        </div>
+      </div>
+      {error && <Notice tone="error">{error}</Notice>}
+      {results && results.length === 0 && <EmptyState icon={<Search className="size-7" />} title="No models match">Try a shorter search or clear the author filter.</EmptyState>}
+      <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+        {results?.map((m) => (
+          <li key={m.id}>
+            <button onClick={() => setOpen(open === m.id ? null : m.id)} className="flex w-full items-center gap-4 px-4 py-2.5 text-left hover:bg-surface-2" aria-expanded={open === m.id}>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 truncate font-medium">
+                  <span className="text-muted">{m.id.split("/")[0]}/</span>
+                  {m.id.split("/")[1]}
+                  {m.gated && <Lock className="size-3.5 text-straw" aria-label="Gated" />}
+                </div>
+                <div className="mt-0.5 flex gap-3 text-[12px] text-muted">
+                  {m.pipeline && <span>{m.pipeline}</span>}
+                  <span>Updated {relativeDate(m.updated)}</span>
+                </div>
+              </div>
+              <span className="flex items-center gap-1 text-[12.5px] text-muted tabular-nums">
+                <Download className="size-3.5" /> {compact(m.downloads)}
+              </span>
+              <span className="flex w-14 items-center gap-1 text-[12.5px] text-muted tabular-nums">
+                <Heart className="size-3.5" /> {compact(m.likes)}
+              </span>
+              <ChevronDown className={cx("size-4 text-muted transition-transform", open === m.id && "rotate-180")} />
+            </button>
+            {open === m.id && (
+              <div className="bg-surface-2/60 px-4 pb-3">
+                <RepoDetail id={m.id} />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function LocalModels() {
+  const [models, setModels] = useState<LocalModel[] | null>(null);
+  const jobs = useApp((s) => s.jobs);
+  const finished = jobs.filter((j) => j.kind === "download" && j.status === "done").length;
+
+  useEffect(() => {
+    api<LocalModel[]>("/api/models/local").then(setModels).catch(() => setModels([]));
+  }, [finished]);
+
+  if (!models) return <p className="px-7 py-5 text-muted">Scanning the model cache…</p>;
+  if (!models.length) return <EmptyState icon={<Download className="size-7" />} title="No models on this computer yet">Find one under Find models and download a GGUF file.</EmptyState>;
+
+  return (
+    <ul className="mx-7 my-5 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+      {models.map((m) => (
+        <li key={m.id} className="px-4 py-3">
+          <div className="flex items-baseline justify-between gap-4">
+            <span className="truncate font-medium">{m.id}</span>
+            <span className="shrink-0 text-[12.5px] text-muted tabular-nums">
+              {bytes(m.size)} · used {relativeDate(m.last_used)}
+            </span>
+          </div>
+          {m.gguf.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {m.gguf.map((f) => (
+                <div key={f.name} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span className="font-mono text-[12px]">
+                    {quantLabel(f.name)} <span className="font-sans text-muted">{bytes(f.size)}</span>
+                  </span>
+                  <LoadButton path={f.path!} name={f.name.split("/").pop()!} />
+                </div>
+              ))}
+            </div>
+          ) : m.safetensors ? (
+            <p className="mt-1 text-[12.5px] text-muted">Safetensors weights. Use this as a base model on the Train page.</p>
+          ) : (
+            <p className="mt-1 text-[12.5px] text-muted">No model weights downloaded, only metadata files.</p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Downloads() {
+  const { jobs, refreshJobs } = useApp();
+  const active = jobs.filter((j) => j.kind === "download" && (j.status === "running" || Date.now() / 1000 - j.created < 600));
+  if (!active.length) return null;
+  return (
+    <div className="mx-7 mt-5 rounded-lg border border-line bg-surface px-4 py-3">
+      <h2 className="mb-2 text-[13px] font-semibold">Downloads</h2>
+      <ul className="flex flex-col gap-2.5">
+        {active.map((j) => (
+          <li key={j.id} className="text-[13px]">
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <span className="truncate">{j.title}</span>
+              <span className="flex shrink-0 items-center gap-2 text-muted">
+                {j.status === "running" ? `${Math.round((j.progress ?? 0) * 100)}%` : j.status === "done" ? "Done" : j.status === "failed" ? <span className="text-danger" title={j.error ?? ""}>Failed</span> : "Cancelled"}
+                {j.status === "running" && (
+                  <button aria-label="Cancel download" className="hover:text-text" onClick={async () => { await api(`/api/jobs/${j.id}/cancel`, { method: "POST" }); void refreshJobs(); }}>
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </span>
+            </div>
+            {j.status === "running" && <ProgressBar value={j.progress} />}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function ModelsPage() {
+  const [tab, setTab] = useState<"find" | "local">("local");
+  const runtime = useApp((s) => s.runtime);
+  const refreshRuntime = useApp((s) => s.refreshRuntime);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <PageHeader
+        title="Models"
+        description="Download open-weight models from Hugging Face and load them for chat."
+        actions={
+          runtime?.state === "ready" && (
+            <Button size="sm" variant="ghost" onClick={async () => { await api("/api/runtime/unload", { method: "POST" }); void refreshRuntime(); }}>
+              Unload {runtime.model}
+            </Button>
+          )
+        }
+      />
+      <div className="flex gap-1 border-b border-line px-7" role="tablist">
+        {(
+          [
+            ["local", "On this computer"],
+            ["find", "Find models"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={cx("-mb-px border-b-2 px-3 py-2.5 font-medium", tab === key ? "border-accent text-text" : "border-transparent text-muted hover:text-text")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {runtime && !runtime.available && (
+          <div className="mx-7 mt-5">
+            <Notice>
+              Chat needs llama.cpp. Install it with <code>brew install llama.cpp</code> on macOS or <code>winget install llama.cpp</code> on Windows, then restart Temper.
+            </Notice>
+          </div>
+        )}
+        {runtime?.state === "failed" && runtime.error && (
+          <div className="mx-7 mt-5">
+            <Notice tone="error">
+              <pre className="font-mono text-[12px] whitespace-pre-wrap">{runtime.error}</pre>
+            </Notice>
+          </div>
+        )}
+        <Downloads />
+        {tab === "find" ? <FindModels /> : <LocalModels />}
+      </div>
+    </div>
+  );
+}

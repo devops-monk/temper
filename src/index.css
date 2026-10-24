@@ -1,0 +1,202 @@
+@import "tailwindcss";
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+ * Palette: the oxide colours steel turns as it is tempered (straw → bronze → violet → blue)
+ * over a cool steel-grey base. The full gradient only appears on training progress and the logo.
+ */
+:root {
+  --bg: #edeff2;
+  --surface: #ffffff;
+  --surface-2: #f4f5f7;
+  --line: #d8dce2;
+  --text: #1a1f26;
+  --muted: #5d6775;
+  --accent: #2f63cc;
+  --accent-text: #ffffff;
+  --straw: #a5802a;
+  --bronze: #9c5f2a;
+  --violet: #6a47a8;
+  --ok: #2f8a5b;
+  --danger: #c2412f;
+  --temper: linear-gradient(90deg, #d8b45a, #c07a3c, #7d55b8, #2f6fd6);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191e;
+    --surface: #1c2128;
+    --surface-2: #232931;
+    --line: #313843;
+    --text: #e6e9ed;
+    --muted: #8b95a3;
+    --accent: #6b98f0;
+    --accent-text: #0e1726;
+    --straw: #e9cf85;
+    --bronze: #d1945a;
+    --violet: #a585dc;
+    --ok: #63c08f;
+    --danger: #ef7a6c;
+    --temper: linear-gradient(90deg, #f0d68e, #d39a5b, #9a72d6, #5b8def);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #15191e;
+  --surface: #1c2128;
+  --surface-2: #232931;
+  --line: #313843;
+  --text: #e6e9ed;
+  --muted: #8b95a3;
+  --accent: #6b98f0;
+  --accent-text: #0e1726;
+  --straw: #e9cf85;
+  --bronze: #d1945a;
+  --violet: #a585dc;
+  --ok: #63c08f;
+  --danger: #ef7a6c;
+  --temper: linear-gradient(90deg, #f0d68e, #d39a5b, #9a72d6, #5b8def);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-straw: var(--straw);
+  --color-bronze: var(--bronze);
+  --color-violet: var(--violet);
+  --color-ok: var(--ok);
+  --color-danger: var(--danger);
+  --font-sans: "Bricolage Grotesque Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  font-variation-settings: "wdth" 96;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Text people may want to copy stays selectable. */
+.prose-chat,
+pre,
+code,
+input,
+textarea,
+td {
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.bg-temper {
+  background: var(--temper);
+}
+
+.prose-chat p {
+  margin: 0 0 0.75em;
+}
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+.prose-chat pre {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+.prose-chat :not(pre) > code {
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.prose-chat ul,
+.prose-chat ol {
+  padding-left: 1.4em;
+  margin: 0 0 0.75em;
+}
+.prose-chat ul {
+  list-style: disc;
+}
+.prose-chat ol {
+  list-style: decimal;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 650;
+  margin: 1em 0 0.4em;
+}
+.prose-chat a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.prose-chat table {
+  border-collapse: collapse;
+  margin-bottom: 0.75em;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+}
+
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

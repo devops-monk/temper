@@ -1,0 +1,36 @@
+"""`temper-engine` entry point, started by the desktop shell or by hand for development."""
+
+import argparse
+import os
+import threading
+import time
+
+import psutil
+import uvicorn
+
+
+def _exit_with_parent(pid: int) -> None:
+    # The shell may be killed without a chance to stop us; never outlive it.
+    while psutil.pid_exists(pid):
+        time.sleep(2)
+    os._exit(0)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="temper-engine")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--token", default=os.environ.get("TEMPER_TOKEN", ""), help="bearer token; empty disables auth")
+    parser.add_argument("--parent-pid", type=int)
+    args = parser.parse_args()
+
+    if args.parent_pid:
+        threading.Thread(target=_exit_with_parent, args=(args.parent_pid,), daemon=True).start()
+
+    from .app import create_app
+
+    uvicorn.run(create_app(token=args.token), host=args.host, port=args.port, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()
