@@ -122,7 +122,9 @@ def local_models():
             "files": len(files),
             "safetensors": any(f["name"].endswith(".safetensors") for f in files),
         })
-    return sorted(models, key=lambda m: m["last_used"] or 0, reverse=True)
+    from . import library  # imports hub
+
+    return library.entries() + sorted(models, key=lambda m: m["last_used"] or 0, reverse=True)
 
 
 class DownloadRequest(BaseModel):

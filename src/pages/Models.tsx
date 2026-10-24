@@ -1,10 +1,10 @@
-import { ChevronDown, Download, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogView } from "../components/Catalog";
 import { RepoAccess } from "../components/HfAccount";
 import { SOURCE_NAME, useHubSource } from "../components/HubSource";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Toggle, cx } from "../components/ui";
-import { api } from "../lib/engine";
+import { api, inTauri } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import type { Budget, Verdict } from "../components/MemoryEstimate";
@@ -269,52 +269,166 @@ function FindModels() {
   );
 }
 
-function LocalModels() {
+/** Adds files to the library (POST /api/models/import), one at a time so each error names its file. */
+async function importPaths(paths: string[]): Promise<string[]> {
+  const errors: string[] = [];
+  for (const path of paths) {
+    await api("/api/models/import", { json: { path } }).catch((e: Error) => errors.push(e.message));
+  }
+  return errors;
+}
+
+function ImportBar({ onImported }: { onImported: (errors: string[]) => void }) {
+  const [path, setPath] = useState("");
+
+  async function pick(directory: boolean) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const chosen = await open(directory ? { directory: true } : { multiple: true, filters: [{ name: "GGUF models", extensions: ["gguf"] }] });
+    const paths = chosen === null ? [] : Array.isArray(chosen) ? chosen : [chosen];
+    if (paths.length) onImported(await importPaths(paths));
+  }
+
+  if (inTauri) {
+    return (
+      <div className="mx-7 mt-5 flex flex-wrap items-center gap-2 text-[13px]">
+        <Button size="sm" onClick={() => void pick(false)}>
+          <FileUp className="size-3.5" /> Import GGUF file
+        </Button>
+        <Button size="sm" onClick={() => void pick(true)}>
+          <FolderUp className="size-3.5" /> Import folder
+        </Button>
+        <span className="text-muted">or drop files here. Temper uses them where they are; nothing is copied.</span>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="mx-7 mt-5 flex gap-2"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const errors = await importPaths([path.trim()]);
+        if (!errors.length) setPath("");
+        onImported(errors);
+      }}
+    >
+      <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="Path to a .gguf file or a model folder" spellCheck={false} className="flex-1" />
+      <Button type="submit" disabled={!path.trim()}>
+        Import
+      </Button>
+    </form>
+  );
+}
+
+const KIND_LABEL = { safetensors: "Safetensors weights", mlx: "MLX weights", gguf: "GGUF" };
+
+function LocalModels({ version, onImported }: { version: number; onImported: (errors: string[]) => void }) {
   const [models, setModels] = useState<LocalModel[] | null>(null);
-  const jobs = useApp((s) => s.jobs);
+  const { jobs, go, setPendingBaseModel } = useApp();
   const finished = jobs.filter((j) => j.kind === "download" && j.status === "done").length;
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api<LocalModel[]>("/api/models/local").then(setModels).catch(() => setModels([]));
-  }, [finished]);
+  }, []);
+  useEffect(load, [finished, version, load]);
+
+  function fineTune(model: string) {
+    setPendingBaseModel(model);
+    go("train");
+  }
+
+  async function forget(path: string) {
+    await api(`/api/models/import?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+    load();
+  }
 
   if (!models) return <p className="px-7 py-5 text-muted">Scanning the model cache…</p>;
-  if (!models.length) return <EmptyState icon={<Download className="size-7" />} title="No models on this computer yet">Find one under Find models and download a GGUF file.</EmptyState>;
-
   return (
-    <ul className="mx-7 my-5 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
-      {models.map((m) => (
-        <li key={m.id} className="px-4 py-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="truncate font-medium">{m.id}</span>
-            <span className="shrink-0 text-[12.5px] text-muted tabular-nums">
-              {bytes(m.size)} · used {relativeDate(m.last_used)}
-            </span>
-          </div>
-          {m.gguf.length > 0 ? (
-            <div className="mt-2 flex flex-col gap-1.5">
-              {m.gguf.map((f) => (
-                <div key={f.name} className="flex items-center justify-between gap-3 text-[13px]">
-                  <span className="font-mono text-[12px]">
-                    {quantLabel(f.name)} <span className="font-sans text-muted">{bytes(f.size)}</span>
-                  </span>
-                  {f.complete ? (
-                    <LoadButton path={f.path!} name={f.name.split("/").pop()!} />
-                  ) : (
-                    <span className="text-[12px] text-muted">{f.parts.length} parts downloaded; download the rest to load it</span>
+    <>
+      <ImportBar onImported={onImported} />
+      {!models.length ? (
+        <EmptyState icon={<Download className="size-7" />} title="No models on this computer yet">
+          Pick one from the Catalog, search under Find models, or import a .gguf file you already have.
+        </EmptyState>
+      ) : (
+        <ul className="mx-7 my-5 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+          {models.map((m) => (
+            <li key={m.path ?? m.id} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{m.id}</span>
+                  {m.imported && <Badge>Imported</Badge>}
+                </span>
+                <span className="flex shrink-0 items-center gap-3 text-[12.5px] text-muted tabular-nums">
+                  {m.missing ? null : `${bytes(m.size)} · ${m.imported ? "added" : "used"} ${relativeDate(m.last_used)}`}
+                  {m.imported && m.path && (
+                    <button className="hover:text-text" onClick={() => void forget(m.path!)} title="Remove from the library. The files stay where they are.">
+                      <X className="size-3.5" aria-label="Remove from library" />
+                    </button>
                   )}
+                </span>
+              </div>
+              {m.imported && <p className="mt-0.5 truncate font-mono text-[11.5px] text-muted" title={m.path ?? ""}>{m.path}</p>}
+              {m.missing ? (
+                <p className="mt-1 text-[12.5px] text-danger">{m.missing} Import it again from its new place, or remove it.</p>
+              ) : m.gguf.length > 0 ? (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {m.gguf.map((f) => (
+                    <div key={f.name} className="flex items-center justify-between gap-3 text-[13px]">
+                      <span className="font-mono text-[12px]">
+                        {quantLabel(f.name)} <span className="font-sans text-muted">{bytes(f.size)}</span>
+                      </span>
+                      {f.complete ? (
+                        <LoadButton path={f.path!} name={f.name.split("/").pop()!} />
+                      ) : (
+                        <span className="text-[12px] text-muted">{f.parts.length} parts {m.imported ? "found" : "downloaded"}; {m.imported ? "put the rest beside it" : "download the rest"} to load it</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : m.safetensors ? (
-            <p className="mt-1 text-[12.5px] text-muted">Safetensors weights. Use this as a base model on the Train page.</p>
-          ) : (
-            <p className="mt-1 text-[12.5px] text-muted">No model weights downloaded, only metadata files.</p>
-          )}
-        </li>
-      ))}
-    </ul>
+              ) : m.safetensors ? (
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="text-[12.5px] text-muted">
+                    {KIND_LABEL[m.kind ?? "safetensors"]}, for fine-tuning and export. {m.warnings?.join(" ")}
+                  </p>
+                  <Button size="sm" onClick={() => fineTune(m.imported ? m.path! : m.id)}>
+                    <FlaskConical className="size-3.5" /> Fine-tune
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1 text-[12.5px] text-muted">No model weights downloaded, only metadata files.</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
+}
+
+/** Files dragged onto the window, from the desktop shell (the webview's own drop events carry no paths). */
+function useFileDrop(onDrop: (paths: string[]) => void) {
+  const [over, setOver] = useState(false);
+  const latest = useRef(onDrop);
+  latest.current = onDrop;
+  useEffect(() => {
+    if (!inTauri) return;
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
+      getCurrentWebview()
+        .onDragDropEvent(({ payload }) => {
+          if (payload.type === "enter" || payload.type === "over") setOver(true);
+          else setOver(false);
+          if (payload.type === "drop" && payload.paths.length) latest.current(payload.paths);
+        })
+        .then((fn) => (gone ? fn() : (unlisten = fn))),
+    );
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, []);
+  return over;
 }
 
 interface DownloadStats {
@@ -409,9 +523,24 @@ export function ModelsPage() {
   const runtime = useApp((s) => s.runtime);
   const refreshRuntime = useApp((s) => s.refreshRuntime);
   const [hub] = useHubSource();
+  const [version, setVersion] = useState(0);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const imported = (errors: string[]) => {
+    setImportErrors(errors);
+    setVersion((v) => v + 1);
+  };
+  const dropping = useFileDrop(async (paths) => {
+    setTab("local");
+    imported(await importPaths(paths));
+  });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {dropping && (
+        <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-bg/85 text-[15px] font-medium">
+          Drop a .gguf file or a model folder to add it to your library
+        </div>
+      )}
       <PageHeader
         title="Models"
         description={`Download open-weight models from ${SOURCE_NAME[hub?.source ?? "huggingface"]} and load them for chat.`}
@@ -456,7 +585,16 @@ export function ModelsPage() {
           </div>
         )}
         <Downloads />
-        {tab === "find" ? <FindModels /> : tab === "catalog" ? <CatalogView renderRepo={(id) => <RepoDetail id={id} />} /> : <LocalModels />}
+        {importErrors.length > 0 && (
+          <div className="mx-7 mt-5">
+            <Notice tone="error">
+              {importErrors.map((e) => (
+                <p key={e}>{e}</p>
+              ))}
+            </Notice>
+          </div>
+        )}
+        {tab === "find" ? <FindModels /> : tab === "catalog" ? <CatalogView renderRepo={(id) => <RepoDetail id={id} />} /> : <LocalModels version={version} onImported={imported} />}
       </div>
     </div>
   );

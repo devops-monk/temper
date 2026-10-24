@@ -122,6 +122,12 @@ export interface LocalModel {
   gguf: RepoFile[];
   files: number;
   safetensors: boolean;
+  /** Added from the user's own files rather than downloaded. */
+  imported?: boolean;
+  kind?: "gguf" | "safetensors" | "mlx";
+  /** Why an imported model can't be found any more. */
+  missing?: string;
+  warnings?: string[];
 }
 
 export interface Run {
