@@ -45,8 +45,30 @@
       "../engine/uv.lock": "engine/uv.lock",
       "../engine/temper_engine/": "engine/temper_engine/"
     },
-    "macOS": { "minimumSystemVersion": "11.0" },
-    "windows": { "nsis": { "installMode": "currentUser" } },
-    "linux": { "deb": { "depends": [] } }
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQyQ0RCODk1QzUyNjMxMDUKUldRRk1TYkZsYmpOMGdMNDRoVndnRWdJbWRDMllHOVJSdExSdDV6dUFoNmFya3N2KzVOYlNhT1MK",
+      "endpoints": [
+        "https://github.com/devops-monk/temper/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -3,6 +3,7 @@ import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { EngineGate } from "./components/EngineGate";
 import { useApp } from "./lib/store";
+import { useUpdates } from "./lib/updates";
 import { ChatPage } from "./pages/Chat";
 import { ConnectPage } from "./pages/Connect";
 import { DatasetsPage } from "./pages/Datasets";
@@ -24,6 +25,9 @@ function usePoll(fn: () => void, ms: number) {
 export function App() {
   const { page, engine, refreshEngine, refreshSystem, refreshRuntime, refreshJobs } = useApp();
   const ready = engine?.status === "running";
+  const initUpdates = useUpdates((u) => u.init);
+
+  useEffect(initUpdates, [initUpdates]);
 
   usePoll(refreshEngine, ready ? 10_000 : 1_000);
   useEffect(() => {

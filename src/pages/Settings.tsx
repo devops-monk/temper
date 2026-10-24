@@ -4,6 +4,7 @@ import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
+import { useUpdates } from "../lib/updates";
 
 const STATUS_LABEL = {
   running: "Running",
@@ -23,6 +24,65 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <span className="text-muted">{label}</span>
       <span className="text-right">{children}</span>
     </div>
+  );
+}
+
+function Updates() {
+  const { version, status, update, received, total, error, checkedAt, auto, check, install, setAuto } = useUpdates();
+  const jobs = useApp((a) => a.jobs);
+  const busy = jobs.some((j) => j.status === "running");
+  const working = status === "checking" || status === "downloading" || status === "installing";
+
+  async function restart() {
+    if (busy && !confirm("A download, training run or export is still running. Updating restarts Temper and stops it. Update anyway?")) return;
+    await install();
+  }
+
+  return (
+    <Section
+      title="Updates"
+      aside={
+        inTauri &&
+        !update && (
+          <Button size="sm" disabled={working} onClick={() => void check()}>
+            <RotateCw className={cx("size-3.5", status === "checking" && "animate-spin")} /> Check for updates
+          </Button>
+        )
+      }
+    >
+      <div className="rounded-lg border border-line bg-surface px-4">
+        <Row label="Version">Temper {version ?? "0.1.0"}</Row>
+        <Row label="Status">
+          {status === "checking" && "Checking…"}
+          {status === "current" && "Temper is up to date"}
+          {status === "idle" && (inTauri ? "Not checked yet" : "Updates work in the desktop app")}
+          {status === "error" && "Couldn't check"}
+          {update && status === "available" && <Badge tone="accent">Temper {update.version} is available</Badge>}
+          {status === "downloading" && `Downloading${total ? ` ${Math.round((received / total) * 100)}%` : "…"}`}
+          {status === "installing" && "Installing, Temper will restart"}
+        </Row>
+        {checkedAt && <Row label="Last checked">{new Date(checkedAt).toLocaleString()}</Row>}
+      </div>
+      {update && (status === "available" || status === "downloading" || status === "installing") && (
+        <div className="mt-3 rounded-lg border border-line bg-surface px-4 py-3">
+          {update.body && <p className="text-[13px] whitespace-pre-line text-muted">{update.body.split("\n").slice(0, 8).join("\n")}</p>}
+          <Button className="mt-3" size="sm" variant="primary" disabled={working} onClick={() => void restart()}>
+            Update and restart
+          </Button>
+        </div>
+      )}
+      {error && (
+        <div className="mt-3">
+          <Notice tone="error">{error}</Notice>
+        </div>
+      )}
+      {inTauri && (
+        <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13px]">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-[var(--accent)]" />
+          Check for updates automatically
+        </label>
+      )}
+    </Section>
   );
 }
 
@@ -124,9 +184,10 @@ export function SettingsPage() {
             </Section>
           )}
 
+          <Updates />
+
           <Section title="About">
             <div className="rounded-lg border border-line bg-surface px-4">
-              <Row label="Version">Temper 0.1.0</Row>
               <Row label="Training">PyTorch, TRL and MLX</Row>
               <Row label="Chat">llama.cpp (MIT)</Row>
             </div>

@@ -69,6 +69,11 @@ The Release workflow checks that the tag matches the version, builds installers 
 stays a draft; re-run the failed job to finish it. Running the workflow by hand from the Actions tab builds the
 installers as artifacts without releasing anything.
 
+Releases also publish signed update bundles and a `latest.json` that installed copies of Temper check for updates.
+The workflow signs them with the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; the matching public key is `plugins.updater.pubkey` in
+`src-tauri/tauri.conf.json`. Keep the private key safe: without it, existing installs can't receive updates.
+
 ## License
 
 Apache-2.0. See [THIRD_PARTY.md](THIRD_PARTY.md) for the projects Temper builds on.

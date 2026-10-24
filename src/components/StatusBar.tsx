@@ -1,12 +1,14 @@
-import { Cpu, HardDrive } from "lucide-react";
+import { ArrowDownCircle, Cpu, HardDrive } from "lucide-react";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
+import { useUpdates } from "../lib/updates";
 import { cx } from "./ui";
 
 const BACKEND_LABEL: Record<string, string> = { cuda: "CUDA", rocm: "ROCm", metal: "Metal", xpu: "Intel XPU", cpu: "CPU only" };
 
 export function StatusBar() {
   const { engine, system, runtime, go } = useApp();
+  const update = useUpdates((u) => (u.status === "available" || u.status === "downloading" ? u.update : null));
   const status = engine?.status ?? "starting";
   const gpu = system?.gpus[0];
   const memUsed = gpu?.memory_used ?? system?.memory.used ?? 0;
@@ -59,7 +61,13 @@ export function StatusBar() {
         </>
       )}
 
-      <button onClick={() => go(runtime?.state === "ready" ? "chat" : "models")} className="ml-auto flex items-center gap-1.5 hover:text-text">
+      {update && (
+        <button onClick={() => go("settings")} className="ml-auto flex items-center gap-1.5 text-accent hover:underline">
+          <ArrowDownCircle className="size-3.5" /> Temper {update.version} is available
+        </button>
+      )}
+
+      <button onClick={() => go(runtime?.state === "ready" ? "chat" : "models")} className={cx(!update && "ml-auto", "flex items-center gap-1.5 hover:text-text")}>
         {runtime?.state === "ready" ? (
           <>
             <span className="size-2 rounded-full bg-accent" /> {runtime.model}

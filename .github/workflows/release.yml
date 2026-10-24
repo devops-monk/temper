@@ -78,6 +78,10 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update bundles that installed copies download (latest.json). The matching
+          # public key is `plugins.updater.pubkey` in tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Code signing (PLAN.md 0.10): add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
           # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
           # secrets exist. Until then builds are unsigned.
