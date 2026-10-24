@@ -1,5 +1,6 @@
 import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { LicensesDialog } from "../components/Licenses";
 import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
@@ -89,6 +90,7 @@ function Updates() {
 export function SettingsPage() {
   const { theme, setTheme, engine, system, refreshEngine, go } = useApp();
   const setup = engine?.setup;
+  const [licenses, setLicenses] = useState(false);
 
   async function reinstall(profile: "chat" | "train", clean: boolean) {
     if (clean && !confirm("Reinstall the engine? Temper deletes and rebuilds its Python environment. Your models, runs and exports are kept.")) return;
@@ -186,11 +188,20 @@ export function SettingsPage() {
 
           <Updates />
 
-          <Section title="About">
+          <Section
+            title="About"
+            aside={
+              <Button size="sm" onClick={() => setLicenses(true)}>
+                Open-source licences
+              </Button>
+            }
+          >
             <div className="rounded-lg border border-line bg-surface px-4">
+              <Row label="Licence">Apache-2.0</Row>
               <Row label="Training">PyTorch, TRL and MLX</Row>
               <Row label="Chat">llama.cpp (MIT)</Row>
             </div>
+            <LicensesDialog open={licenses} onClose={() => setLicenses(false)} />
           </Section>
         </div>
       </div>

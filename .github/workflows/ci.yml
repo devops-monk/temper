@@ -50,6 +50,11 @@ jobs:
       - run: npm run build
       - run: cargo build --locked
         working-directory: src-tauri
+      # Settings → About → Open-source licences reads src/licenses.json; regenerate it with
+      # `npm run licenses` after changing Rust or npm dependencies.
+      - name: Licence list is up to date
+        if: runner.os == 'Linux'
+        run: npm run licenses && git diff --exit-code src/licenses.json
       # Headless first-run setup: downloads the pinned uv (checksum-verified), a managed Python and
       # the engine's locked packages, exactly as a new user's first launch does.
       - name: First-run setup (chat profile)

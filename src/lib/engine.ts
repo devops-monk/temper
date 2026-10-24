@@ -3,6 +3,16 @@ import type { EngineInfo, SetupProfile } from "./types";
 /** True inside the desktop shell; false when the UI runs in a plain browser (`npm run dev`). */
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** Open a web page in the default browser; the desktop shell never navigates away from the app. */
+export async function openExternal(url: string) {
+  if (inTauri) {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } else {
+    window.open(url, "_blank", "noopener");
+  }
+}
+
 let current: EngineInfo | null = null;
 
 /** Ask the shell where the engine is. In a browser, use VITE_ENGINE_URL / VITE_ENGINE_TOKEN. */
