@@ -113,3 +113,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  # Installing through the website's install scripts is part of the release check.
+  install-scripts:
+    needs: publish
+    uses: ./.github/workflows/installers.yml

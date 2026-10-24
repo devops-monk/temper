@@ -425,6 +425,55 @@ h3 {
   color: var(--blue-bright);
 }
 
+.terminal {
+  max-width: 820px;
+  margin: 40px auto 0;
+}
+.terminal > p {
+  margin: 0 0 12px;
+  color: var(--grey-dark);
+  font-size: 15px;
+}
+.cmd {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  padding: 12px 12px 12px 20px;
+  border-radius: 14px;
+  background: #1d1d1f;
+  text-align: left;
+}
+.cmd .os {
+  flex: none;
+  width: 128px;
+  color: var(--grey);
+  font-size: 13px;
+}
+.cmd code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 14px;
+  color: #f5f5f7;
+}
+.cmd button {
+  flex: none;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 980px;
+  background: #2c2c2e;
+  color: #f5f5f7;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cmd button:hover {
+  background: #3a3a3c;
+}
+
 /* ------------------------------------------------------------ footer */
 
 .footer {
@@ -506,6 +555,13 @@ h3 {
   }
   .window {
     border-radius: 8px;
+  }
+  .cmd {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .cmd .os {
+    width: 100%;
   }
   .window-bar {
     padding: 8px 10px;

@@ -1,0 +1,56 @@
+name: Install scripts
+
+# Runs website/install.sh and install.ps1 against the published release on every OS. Runs when the
+# scripts change, after each release (called from release.yml), and on demand.
+on:
+  push:
+    branches: [main]
+    paths: ["website/install.sh", "website/install.ps1", ".github/workflows/installers.yml"]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEMPER_INSTALL_DIR: ${{ runner.temp }}/temper
+        run: sh website/install.sh
+      - name: Check
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            test -x "$RUNNER_TEMP/temper/Temper.app/Contents/MacOS/temper"
+            file "$RUNNER_TEMP/temper/Temper.app/Contents/MacOS/temper"
+          else
+            test -x "$RUNNER_TEMP/temper/temper"
+            test -f ~/.local/share/applications/temper.desktop
+            file "$RUNNER_TEMP/temper/temper"
+          fi
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The same way users run it: the script's text piped into Invoke-Expression.
+        run: Get-Content -Raw website/install.ps1 | Invoke-Expression
+      - name: Check
+        shell: powershell
+        run: |
+          $exe = Join-Path $env:LOCALAPPDATA "Temper\temper.exe"
+          if (-not (Test-Path $exe)) { Get-ChildItem "$env:LOCALAPPDATA\Temper" -ErrorAction SilentlyContinue; throw "temper.exe not found" }
+          (Get-Item $exe).VersionInfo | Format-List ProductName, ProductVersion
