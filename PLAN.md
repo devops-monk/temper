@@ -162,7 +162,7 @@ temper/
 
 - [x] **6.1 Training wizard UI**: choose base model, dataset, method and hyperparameters, then start, stop and watch.
 - [~] **6.2 SFT with LoRA / QLoRA**: unsloth `FastLanguageModel` with 4-bit loading, `get_peft_model`, TRL `SFTTrainer`.
-- [~] **6.3 Live metrics**: loss chart, learning rate, step/epoch, tokens/s, ETA and a log console over SSE.
+- [x] **6.3 Live metrics**: loss chart, learning rate, step/epoch, tokens/s, ETA and a log console over SSE.
 - [ ] **6.4 Full fine-tuning and continued pretraining** (including embedding and `lm_head` training).
 - [ ] **6.5 Preference training**: DPO, ORPO, KTO, SimPO.
 - [ ] **6.6 Reinforcement learning**: GRPO, GSPO, Dr. GRPO, DAPO, with reward-function editor and vLLM fast generation.
@@ -174,7 +174,7 @@ temper/
 - [ ] **6.12 Decision/classifier models**: train a classifier head from a language model.
 - [ ] **6.13 Long-context training**: gradient checkpointing ("unsloth" mode), tiled MLP, context parallel.
 - [ ] **6.14 Multi-GPU training**: DDP and FSDP2 (including QLoRA on FSDP2).
-- [~] **6.15 Apple Silicon training** through MLX-LM LoRA (`uv sync --extra mlx`).
+- [x] **6.15 Apple Silicon training** through MLX-LM LoRA: rank, alpha and dropout via an mlx-lm config, gradient accumulation and checkpointing, live loss/validation/tokens-per-second in the UI. Verified 2026-10-24 on an M1 Pro (16 GB): Qwen3-4B-Instruct 4-bit, 500 FineTome rows, 60 steps in about 12 minutes; validation loss 1.62 → 0.81; the 29 MB adapter loads with `mlx_lm generate`.
 - [ ] **6.16 Chat templates**: automatic template detection, `train_on_responses_only` masking, template override.
 - [ ] **6.17 Token preview**: show exactly what the model will see for a sample, with masked tokens dimmed.
 - [ ] **6.18 Evaluation**: held-out eval set, eval loss, early stopping, sample generations during training.

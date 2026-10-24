@@ -15,10 +15,13 @@ export function useJob(jobId: string | null) {
     if (!jobId) return;
     const ctrl = new AbortController();
     const buffer: JobEvent[] = [];
-    // Batch renders: workers can log hundreds of lines a second.
-    const flush = setInterval(() => {
-      if (buffer.length) setEvents((prev) => prev.concat(buffer.splice(0)));
-    }, 200);
+    // Batch renders: workers can log hundreds of lines a second. Take the batch outside the
+    // updater; React may call updaters twice, and a second splice would find the buffer empty.
+    const flushBuffer = () => {
+      const batch = buffer.splice(0);
+      if (batch.length) setEvents((prev) => prev.concat(batch));
+    };
+    const flush = setInterval(flushBuffer, 200);
 
     stream(
       `/api/jobs/${jobId}/events`,
@@ -31,7 +34,7 @@ export function useJob(jobId: string | null) {
     )
       .catch(() => {})
       .finally(() => {
-        setEvents((prev) => prev.concat(buffer.splice(0)));
+        flushBuffer();
         void refreshJobs();
       });
 

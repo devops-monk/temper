@@ -167,7 +167,30 @@ def train_unsloth(cfg: dict, out: Path) -> None:
 
 # ---------------------------------------------------------------- MLX (Apple Silicon)
 
-MLX_ITER = re.compile(r"Iter (\d+): Train loss ([\d.]+)(?:, Learning Rate ([\deE.+-]+))?")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# mlx-lm >= 0.30 prints a table: "  12    1.205 ▲    133    9.1k" and "   1    val 1.623   59.44s".
+MLX_ROW = re.compile(r"^\s*(\d+)\s+([\d.]+)\s*[▲▼]?\s+([\d.]+)\s+[\d.]+k?\s*$")
+MLX_VAL = re.compile(r"^\s*(\d+)\s+val\s+([\d.]+)")
+# Older mlx-lm: "Iter 10: Train loss 2.345, Learning Rate 1.000e-05, ..., Tokens/sec 512.3"
+MLX_ITER = re.compile(r"Iter (\d+): Train loss ([\d.]+)(?:, Learning Rate ([\deE.+-]+))?(?:.*Tokens/sec ([\d.]+))?")
+MLX_ITER_VAL = re.compile(r"Iter (\d+): Val loss ([\d.]+)")
+
+
+def parse_mlx_line(line: str) -> dict | None:
+    """Turns one line of `mlx_lm lora` output into a metrics dict, or None if it isn't one."""
+    line = ANSI.sub("", line)
+    if m := MLX_VAL.match(line) or MLX_ITER_VAL.search(line):
+        return {"step": int(m.group(1)), "val_loss": float(m.group(2))}
+    if m := MLX_ROW.match(line):
+        return {"step": int(m.group(1)), "loss": float(m.group(2)), "tokens_per_sec": float(m.group(3))}
+    if m := MLX_ITER.search(line):
+        out = {"step": int(m.group(1)), "loss": float(m.group(2))}
+        if m.group(3):
+            out["lr"] = float(m.group(3))
+        if m.group(4):
+            out["tokens_per_sec"] = float(m.group(4))
+        return out
+    return None
 
 
 def train_mlx(cfg: dict, out: Path) -> None:
@@ -190,13 +213,23 @@ def train_mlx(cfg: dict, out: Path) -> None:
     steps_per_epoch = max(1, (len(records) - n_valid) // cfg["batch_size"])
     iters = cfg["max_steps"] or int(steps_per_epoch * cfg["epochs"])
     adapter = out / "adapter"
+    # mlx-lm takes LoRA shape only from a config file (JSON is valid YAML). Its `scale` multiplies the
+    # update directly; alpha / rank is the standard LoRA scaling, matching the Unsloth path.
+    lora_cfg = out / "lora_config.yaml"
+    lora_cfg.write_text(json.dumps({
+        "lora_parameters": {"rank": cfg["lora_r"], "scale": cfg["lora_alpha"] / cfg["lora_r"], "dropout": cfg["lora_dropout"]},
+    }))
     cmd = [
         sys.executable, "-m", "mlx_lm", "lora",
         "--model", cfg["base_model"],
         "--train",
+        "--config", str(lora_cfg),
         "--data", str(data_dir),
         "--iters", str(iters),
         "--batch-size", str(cfg["batch_size"]),
+        "--grad-accumulation-steps", str(cfg["grad_accum"]),
+        # Recompute activations instead of storing them: much less unified memory for a little speed.
+        "--grad-checkpoint",
         "--learning-rate", str(cfg["learning_rate"]),
         "--max-seq-length", str(cfg["max_seq_length"]),
         "--adapter-path", str(adapter),
@@ -210,19 +243,14 @@ def train_mlx(cfg: dict, out: Path) -> None:
     for line in proc.stdout:
         line = line.rstrip()
         print(line, flush=True)
-        m = MLX_ITER.search(line)
-        if m:
-            step = int(m.group(1))
+        metrics = parse_mlx_line(line)
+        if metrics and "loss" in metrics:
+            step = metrics["step"]
             elapsed = time.time() - started
-            emit(
-                "metrics",
-                step=step,
-                total_steps=iters,
-                loss=float(m.group(2)),
-                lr=float(m.group(3)) if m.group(3) else None,
-                eta=elapsed / step * (iters - step),
-            )
+            emit("metrics", total_steps=iters, eta=elapsed / step * (iters - step), **metrics)
             emit("progress", value=step / iters)
+        elif metrics:
+            emit("eval", **metrics)
     if proc.wait() != 0:
         raise RuntimeError("mlx_lm lora failed; see the log above")
     emit("result", adapter=str(adapter), base_model=cfg["base_model"])

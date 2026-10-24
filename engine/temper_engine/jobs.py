@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -18,6 +19,8 @@ from fastapi.responses import StreamingResponse
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 TERMINAL = {"done", "failed", "cancelled"}
+# Terminal colour and cursor codes that tools like mlx-lm and tqdm print; the UI log is plain text.
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 @dataclass
@@ -108,7 +111,7 @@ class Registry:
         def pump() -> None:
             assert proc.stdout
             for raw in proc.stdout:
-                line = raw.rstrip("\n")
+                line = ANSI.sub("", raw.rstrip("\n"))
                 if line.startswith("@@"):
                     try:
                         msg = json.loads(line[2:])

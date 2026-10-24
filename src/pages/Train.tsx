@@ -68,8 +68,9 @@ function RunPanel({ job }: { job: Job }) {
   const refreshJobs = useApp((s) => s.refreshJobs);
   const logRef = useRef<HTMLPreElement>(null);
 
-  const { points, last, phase, dataset, logs, totalSteps } = useMemo(() => {
+  const { points, last, phase, dataset, logs, totalSteps, val } = useMemo(() => {
     const points: { step: number; loss: number }[] = [];
+    let val: { step: number; val_loss: number } | null = null;
     let last: Record<string, number> | null = null;
     let phase = "Starting worker";
     let totalSteps: number | null = null;
@@ -83,11 +84,12 @@ function RunPanel({ job }: { job: Job }) {
       } else if (ev.event === "phase") {
         phase = ev.name as string;
         totalSteps = (ev.total_steps as number) ?? totalSteps;
-      } else if (ev.event === "dataset") dataset = ev;
+      } else if (ev.event === "eval" && typeof ev.val_loss === "number") val = { step: ev.step as number, val_loss: ev.val_loss };
+      else if (ev.event === "dataset") dataset = ev;
       else if (ev.event === "log") logs.push(ev.line as string);
       else if (ev.event === "error") logs.push(`Error: ${ev.message}`);
     }
-    return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps };
+    return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps, val };
   }, [events]);
 
   useEffect(() => {
@@ -122,7 +124,7 @@ function RunPanel({ job }: { job: Job }) {
         {[
           ["Step", last ? `${last.step} / ${totalSteps ?? "?"}` : "–"],
           ["Loss", last?.loss != null ? last.loss.toFixed(4) : "–"],
-          ["Learning rate", last?.lr != null ? last.lr.toExponential(2) : "–"],
+          last?.lr != null ? ["Learning rate", last.lr.toExponential(2)] : ["Tokens/s", last?.tokens_per_sec != null ? Math.round(last.tokens_per_sec).toString() : "–"],
           ["Time left", state === "running" ? duration(last?.eta) : "–"],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-line bg-surface px-3 py-2">
@@ -134,6 +136,11 @@ function RunPanel({ job }: { job: Job }) {
 
       <div className="rounded-lg border border-line bg-surface p-3">
         <LossChart points={points} totalSteps={totalSteps} />
+        {val && (
+          <p className="mt-1 text-[12.5px] text-muted">
+            Validation loss {val.val_loss.toFixed(3)} at step {val.step}
+          </p>
+        )}
       </div>
 
       {state === "failed" && job.error && <Notice tone="error">{job.error}</Notice>}

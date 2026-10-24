@@ -47,3 +47,28 @@ def test_sharegpt_rows_become_chat_messages():
 def test_alpaca_input_is_appended_to_prompt():
     row = {"instruction": "Translate", "input": "bonjour", "output": "hello"}
     assert to_messages(row, "alpaca")[0]["content"] == "Translate\n\nbonjour"
+
+
+def test_parses_mlx_lm_table_output():
+    from temper_engine.train_worker import parse_mlx_line
+
+    assert parse_mlx_line("  \x1b[38;5;244m  12\x1b[0m    \x1b[1;32m1.205 ▼\x1b[0m    \x1b[1m  133\x1b[0m    \x1b[38;5;244m  9.1k\x1b[0m") == {
+        "step": 12, "loss": 1.205, "tokens_per_sec": 133.0
+    }
+    assert parse_mlx_line("     1    val 1.623    59.44s") == {"step": 1, "val_loss": 1.623}
+    assert parse_mlx_line("  iter   train_loss     tok/s     tokens") is None
+    assert parse_mlx_line("Trainable parameters: 0.182% (7.340M/4022.468M)") is None
+
+
+def test_parses_older_mlx_lm_output():
+    from temper_engine.train_worker import parse_mlx_line
+
+    line = "Iter 10: Train loss 2.345, Learning Rate 1.000e-05, It/sec 0.5, Tokens/sec 512.3, Trained Tokens 900"
+    assert parse_mlx_line(line) == {"step": 10, "loss": 2.345, "lr": 1e-05, "tokens_per_sec": 512.3}
+    assert parse_mlx_line("Iter 1: Val loss 1.900, Val took 3.2s") == {"step": 1, "val_loss": 1.9}
+
+
+def test_worker_logs_are_plain_text():
+    from temper_engine.jobs import ANSI
+
+    assert ANSI.sub("", "\x1b[38;5;244m  12\x1b[0m    \x1b[1;32m0.731 ▼\x1b[0m\x1b[?25l") == "  12    0.731 ▼"
