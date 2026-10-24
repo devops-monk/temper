@@ -41,9 +41,12 @@ interface AppState {
   theme: Theme;
   /** Dataset picked on the Datasets page, handed to the training form. */
   pendingDataset: PendingDataset | null;
+  /** Model picked in the catalog, handed to the training form. */
+  pendingBaseModel: string | null;
   go: (page: Page) => void;
   setTheme: (theme: Theme) => void;
   setPendingDataset: (dataset: PendingDataset | null) => void;
+  setPendingBaseModel: (model: string | null) => void;
   refreshEngine: () => Promise<void>;
   refreshSystem: () => Promise<void>;
   refreshRuntime: () => Promise<void>;
@@ -58,6 +61,7 @@ export const useApp = create<AppState>((set, get) => ({
   jobs: [],
   theme: readTheme(),
   pendingDataset: null,
+  pendingBaseModel: null,
   go: (page) => set({ page }),
   setTheme: (theme) => {
     try {
@@ -69,6 +73,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ theme });
   },
   setPendingDataset: (pendingDataset) => set({ pendingDataset }),
+  setPendingBaseModel: (pendingBaseModel) => set({ pendingBaseModel }),
   refreshEngine: async () => {
     const was = get().engine?.status;
     const engine = await fetchEngineInfo().catch(() => null);

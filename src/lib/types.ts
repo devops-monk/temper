@@ -66,6 +66,7 @@ export interface SystemInfo {
 export interface RuntimeStatus {
   state: "idle" | "loading" | "ready" | "failed";
   model: string | null;
+  path?: string | null;
   error: string | null;
   engine: string;
   available: boolean;

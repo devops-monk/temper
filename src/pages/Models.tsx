@@ -1,5 +1,6 @@
 import { ChevronDown, Download, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { CatalogView } from "../components/Catalog";
 import { RepoAccess } from "../components/HfAccount";
 import { SOURCE_NAME, useHubSource } from "../components/HubSource";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Toggle, cx } from "../components/ui";
@@ -404,7 +405,7 @@ function Downloads() {
 }
 
 export function ModelsPage() {
-  const [tab, setTab] = useState<"find" | "local">("local");
+  const [tab, setTab] = useState<"catalog" | "find" | "local">("local");
   const runtime = useApp((s) => s.runtime);
   const refreshRuntime = useApp((s) => s.refreshRuntime);
   const [hub] = useHubSource();
@@ -426,6 +427,7 @@ export function ModelsPage() {
         {(
           [
             ["local", "On this computer"],
+            ["catalog", "Catalog"],
             ["find", "Find models"],
           ] as const
         ).map(([key, label]) => (
@@ -454,7 +456,7 @@ export function ModelsPage() {
           </div>
         )}
         <Downloads />
-        {tab === "find" ? <FindModels /> : <LocalModels />}
+        {tab === "find" ? <FindModels /> : tab === "catalog" ? <CatalogView renderRepo={(id) => <RepoDetail id={id} />} /> : <LocalModels />}
       </div>
     </div>
   );

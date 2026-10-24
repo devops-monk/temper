@@ -2,8 +2,9 @@ import { ArrowUp, Boxes, Eraser, MessageSquare, RotateCcw, Square } from "lucide
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { samplingText, type CatalogModel } from "../components/Catalog";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, cx } from "../components/ui";
-import { stream } from "../lib/engine";
+import { api, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
 
 interface Message {
@@ -19,10 +20,22 @@ interface Settings {
   top_k: number;
   min_p: number;
   repeat_penalty: number;
+  presence_penalty: number;
   max_tokens: number;
 }
 
-const DEFAULTS: Settings = { system: "", temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0, repeat_penalty: 1.05, max_tokens: 4096 };
+const DEFAULTS: Settings = { system: "", temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0, repeat_penalty: 1.05, presence_penalty: 0, max_tokens: 4096 };
+/** What a publisher's recommendation leaves unset means "off", as in the libraries they test with. */
+const NEUTRAL = { top_p: 1, top_k: 0, min_p: 0, repeat_penalty: 1, presence_penalty: 0 };
+
+type Recommended = Pick<CatalogModel, "id" | "sampling"> & { publisher: string };
+
+function recommendedSettings(base: Settings, rec: Recommended): Settings {
+  const { repetition_penalty, ...rest } = rec.sampling;
+  return { ...base, ...NEUTRAL, ...rest, ...(repetition_penalty !== undefined && { repeat_penalty: repetition_penalty }) };
+}
+
+const SAMPLING_KEYS = ["temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty"] as const;
 
 function Slider({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
   return (
@@ -54,9 +67,29 @@ export function ChatPage() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [settings, setSettings] = useState(DEFAULTS);
+  const [recommended, setRecommended] = useState<Recommended | null>(null);
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const ready = runtime?.state === "ready";
+
+  // A model from the catalog gets its publisher's sampling settings when it loads.
+  const loaded = ready ? (runtime?.path ?? runtime?.model ?? null) : null;
+  useEffect(() => {
+    if (!loaded) return;
+    let stale = false;
+    api<{ match: (CatalogModel & { publisher: string }) | null }>(`/api/catalog/match?model=${encodeURIComponent(loaded)}`)
+      .then(({ match }) => {
+        if (stale) return;
+        const rec = match && Object.keys(match.sampling).length ? match : null;
+        setRecommended(rec);
+        setSettings((s) => (rec ? recommendedSettings(s, rec) : { ...s, ...Object.fromEntries(SAMPLING_KEYS.map((k) => [k, DEFAULTS[k]])) }));
+      })
+      .catch(() => setRecommended(null));
+    return () => {
+      stale = true;
+    };
+  }, [loaded]);
+  const usingRecommended = recommended !== null && SAMPLING_KEYS.every((k) => settings[k] === recommendedSettings(settings, recommended)[k]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -199,6 +232,11 @@ export function ChatPage() {
             <Eraser className="size-3.5" /> Clear chat
           </Button>
         </div>
+        {recommended && (
+          <p className="-mt-1 mb-4 text-[12px] text-muted" title={samplingText(recommended.sampling)}>
+            {usingRecommended ? `Using ${recommended.publisher}'s recommended settings for ${recommended.id.split("/")[1]}.` : `Changed from ${recommended.publisher}'s recommended settings for ${recommended.id.split("/")[1]}.`}
+          </p>
+        )}
         <div className="flex flex-col gap-4">
           <Field label="System prompt">
             <textarea
@@ -214,12 +252,19 @@ export function ChatPage() {
           <Slider label="Top K" value={settings.top_k} min={0} max={200} step={1} onChange={set("top_k")} />
           <Slider label="Min P" value={settings.min_p} min={0} max={1} step={0.01} onChange={set("min_p")} />
           <Slider label="Repeat penalty" value={settings.repeat_penalty} min={1} max={2} step={0.01} onChange={set("repeat_penalty")} />
+          <Slider label="Presence penalty" value={settings.presence_penalty} min={0} max={2} step={0.05} onChange={set("presence_penalty")} />
           <Field label="Max new tokens">
             <Input type="number" min={16} value={settings.max_tokens} onChange={(e) => set("max_tokens")(Number(e.target.value))} />
           </Field>
-          <Button size="sm" variant="ghost" onClick={() => setSettings(DEFAULTS)}>
-            Reset to defaults
-          </Button>
+          {recommended ? (
+            <Button size="sm" variant="ghost" disabled={usingRecommended} onClick={() => setSettings((s) => recommendedSettings(s, recommended))}>
+              Use recommended settings
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setSettings(DEFAULTS)}>
+              Reset to defaults
+            </Button>
+          )}
         </div>
       </aside>
     </div>

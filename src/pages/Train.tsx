@@ -226,7 +226,7 @@ function useTrainEstimate(form: Form, enabled: boolean) {
 }
 
 export function TrainPage() {
-  const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, go } = useApp();
+  const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, pendingBaseModel, setPendingBaseModel, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
   const [form, setForm] = useState<Form>(() => ({ ...DEFAULTS, base_model: system?.backend === "metal" ? MLX_DEFAULT_MODEL : DEFAULTS.base_model }));
   const [error, setError] = useState<string | null>(null);
@@ -247,6 +247,13 @@ export function TrainPage() {
       setPendingDataset(null);
     }
   }, [pendingDataset, setPendingDataset]);
+
+  useEffect(() => {
+    if (pendingBaseModel) {
+      setForm((f) => ({ ...f, base_model: pendingBaseModel }));
+      setPendingBaseModel(null);
+    }
+  }, [pendingBaseModel, setPendingBaseModel]);
 
   const trainJobs = jobs.filter((j) => j.kind === "train");
   const current = trainJobs.find((j) => j.id === selected) ?? trainJobs[0] ?? null;

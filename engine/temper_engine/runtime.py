@@ -36,6 +36,7 @@ class RuntimeManager:
         self.proc: subprocess.Popen | None = None
         self.port: int | None = None
         self.model: str | None = None
+        self.path: str | None = None
         self.state = "idle"  # idle | loading | ready | failed
         self.error: str | None = None
         self.log: list[str] = []
@@ -49,6 +50,7 @@ class RuntimeManager:
         return {
             "state": self.state,
             "model": self.model,
+            "path": self.path,
             "error": self.error,
             "engine": "llama.cpp",
             "available": llama_server_path() is not None,
@@ -65,7 +67,7 @@ class RuntimeManager:
         self.unload()
         with self.lock:
             self.port = _free_port()
-            self.model, self.state, self.error, self.log = Path(req.path).name, "loading", None, []
+            self.model, self.path, self.state, self.error, self.log = Path(req.path).name, req.path, "loading", None, []
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
                 "-c", str(req.context), "-ngl", str(req.gpu_layers), "--jinja",
@@ -100,7 +102,7 @@ class RuntimeManager:
     def unload(self) -> None:
         with self.lock:
             proc, self.proc = self.proc, None
-            self.state, self.model, self.error = "idle", None, None
+            self.state, self.model, self.path, self.error = "idle", None, None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:
