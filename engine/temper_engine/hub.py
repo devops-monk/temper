@@ -100,12 +100,14 @@ def repo_files(id: str):
 
 @router.get("/local")
 def local_models():
+    from . import library  # imports hub
+
     try:
-        cache = scan_cache_dir()
-    except Exception:
-        return []
+        repos = scan_cache_dir().repos
+    except Exception:  # no cache yet: a new install, or nothing downloaded
+        repos = []
     models = []
-    for repo in cache.repos:
+    for repo in repos:
         if repo.repo_type != "model":
             continue
         revision = max(repo.revisions, key=lambda r: r.last_modified, default=None)
@@ -122,8 +124,6 @@ def local_models():
             "files": len(files),
             "safetensors": any(f["name"].endswith(".safetensors") for f in files),
         })
-    from . import library  # imports hub
-
     return library.entries() + sorted(models, key=lambda m: m["last_used"] or 0, reverse=True)
 
 
