@@ -164,10 +164,14 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
 export function ProgressBar({ value, temper = false }: { value: number | null; temper?: boolean }) {
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={value == null ? undefined : Math.round(value * 100)}>
-      <div
-        className={cx("h-full rounded-full transition-[width] duration-500", temper ? "bg-temper" : "bg-accent", value == null && "animate-pulse-dot")}
-        style={{ width: `${Math.max(2, (value ?? 1) * 100)}%` }}
-      />
+      {value == null ? (
+        <div className={cx("animate-indeterminate h-full w-1/3 rounded-full", temper ? "bg-temper" : "bg-accent")} />
+      ) : (
+        <div
+          className={cx("h-full rounded-full transition-[width] duration-500", temper ? "bg-temper" : "bg-accent")}
+          style={{ width: `${Math.max(2, value * 100)}%` }}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { EngineInfo } from "./types";
+import type { EngineInfo, SetupProfile } from "./types";
 
 /** True inside the desktop shell; false when the UI runs in a plain browser (`npm run dev`). */
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -11,6 +11,8 @@ export async function fetchEngineInfo(): Promise<EngineInfo> {
     const { invoke } = await import("@tauri-apps/api/core");
     current = await invoke<EngineInfo>("engine_info");
   } else {
+    const mock = import.meta.env.DEV && location.hash.includes("setup=") ? (await import("./mockSetup")).mockSetupInfo() : null;
+    if (mock) return (current = mock);
     const url = import.meta.env.VITE_ENGINE_URL ?? "http://127.0.0.1:8765";
     const token = import.meta.env.VITE_ENGINE_TOKEN ?? "dev";
     let status: EngineInfo["status"] = "starting";
@@ -22,11 +24,17 @@ export async function fetchEngineInfo(): Promise<EngineInfo> {
     current = {
       url,
       token,
+      setup: null,
       status,
       detail: status === "stopped" ? "Start it with: cd engine && uv run temper-engine --token dev" : null,
     };
   }
   return current;
+}
+
+export async function installEngine(profile: SetupProfile, clean = false): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  current = await invoke<EngineInfo>("setup_install", { profile, clean });
 }
 
 export async function restartEngine(): Promise<void> {

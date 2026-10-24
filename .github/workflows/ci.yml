@@ -48,5 +48,16 @@ jobs:
       - run: npm ci
       # generate_context! embeds the built UI, so dist/ must exist before cargo runs.
       - run: npm run build
-      - run: cargo check --locked
+      - run: cargo build --locked
         working-directory: src-tauri
+      # Headless first-run setup: downloads the pinned uv (checksum-verified), a managed Python and
+      # the engine's locked packages, exactly as a new user's first launch does.
+      - name: First-run setup (chat profile)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get install -y xvfb
+            xvfb-run -a ./src-tauri/target/debug/temper --setup chat
+          else
+            ./src-tauri/target/debug/temper --setup chat
+          fi

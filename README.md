@@ -39,6 +39,12 @@ cd engine && uv sync --extra train     # training on NVIDIA / AMD / Intel GPUs
 cd engine && uv sync --extra mlx       # training on Apple Silicon
 ```
 
+Development builds run the engine straight from `engine/` with `uv run`. To try the first-run setup
+that installed builds use, run `TEMPER_BOOTSTRAP=1 npm run tauri dev`, or install headlessly with
+`src-tauri/target/debug/temper --setup chat` (or `train`; add `--clean` to rebuild from scratch).
+To preview the setup screens in a browser, open `http://localhost:1420/#setup=choose` (also
+`installing` and `failed`) while `npm run dev` is running.
+
 To work on the UI in a browser, start the engine yourself with `cd engine && uv run temper-engine --token dev`,
 then run `npm run dev` and open http://localhost:1420.
 

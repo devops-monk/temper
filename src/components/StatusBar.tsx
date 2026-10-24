@@ -20,11 +20,23 @@ export function StatusBar() {
           className={cx(
             "size-2 rounded-full",
             status === "running" && "bg-ok",
-            status === "starting" && "animate-pulse-dot bg-straw",
-            (status === "crashed" || status === "missing_uv" || status === "stopped") && "bg-danger",
+            (status === "starting" || status === "installing") && "animate-pulse-dot bg-straw",
+            status === "needs_setup" && "bg-straw",
+            (status === "crashed" || status === "missing_uv" || status === "stopped" || status === "setup_failed") && "bg-danger",
           )}
         />
-        {status === "running" ? "Engine ready" : status === "starting" ? "Starting engine" : status === "missing_uv" ? "Setup needed" : "Engine offline"}
+        {
+          {
+            running: "Engine ready",
+            starting: "Starting engine",
+            installing: "Installing engine",
+            needs_setup: "Setup needed",
+            missing_uv: "Setup needed",
+            setup_failed: "Setup failed",
+            crashed: "Engine offline",
+            stopped: "Engine offline",
+          }[status]
+        }
       </button>
 
       {system && (

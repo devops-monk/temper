@@ -1,7 +1,7 @@
 import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
-import { inTauri, restartEngine } from "../lib/engine";
+import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
 
@@ -13,7 +13,17 @@ async function openExternal(e: MouseEvent<HTMLAnchorElement>) {
   await openUrl(e.currentTarget.href);
 }
 
-const STATUS_LABEL = { running: "Running", starting: "Starting", crashed: "Stopped after errors", missing_uv: "uv not installed", stopped: "Not running" };
+const STATUS_LABEL = {
+  running: "Running",
+  starting: "Starting",
+  crashed: "Stopped after errors",
+  missing_uv: "uv not installed",
+  stopped: "Not running",
+  needs_setup: "Not set up",
+  installing: "Installing",
+  setup_failed: "Setup failed",
+};
+const PROFILE_LABEL = { chat: "Chat only", train: "Chat and training" };
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -25,7 +35,15 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function SettingsPage() {
-  const { theme, setTheme, engine, system, refreshEngine } = useApp();
+  const { theme, setTheme, engine, system, refreshEngine, go } = useApp();
+  const setup = engine?.setup;
+
+  async function reinstall(profile: "chat" | "train", clean: boolean) {
+    if (clean && !confirm("Reinstall the engine? Temper deletes and rebuilds its Python environment. Your models, runs and exports are kept.")) return;
+    await installEngine(profile, clean);
+    await refreshEngine();
+    go("chat");
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -71,7 +89,20 @@ export function SettingsPage() {
               <Row label="Address">
                 <span className="font-mono text-[12.5px]">{engine?.url ?? "–"}</span>
               </Row>
+              {setup?.installed && <Row label="Installed">{PROFILE_LABEL[setup.installed]}</Row>}
             </div>
+            {setup?.installed && engine?.status !== "installing" && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {setup.installed === "chat" && setup.hardware?.can_train && (
+                  <Button size="sm" variant="primary" onClick={() => reinstall("train", false)}>
+                    Add training support
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => reinstall(setup.installed ?? "chat", true)}>
+                  Reinstall engine
+                </Button>
+              </div>
+            )}
             {engine?.detail && (
               <div className="mt-3">
                 <Notice>{engine.detail}</Notice>

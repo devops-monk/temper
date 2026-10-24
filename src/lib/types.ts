@@ -1,10 +1,40 @@
-export type EngineStatus = "starting" | "running" | "crashed" | "missing_uv" | "stopped";
+export type EngineStatus = "starting" | "running" | "crashed" | "missing_uv" | "stopped" | "needs_setup" | "installing" | "setup_failed";
+
+export type SetupProfile = "chat" | "train";
+
+export interface SetupOption {
+  id: SetupProfile;
+  label: string;
+  description: string;
+  size: string;
+  available: boolean;
+  recommended: boolean;
+}
+
+export interface SetupStep {
+  id: string;
+  label: string;
+  state: "pending" | "running" | "done" | "failed";
+}
+
+export interface SetupState {
+  hardware: { kind: "apple" | "nvidia" | "amd" | "none"; name: string | null; can_train: boolean } | null;
+  options: SetupOption[];
+  installed: SetupProfile | null;
+  profile: SetupProfile | null;
+  steps: SetupStep[];
+  progress: number | null;
+  log: string[];
+  error: string | null;
+}
 
 export interface EngineInfo {
   url: string;
   token: string;
   status: EngineStatus;
   detail: string | null;
+  /** Present in installed builds, which manage their own engine environment. */
+  setup: SetupState | null;
 }
 
 export interface Gpu {

@@ -21,6 +21,12 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+ureq = "3"
+flate2 = "1.1.10"
+tar = "0.4.46"
+sha2 = "0.10.9"
+hex = "0.4.3"
+zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
 
 [profile.release]
 codegen-units = 1

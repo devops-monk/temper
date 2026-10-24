@@ -89,7 +89,8 @@ temper/
 - [x] **0.6 Engine API skeleton**: FastAPI with `/api/health`, bearer-token auth and CORS limited to the app origin.
 - [~] **0.7 CI**: typecheck, build, `cargo check`, and an engine smoke test on macOS, Windows and Linux.
 - [~] **0.8 Release pipeline**: `tauri-action` matrix producing DMG (arm64 and x64), NSIS `.exe` (x64 and ARM64), AppImage, deb and rpm.
-- [ ] **0.9 First-run bootstrap**: download `uv` and install the engine environment into app data with a progress screen. Pick the PyTorch build to match the hardware (CUDA, ROCm, XPU, MPS or CPU). Support a GGUF-only mode with no PyTorch, like Unsloth's `UNSLOTH_NO_TORCH`.
+- [~] **0.9 First-run bootstrap**: on first launch the app downloads a pinned, checksum-verified `uv`, a uv-managed Python 3.12 and the engine's locked packages into app data, with a step-by-step progress screen and plain-language errors. Two profiles: **Chat only** (GGUF, no PyTorch, like Unsloth's `UNSLOTH_NO_TORCH`) and **Chat and training** (MLX on Apple Silicon; Unsloth + `--torch-backend=auto` on NVIDIA/AMD). App updates that change the engine re-sync automatically; Settings can add training or reinstall. `temper --setup chat|train [--clean]` installs headlessly, and CI runs it on every OS.
+  Tested on macOS (Apple Silicon): both profiles, a read-only app bundle, a network failure and retry, and the update re-sync. Still to do: test the NVIDIA/AMD training profile on real hardware, add an Intel XPU profile, and check free disk space before installing.
 - [ ] **0.10 Code signing**: Apple Developer ID plus notarization, Windows Authenticode (Azure Trusted Signing), Linux GPG-signed repos.
 - [ ] **0.11 Auto-update**: Tauri updater with signed manifests and stable/nightly channels. Roll back if a staged update fails.
 - [ ] **0.12 Distribution channels**: Homebrew cask, winget, Flathub, `.deb`/`.rpm` repos, `curl | sh` and `irm | iex` installers, Docker image (`temper/temper`, plus a ROCm variant).

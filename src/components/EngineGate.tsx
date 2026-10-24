@@ -2,12 +2,15 @@ import { RotateCw } from "lucide-react";
 import { inTauri, restartEngine } from "../lib/engine";
 import { useApp } from "../lib/store";
 import { LogoMark } from "./Logo";
+import { Setup } from "./Setup";
 import { Button } from "./ui";
 
 /** Shown in place of a page until the engine answers. */
 export function EngineGate() {
   const { engine, refreshEngine } = useApp();
   const status = engine?.status ?? "starting";
+
+  if (status === "needs_setup" || status === "installing" || status === "setup_failed") return <Setup />;
 
   if (status === "starting") {
     return (
