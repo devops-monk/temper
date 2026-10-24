@@ -95,6 +95,10 @@ def _hf_config(repo_or_dir: str) -> dict:
         return json.loads((local / "config.json").read_text())
     from huggingface_hub import hf_hub_download
 
+    from . import sources
+
+    if sources.modelscope():
+        return sources.ms_config(repo_or_dir)
     # A separate cache: config files alone in the main one would show up as half-downloaded models.
     path = hf_hub_download(repo_or_dir, "config.json", cache_dir=home() / "cache" / "configs")
     return json.loads(Path(path).read_text())
@@ -206,11 +210,16 @@ def gguf_shape_local(path: Path) -> Shape:
 
 
 def gguf_shape_remote(repo_id: str, filename: str) -> Shape:
-    """Reads only the header of a GGUF on Hugging Face, with ranged requests (usually one or two)."""
+    """Reads only the header of a remote GGUF, with ranged requests (usually one or two)."""
     from huggingface_hub import get_token, hf_hub_url
 
-    url = hf_hub_url(repo_id, filename)
-    headers = {"Authorization": f"Bearer {get_token()}"} if get_token() else {}
+    from . import sources
+
+    if sources.modelscope():
+        url, headers = sources.ms_url(repo_id, filename), {}
+    else:
+        url = hf_hub_url(repo_id, filename)
+        headers = {"Authorization": f"Bearer {get_token()}"} if get_token() else {}
     chunk, limit = 512 * 1024, 32 * MB
     buf, pos = bytearray(), 0
 
@@ -374,10 +383,9 @@ def estimate_chat(req: ChatEstimate):
             parts = sorted(path.parent.glob(SPLIT_PART.sub(r"-*-of-\2.gguf", path.name))) if SPLIT_PART.search(path.name) else [path]
             shape, weights = gguf_shape_local(path), sum(p.stat().st_size for p in parts)
         elif req.repo_id and req.filename:
-            from huggingface_hub import HfApi
+            from .hub import list_files
 
-            info = HfApi().model_info(req.repo_id, files_metadata=True)
-            sizes = {s.rfilename: s.size or 0 for s in info.siblings or []}
+            sizes = {f["name"]: f["size"] for f in list_files(req.repo_id)}
             size = sizes.get(req.filename)
             if size is not None and SPLIT_PART.search(req.filename):
                 stem = SPLIT_PART.sub("", req.filename)
@@ -387,7 +395,7 @@ def estimate_chat(req: ChatEstimate):
             shape, weights = gguf_shape_remote(req.repo_id, req.filename), size
         else:
             raise HTTPException(400, "Give a local GGUF path, or a repo_id and filename.")
-    except (OSError, ValueError, httpx.HTTPError) as e:
+    except (OSError, ValueError, httpx.HTTPError, LookupError) as e:
         raise HTTPException(422, f"Couldn't read the model's header: {e}") from e
     context = min(req.context, shape.context_max or req.context)
     est = inference_estimate(shape, weights, context)
@@ -407,13 +415,15 @@ class TrainEstimate(BaseModel):
 def estimate_train(req: TrainEstimate):
     from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 
+    from . import sources
+
     try:
         config = _hf_config(req.base_model)
         shape = shape_from_config(config)
     except GatedRepoError as e:
         raise HTTPException(422, f"{req.base_model} is gated. Accept its licence on Hugging Face and add a token to estimate it.") from e
-    except RepositoryNotFoundError as e:
-        raise HTTPException(422, f"There's no model called {req.base_model} on Hugging Face, or it's private.") from e
+    except (RepositoryNotFoundError, sources.NotAvailable) as e:
+        raise HTTPException(422, f"There's no model called {req.base_model} on {'ModelScope' if sources.modelscope() else 'Hugging Face'}, or it's private.") from e
     except (KeyError, TypeError) as e:
         raise HTTPException(422, f"{req.base_model} has a configuration Temper can't estimate yet (missing {e}).") from e
     except (OSError, ValueError, httpx.HTTPError) as e:

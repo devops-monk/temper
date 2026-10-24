@@ -11,15 +11,29 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from . import home
+from . import home, sources
 from .hardware import probe
 from .jobs import registry
 
 router = APIRouter(prefix="/api/train", tags=["training"])
 
 
+def cached_snapshot(repo_id: str) -> str:
+    """The cached copy of a full model. With ModelScope as the source, workers can't fetch from Hugging Face."""
+    from huggingface_hub import try_to_load_from_cache
+
+    config = try_to_load_from_cache(repo_id, "config.json")
+    if isinstance(config, str):
+        folder = Path(config).parent
+        if any(folder.glob("*.safetensors")) or any(folder.glob("*.bin")):
+            return str(folder)
+    raise HTTPException(409, f"Download {repo_id} from ModelScope first: open it under Models → Find models and choose Download all.")
+
+
 class TrainConfig(BaseModel):
     base_model: str = "Qwen/Qwen3-4B-Instruct-2507"
+    # The repo id when base_model was swapped for its cached folder (ModelScope).
+    source_id: str | None = None
     dataset: str = "mlabonne/FineTome-100k"
     dataset_split: str = "train"
     # Hugging Face subset, for datasets that have several (e.g. openai/gsm8k "main").
@@ -70,17 +84,20 @@ def start(cfg: TrainConfig):
     if trainer == "mlx" and cfg.method == "full":
         raise HTTPException(400, "Full fine-tuning on Apple Silicon is not supported yet; choose LoRA.")
 
+    if sources.modelscope() and not Path(cfg.base_model).expanduser().exists():
+        cfg.source_id, cfg.base_model = cfg.base_model, cached_snapshot(cfg.base_model)
+
     dataset = Path(cfg.dataset).expanduser()
     if cfg.eval_dataset is None and dataset.suffix == ".jsonl" and dataset.with_suffix(".eval.jsonl").is_file():
         cfg.eval_dataset = str(dataset.with_suffix(".eval.jsonl"))
 
-    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(cfg.name or cfg.base_model)
+    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(cfg.name or cfg.source_id or cfg.base_model)
     out = runs_dir() / run_id
     out.mkdir(parents=True)
     cfg.backend, cfg.output_dir = trainer, str(out)
     (out / "config.json").write_text(cfg.model_dump_json(indent=2))
 
-    job = registry.create("train", cfg.name or f"{cfg.base_model.split('/')[-1]} on {cfg.dataset.split('/')[-1]}")
+    job = registry.create("train", cfg.name or f"{(cfg.source_id or cfg.base_model).split('/')[-1]} on {cfg.dataset.split('/')[-1]}")
     job.result["run_id"] = run_id
     job.progress = 0.0
     registry.run_worker(job, "temper_engine.train_worker", str(out / "config.json"))
@@ -97,7 +114,7 @@ def list_runs():
         cfg = json.loads(cfg_file.read_text())
         runs.append({
             "id": d.name,
-            "base_model": cfg.get("base_model"),
+            "base_model": cfg.get("source_id") or cfg.get("base_model"),
             "dataset": cfg.get("dataset"),
             "backend": cfg.get("backend"),
             "adapter": str(d / "adapter") if (d / "adapter").is_dir() else None,

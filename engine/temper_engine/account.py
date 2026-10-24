@@ -15,6 +15,8 @@ from huggingface_hub import HfApi, constants, get_token
 from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 from pydantic import BaseModel
 
+from . import sources
+
 router = APIRouter(prefix="/api/hf", tags=["account"])
 
 
@@ -73,8 +75,10 @@ def delete_token():
 @router.get("/access")
 def access(repo_id: str):
     """Whether this machine's token can download `repo_id`, and what to do if not."""
-    url = f"https://huggingface.co/{repo_id}"
     has_token = bool(get_token())
+    if sources.modelscope():  # public ModelScope repos need no account
+        return {"access": True, "gated": False, "has_token": has_token, "url": sources.ms_page(repo_id)}
+    url = f"https://huggingface.co/{repo_id}"
     try:
         HfApi().auth_check(repo_id)
         return {"access": True, "gated": False, "has_token": has_token, "url": url}

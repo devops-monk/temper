@@ -1,6 +1,7 @@
 import { ChevronDown, Download, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { RepoAccess } from "../components/HfAccount";
+import { SOURCE_NAME, useHubSource } from "../components/HubSource";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Toggle, cx } from "../components/ui";
 import { api } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
@@ -406,12 +407,13 @@ export function ModelsPage() {
   const [tab, setTab] = useState<"find" | "local">("local");
   const runtime = useApp((s) => s.runtime);
   const refreshRuntime = useApp((s) => s.refreshRuntime);
+  const [hub] = useHubSource();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Models"
-        description="Download open-weight models from Hugging Face and load them for chat."
+        description={`Download open-weight models from ${SOURCE_NAME[hub?.source ?? "huggingface"]} and load them for chat.`}
         actions={
           runtime?.state === "ready" && (
             <Button size="sm" variant="ghost" onClick={async () => { await api("/api/runtime/unload", { method: "POST" }); void refreshRuntime(); }}>

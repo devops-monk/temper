@@ -2,6 +2,7 @@ import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { HfAccount } from "../components/HfAccount";
+import { HubSource } from "../components/HubSource";
 import { LicensesDialog } from "../components/Licenses";
 import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
@@ -187,6 +188,8 @@ export function SettingsPage() {
               </div>
             </Section>
           )}
+
+          <HubSource ready={engine?.status === "running"} />
 
           <HfAccount ready={engine?.status === "running"} />
 

@@ -1,20 +1,21 @@
-"""Hugging Face Hub: search, inspect repos, list the local cache and download files."""
+"""Model hub: search, inspect repos, list the local cache and download files, from the source chosen in Settings."""
 
 from __future__ import annotations
 
 import fnmatch
 import re
 
+import httpx
+
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi, scan_cache_dir
 from huggingface_hub.utils import HfHubHTTPError
 from pydantic import BaseModel
 
-from . import downloads
+from . import downloads, sources
 from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/models", tags=["models"])
-api = HfApi()
 
 SPLIT = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$")
 
@@ -39,8 +40,14 @@ def group_gguf(files: list[dict]) -> list[dict]:
 
 @router.get("/search")
 def search(q: str = "", author: str | None = None, sort: str = "downloads", limit: int = 30, gguf: bool = False):
+    if sources.modelscope():
+        try:
+            return sources.ms_search(q, author, sort, limit, gguf)
+        except (httpx.HTTPError, sources.NotAvailable) as exc:
+            raise HTTPException(502, f"ModelScope search failed: {exc}") from exc
     try:
-        models = api.list_models(
+        # A new client each time: the endpoint changes when you pick a mirror.
+        models = HfApi().list_models(
             search=q or None,
             author=author or None,
             sort=sort,
@@ -63,19 +70,29 @@ def search(q: str = "", author: str | None = None, sort: str = "downloads", limi
         ]
     except HfHubHTTPError as exc:
         raise HTTPException(502, f"Hugging Face search failed: {exc}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Couldn't reach {sources.endpoint()}: {exc}") from exc
+
+
+def list_files(repo_id: str) -> list[dict]:
+    """Every file in a repo with its size, from the active source."""
+    if sources.modelscope():
+        return sources.ms_files(repo_id)
+    info = HfApi().model_info(repo_id, files_metadata=True)
+    return [{"name": s.rfilename, "size": s.size or 0} for s in info.siblings or []]
 
 
 @router.get("/repo")
 def repo_files(id: str):
     """Files in a repo with sizes, so the UI can offer a specific GGUF quant."""
     try:
-        info = api.model_info(id, files_metadata=True)
-    except HfHubHTTPError as exc:
+        files = list_files(id)
+    except sources.NotAvailable as exc:
+        raise HTTPException(404, f"{id} isn't on ModelScope, or it's private. Many models are published there under another name; search for it.") from exc
+    except (HfHubHTTPError, httpx.HTTPError) as exc:
         raise HTTPException(404, f"Could not open {id}: {exc}") from exc
-    files = [{"name": s.rfilename, "size": s.size or 0} for s in info.siblings or []]
     return {
         "id": id,
-        "gated": bool(info.gated),
         "files": files,
         "gguf": group_gguf(files),
     }
@@ -115,8 +132,7 @@ class DownloadRequest(BaseModel):
 
 
 def _download(job: Job, req: DownloadRequest) -> None:
-    info = api.model_info(req.repo_id, files_metadata=True)
-    files = [(s.rfilename, s.size or 0) for s in info.siblings or [] if not req.patterns or any(fnmatch.fnmatch(s.rfilename, p) for p in req.patterns)]
+    files = [(f["name"], f["size"]) for f in list_files(req.repo_id) if not req.patterns or any(fnmatch.fnmatch(f["name"], p) for p in req.patterns)]
     if not files:
         raise ValueError("No files in the repo match the selection")
     downloads.download(job, req.repo_id, files)
