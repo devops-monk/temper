@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
+import { Storage } from "../components/Storage";
 import { LicensesDialog } from "../components/Licenses";
 import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
@@ -192,6 +193,8 @@ export function SettingsPage() {
           <HubSource ready={engine?.status === "running"} />
 
           <HfAccount ready={engine?.status === "running"} />
+
+          <Storage ready={engine?.status === "running"} />
 
           <Diagnostics ready={engine?.status === "running"} installed={setup?.installed ?? "chat"} onReinstall={(profile, clean) => void reinstall(profile, clean)} />
 

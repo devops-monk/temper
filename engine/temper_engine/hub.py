@@ -12,7 +12,7 @@ from huggingface_hub import HfApi, scan_cache_dir
 from huggingface_hub.utils import HfHubHTTPError
 from pydantic import BaseModel
 
-from . import downloads, sources
+from . import downloads, sources, storage
 from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -103,7 +103,7 @@ def local_models():
     from . import library  # imports hub
 
     try:
-        repos = scan_cache_dir().repos
+        repos = scan_cache_dir(storage.models_dir()).repos  # it binds the default folder when imported
     except Exception:  # no cache yet: a new install, or nothing downloaded
         repos = []
     models = []

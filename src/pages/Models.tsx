@@ -1,4 +1,4 @@
-import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
+import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pause, Play, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogView } from "../components/Catalog";
 import { RepoAccess } from "../components/HfAccount";
@@ -336,6 +336,16 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
     go("train");
   }
 
+  async function deleteModel(m: LocalModel) {
+    if (!confirm(`Delete ${m.id}? This frees ${bytes(m.size)}. You can download it again later.`)) return;
+    await api(`/api/models/local?repo_id=${encodeURIComponent(m.id)}`, { method: "DELETE" }).then(load, (e: Error) => alert(e.message));
+  }
+
+  async function deleteFile(m: LocalModel, f: RepoFile) {
+    if (!confirm(`Delete ${quantLabel(f.name)} of ${m.id}? This frees ${bytes(f.size)}.`)) return;
+    await api("/api/models/local/delete-files", { json: { repo_id: m.id, files: f.parts } }).then(load, (e: Error) => alert(e.message));
+  }
+
   async function forget(path: string) {
     await api(`/api/models/import?path=${encodeURIComponent(path)}`, { method: "DELETE" });
     load();
@@ -365,6 +375,11 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
                       <X className="size-3.5" aria-label="Remove from library" />
                     </button>
                   )}
+                  {!m.imported && (
+                    <button className="hover:text-danger" onClick={() => void deleteModel(m)} title="Delete this model from disk">
+                      <Trash2 className="size-3.5" aria-label={`Delete ${m.id}`} />
+                    </button>
+                  )}
                 </span>
               </div>
               {m.imported && <p className="mt-0.5 truncate font-mono text-[11.5px] text-muted" title={m.path ?? ""}>{m.path}</p>}
@@ -377,11 +392,18 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
                       <span className="font-mono text-[12px]">
                         {quantLabel(f.name)} <span className="font-sans text-muted">{bytes(f.size)}</span>
                       </span>
+                      <span className="flex items-center gap-2">
                       {f.complete ? (
                         <LoadButton path={f.path!} name={f.name.split("/").pop()!} />
                       ) : (
                         <span className="text-[12px] text-muted">{f.parts.length} parts {m.imported ? "found" : "downloaded"}; {m.imported ? "put the rest beside it" : "download the rest"} to load it</span>
                       )}
+                      {!m.imported && m.gguf.length > 1 && (
+                        <button className="text-muted hover:text-danger" onClick={() => void deleteFile(m, f)} title={`Delete ${quantLabel(f.name)}`}>
+                          <Trash2 className="size-3.5" aria-label={`Delete ${quantLabel(f.name)}`} />
+                        </button>
+                      )}
+                      </span>
                     </div>
                   ))}
                 </div>

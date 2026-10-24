@@ -10,9 +10,7 @@ the library, chat, the memory estimate and training treat them like any other ca
 
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
@@ -21,7 +19,7 @@ from fastapi import APIRouter, HTTPException
 from huggingface_hub import constants
 from pydantic import BaseModel
 
-from . import home
+from . import prefs
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])
 
@@ -38,20 +36,9 @@ class HubSettings(BaseModel):
     mirror: str = DEFAULT_MIRROR
 
 
-def _file() -> Path:
-    return home() / "settings.json"
-
-
-def _all() -> dict:
-    try:
-        return json.loads(_file().read_text())
-    except (OSError, ValueError):
-        return {}
-
-
 def settings() -> HubSettings:
     try:
-        return HubSettings(**_all().get("hub", {}))
+        return HubSettings(**prefs.load().get("hub", {}))
     except ValueError:
         return HubSettings()
 
@@ -98,9 +85,7 @@ def get_source():
 @router.put("/source")
 def set_source(s: HubSettings):
     s.mirror = _clean_mirror(s.mirror)
-    data = _all()
-    data["hub"] = s.model_dump()
-    _file().write_text(json.dumps(data, indent=2))
+    prefs.update("hub", s.model_dump())
     apply(s)
     return get_source()
 
