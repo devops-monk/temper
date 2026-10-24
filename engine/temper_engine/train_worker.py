@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import formats
+from . import chat_render, formats
 from .jobs import emit_from_worker as emit
 
 # ---------------------------------------------------------------- dataset helpers
@@ -91,7 +91,15 @@ def train_gpu(cfg: dict, out: Path) -> None:
         )
 
     emit("phase", name="Preparing dataset")
-    render = lambda convs: [c if isinstance(c, str) else tokenizer.apply_chat_template(c, tokenize=False) for c in convs]  # noqa: E731
+    def chat_text(conv: list[dict] | str) -> str:
+        if isinstance(conv, str):
+            return conv
+        try:
+            return "".join(chat_render.render(tokenizer, conv))
+        except ValueError:  # doesn't end with an assistant reply
+            return tokenizer.apply_chat_template(conv, tokenize=False)
+
+    render = lambda convs: [chat_text(c) for c in convs]  # noqa: E731
     fmt, convs = conversations(cfg, load_rows(cfg))
     texts = render(convs)
     dataset = Dataset.from_dict({"text": texts})
@@ -225,7 +233,8 @@ def train_mlx(cfg: dict, out: Path) -> None:
         "lora_parameters": {"rank": cfg["lora_r"], "scale": cfg["lora_alpha"] / cfg["lora_r"], "dropout": cfg["lora_dropout"]},
     }))
     cmd = [
-        sys.executable, "-m", "mlx_lm", "lora",
+        # mlx-lm's trainer, with chat rows rendered as the model sees them at inference.
+        sys.executable, "-m", "temper_engine.mlx_lora",
         "--model", cfg["base_model"],
         "--train",
         "--config", str(lora_cfg),
@@ -241,6 +250,8 @@ def train_mlx(cfg: dict, out: Path) -> None:
         "--steps-per-report", "1",
         "--seed", str(cfg["seed"]),
     ]
+    if fmt != "text":
+        cmd.append("--mask-prompt")  # loss on the replies only, not on the prompts
     emit("phase", name="Training", total_steps=iters)
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)

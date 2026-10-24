@@ -187,3 +187,22 @@ def test_render_previews_mapped_rows(tmp_path):
     assert "error" in body["rows"][0] and body["rows"][1]["conversation"][0]["content"] == "Q1"
     preview = client.get("/api/datasets/preview", headers=AUTH, params={"source": str(data)}).json()
     assert preview["format"] is None and preview["suggested"]["mapping"] == {"instruction": "question", "output": "answer"}
+
+
+class _ThinkTemplate:
+    """Mimics Qwen3's template: history assistant turns get an empty think block, the generation prompt doesn't."""
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+        out = ""
+        for m in messages:
+            body = f"<think>\n\n</think>\n\n{m['content']}" if m["role"] == "assistant" else m["content"]
+            out += f"<|im_start|>{m['role']}\n{body}<|im_end|>\n"
+        return out + ("<|im_start|>assistant\n" if add_generation_prompt else "")
+
+
+def test_training_text_matches_inference_prompt():
+    from temper_engine.chat_render import render
+
+    prompt, completion = render(_ThinkTemplate(), [{"role": "user", "content": "2+2?"}, {"role": "assistant", "content": "4"}])
+    assert prompt == "<|im_start|>user\n2+2?<|im_end|>\n<|im_start|>assistant\n"
+    assert completion == "4<|im_end|>\n"  # no think block the model would never see at inference

@@ -36,6 +36,18 @@ function Slider({ label, value, min, max, step, onChange }: { label: string; val
   );
 }
 
+/**
+ * Markdown lets `*` emphasise inside a word, so "4*3 = 12 … 6*1.5" renders half a sentence in
+ * italics. Escape a `*` with a letter or digit on both sides, outside code; real emphasis always has
+ * a space or punctuation on one side.
+ */
+function literalAsterisks(markdown: string): string {
+  return markdown
+    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g)
+    .map((part, i) => (i % 2 ? part : part.replace(/([\p{L}\p{N}])\*(?=[\p{L}\p{N}])/gu, "$1\\*")))
+    .join("");
+}
+
 export function ChatPage() {
   const { runtime, go } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -130,7 +142,7 @@ export function ChatPage() {
                     <Notice tone="error">{m.content}</Notice>
                   ) : (
                     <div className="prose-chat leading-relaxed">
-                      {m.content ? <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown> : <span className="animate-pulse-dot text-muted">Thinking…</span>}
+                      {m.content ? <Markdown remarkPlugins={[remarkGfm]}>{literalAsterisks(m.content)}</Markdown> : <span className="animate-pulse-dot text-muted">Thinking…</span>}
                     </div>
                   )}
                   {m.role === "assistant" && m.content && !(busy && i === messages.length - 1) && (
