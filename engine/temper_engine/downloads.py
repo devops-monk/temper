@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 from huggingface_hub import constants, get_hf_file_metadata, get_token, hf_hub_download, hf_hub_url
+from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 
 from .jobs import Job
 
@@ -67,7 +68,13 @@ def fetch(job: Job, repo_id: str, filename: str, progress: Progress) -> str:
     url = hf_hub_url(repo_id, filename)
     token = get_token()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    meta = get_hf_file_metadata(url, token=token)
+    try:
+        meta = get_hf_file_metadata(url, token=token)
+    except GatedRepoError as e:
+        hint = "then download again" if token else "then add a Hugging Face token in Settings"
+        raise RuntimeError(f"{repo_id} asks you to accept its licence first. Accept it at https://huggingface.co/{repo_id}, {hint}.") from e
+    except RepositoryNotFoundError as e:
+        raise RuntimeError(f"{repo_id} is private or doesn't exist." + ("" if token else " If it's yours, add a Hugging Face token in Settings.")) from e
     etag = (meta.etag or "").strip('"').removeprefix("W/").strip('"')
     sha256 = etag if re.fullmatch(r"[0-9a-f]{64}", etag) else None
     blobs = repo_cache(repo_id) / "blobs"

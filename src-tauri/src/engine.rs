@@ -288,6 +288,9 @@ fn engine_command(app: &AppHandle, launcher: &Launcher, port: u16, token: &str) 
     cmd.args(["--port", &port.to_string(), "--parent-pid", &std::process::id().to_string()])
         .env("TEMPER_TOKEN", token)
         .stdin(Stdio::null());
+    if let Some(hf) = crate::secrets::hf_token() {
+        cmd.env("HF_TOKEN", hf);
+    }
     if let Ok(data) = app.path().app_data_dir() {
         cmd.env("TEMPER_HOME", data);
     }

@@ -1,4 +1,5 @@
 mod engine;
+mod secrets;
 mod setup;
 
 use engine::{Engine, EngineInfo};
@@ -22,6 +23,18 @@ fn engine_restart(app: tauri::AppHandle, engine: State<'_, Engine>) -> EngineInf
 fn setup_install(app: tauri::AppHandle, engine: State<'_, Engine>, profile: Profile, clean: bool) -> EngineInfo {
     engine.install(&app, profile, clean);
     engine.info()
+}
+
+/// Saves the Hugging Face token in the OS keychain; the engine reads it as HF_TOKEN on its next start
+/// (the UI also hands it to the running engine, so nothing restarts).
+#[tauri::command]
+fn hf_token_save(token: String) -> Result<(), String> {
+    secrets::set_hf_token(token.trim())
+}
+
+#[tauri::command]
+fn hf_token_delete() -> Result<(), String> {
+    secrets::delete_hf_token()
 }
 
 /// `--setup chat|train [--clean]` installs the engine without showing a window, printing the log,
@@ -107,7 +120,7 @@ pub fn run() {
             app.state::<Engine>().start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![engine_info, engine_restart, setup_install])
+        .invoke_handler(tauri::generate_handler![engine_info, engine_restart, setup_install, hf_token_save, hf_token_delete])
         .build(tauri::generate_context!())
         .expect("failed to build Temper");
 

@@ -46,7 +46,8 @@ def search(q: str = "", author: str | None = None, sort: str = "downloads", limi
             sort=sort,
             limit=min(limit, 100),
             filter="gguf" if gguf else None,
-            full=False,
+            # Without expand the Hub leaves out the date and gating.
+            expand=["downloads", "likes", "lastModified", "pipeline_tag", "tags", "gated"],
         )
         return [
             {
