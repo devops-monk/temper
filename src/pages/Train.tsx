@@ -13,6 +13,7 @@ interface Form {
   base_model: string;
   dataset: string;
   dataset_split: string;
+  dataset_config: string;
   dataset_format: "auto" | "messages" | "sharegpt" | "alpaca" | "text";
   max_samples: number;
   method: "qlora" | "lora" | "full";
@@ -32,6 +33,7 @@ const DEFAULTS: Form = {
   base_model: "Qwen/Qwen3-4B-Instruct-2507",
   dataset: "mlabonne/FineTome-100k",
   dataset_split: "train",
+  dataset_config: "",
   dataset_format: "auto",
   max_samples: 2000,
   method: "qlora",
@@ -177,7 +179,8 @@ export function TrainPage() {
 
   useEffect(() => {
     if (pendingDataset) {
-      set("dataset")(pendingDataset);
+      const { source, split = "train", config = "" } = pendingDataset;
+      setForm((f) => ({ ...f, dataset: source, dataset_split: split, dataset_config: config }));
       setPendingDataset(null);
     }
   }, [pendingDataset, setPendingDataset]);
@@ -272,6 +275,16 @@ export function TrainPage() {
                 </Field>
                 <NumberField label="Max rows" value={form.max_samples} onChange={set("max_samples")} />
               </div>
+              {!/^[~/]/.test(form.dataset) && !/^[A-Za-z]:\\/.test(form.dataset) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Subset" hint="Only for datasets with several.">
+                    <Input value={form.dataset_config} onChange={(e) => set("dataset_config")(e.target.value)} placeholder="default" spellCheck={false} />
+                  </Field>
+                  <Field label="Split">
+                    <Input value={form.dataset_split} onChange={(e) => set("dataset_split")(e.target.value)} spellCheck={false} />
+                  </Field>
+                </div>
+              )}
             </div>
           </Section>
 

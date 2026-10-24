@@ -13,53 +13,49 @@ import sys
 import time
 from pathlib import Path
 
+from . import formats
 from .jobs import emit_from_worker as emit
 
 # ---------------------------------------------------------------- dataset helpers
 
-ROLE_MAP = {"human": "user", "user": "user", "gpt": "assistant", "assistant": "assistant", "system": "system", "model": "assistant"}
-
-
-def load_rows(cfg: dict) -> list[dict]:
+def load_rows(cfg: dict, source: str | None = None) -> list[dict]:
     from datasets import load_dataset
 
-    src = cfg["dataset"]
+    src = source or cfg["dataset"]
     path = Path(src).expanduser()
     if path.exists():
         kind = {".csv": "csv", ".parquet": "parquet"}.get(path.suffix.lower(), "json")
         ds = load_dataset(kind, data_files=str(path), split="train")
     else:
-        ds = load_dataset(src, split=cfg.get("dataset_split") or "train")
-    if cfg.get("max_samples"):
+        ds = load_dataset(src, cfg.get("dataset_config") or None, split=cfg.get("dataset_split") or "train")
+    if cfg.get("max_samples") and source is None:
         ds = ds.shuffle(seed=cfg["seed"]).select(range(min(cfg["max_samples"], len(ds))))
     return list(ds)
 
 
 def detect_format(row: dict) -> str:
-    if "messages" in row:
-        return "messages"
-    if "conversations" in row:
-        return "sharegpt"
-    if "instruction" in row and "output" in row:
-        return "alpaca"
-    if "text" in row:
-        return "text"
-    raise ValueError(f"Could not detect the dataset format from columns {sorted(row)}. Pick a format explicitly.")
+    fmt = formats.detect_format(list(row))
+    if fmt is None:
+        raise ValueError(f"Could not detect the dataset format from columns {sorted(row)}. Prepare it on the Datasets page first.")
+    return fmt
 
 
 def to_messages(row: dict, fmt: str) -> list[dict] | str:
-    """Normalise one row to chat messages (or plain text for `text` datasets)."""
-    if fmt == "text":
-        return row["text"]
-    if fmt == "alpaca":
-        prompt = row["instruction"] + (f"\n\n{row['input']}" if row.get("input") else "")
-        return [{"role": "user", "content": prompt}, {"role": "assistant", "content": row["output"]}]
-    turns = row["messages"] if fmt == "messages" else row["conversations"]
+    return formats.to_messages(row, fmt)
+
+
+def conversations(cfg: dict, rows: list[dict]) -> tuple[str, list]:
+    """Normalise rows, skipping any that can't be used (e.g. no assistant reply)."""
+    fmt = cfg["dataset_format"] if cfg["dataset_format"] != "auto" else detect_format(rows[0])
     out = []
-    for t in turns:
-        role = ROLE_MAP.get(t.get("role") or t.get("from"), "user")
-        out.append({"role": role, "content": t.get("content") if "content" in t else t.get("value", "")})
-    return out
+    for row in rows:
+        try:
+            out.append(to_messages(row, fmt))
+        except (ValueError, TypeError, KeyError, AttributeError):
+            continue
+    if not out:
+        raise ValueError(f"No usable rows in {fmt} format.")
+    return fmt, out
 
 
 # ---------------------------------------------------------------- PyTorch GPUs (CUDA / ROCm / XPU)
@@ -95,14 +91,15 @@ def train_gpu(cfg: dict, out: Path) -> None:
         )
 
     emit("phase", name="Preparing dataset")
-    rows = load_rows(cfg)
-    fmt = cfg["dataset_format"] if cfg["dataset_format"] != "auto" else detect_format(rows[0])
-    texts = []
-    for row in rows:
-        conv = to_messages(row, fmt)
-        texts.append(conv if isinstance(conv, str) else tokenizer.apply_chat_template(conv, tokenize=False))
+    render = lambda convs: [c if isinstance(c, str) else tokenizer.apply_chat_template(c, tokenize=False) for c in convs]  # noqa: E731
+    fmt, convs = conversations(cfg, load_rows(cfg))
+    texts = render(convs)
     dataset = Dataset.from_dict({"text": texts})
-    emit("dataset", rows=len(texts), format=fmt, sample=texts[0][:1500])
+    eval_dataset = None
+    if cfg.get("eval_dataset"):
+        _, eval_convs = conversations(cfg, load_rows(cfg, cfg["eval_dataset"]))
+        eval_dataset = Dataset.from_dict({"text": render(eval_convs)})
+    emit("dataset", rows=len(texts), format=fmt, sample=texts[0][:1500], eval_rows=len(eval_dataset) if eval_dataset else 0)
 
     class Reporter(TrainerCallback):
         def __init__(self) -> None:
@@ -112,6 +109,8 @@ def train_gpu(cfg: dict, out: Path) -> None:
             emit("phase", name="Training", total_steps=state.max_steps)
 
         def on_log(self, args, state, control, logs=None, **kw):
+            if logs and "eval_loss" in logs:
+                emit("eval", step=state.global_step, val_loss=logs["eval_loss"])
             if not logs or "loss" not in logs:
                 return
             elapsed = time.time() - self.started
@@ -148,11 +147,16 @@ def train_gpu(cfg: dict, out: Path) -> None:
     # TRL renamed max_seq_length to max_length; pass whichever this version accepts.
     params = inspect.signature(SFTConfig.__init__).parameters
     args["max_length" if "max_length" in params else "max_seq_length"] = cfg["max_seq_length"]
+    if eval_dataset is not None:
+        # transformers renamed evaluation_strategy to eval_strategy.
+        args["eval_strategy" if "eval_strategy" in params else "evaluation_strategy"] = "steps"
+        args["eval_steps"] = max(1, (cfg["max_steps"] or 100) // 10)
 
     trainer = SFTTrainer(
         model=model,
         processing_class=tokenizer,
         train_dataset=dataset,
+        eval_dataset=eval_dataset,
         args=SFTConfig(**args),
         callbacks=[Reporter()],
     )
@@ -195,20 +199,21 @@ def parse_mlx_line(line: str) -> dict | None:
 
 def train_mlx(cfg: dict, out: Path) -> None:
     emit("phase", name="Preparing dataset")
-    rows = load_rows(cfg)
-    fmt = cfg["dataset_format"] if cfg["dataset_format"] != "auto" else detect_format(rows[0])
-    records = []
-    for row in rows:
-        conv = to_messages(row, fmt)
-        records.append({"text": conv} if isinstance(conv, str) else {"messages": conv})
+    fmt, convs = conversations(cfg, load_rows(cfg))
+    records = [formats.record(c) for c in convs]
     random.Random(cfg["seed"]).shuffle(records)
-    n_valid = max(1, len(records) // 20)
+    if cfg.get("eval_dataset"):
+        valid = [formats.record(c) for c in conversations(cfg, load_rows(cfg, cfg["eval_dataset"]))[1]]
+        n_valid = 0
+    else:
+        n_valid = max(1, len(records) // 20)  # hold out 5% to report validation loss
+        valid = records[:n_valid]
     data_dir = out / "data"
     data_dir.mkdir(exist_ok=True)
-    for name, chunk in (("valid", records[:n_valid]), ("train", records[n_valid:] or records)):
+    for name, chunk in (("valid", valid), ("train", records[n_valid:] or records)):
         with open(data_dir / f"{name}.jsonl", "w", encoding="utf-8") as f:
             f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in chunk)
-    emit("dataset", rows=len(records), format=fmt, sample=json.dumps(records[0], ensure_ascii=False)[:1500])
+    emit("dataset", rows=len(records) - n_valid, format=fmt, sample=json.dumps(records[0], ensure_ascii=False)[:1500], eval_rows=len(valid))
 
     steps_per_epoch = max(1, (len(records) - n_valid) // cfg["batch_size"])
     iters = cfg["max_steps"] or int(steps_per_epoch * cfg["epochs"])

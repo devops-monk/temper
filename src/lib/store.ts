@@ -4,6 +4,13 @@ import type { EngineInfo, Job, Page, RuntimeStatus, SystemInfo } from "./types";
 
 type Theme = "system" | "light" | "dark";
 
+/** A Hugging Face id or local path, with the subset and split to train on when it has several. */
+export interface PendingDataset {
+  source: string;
+  split?: string;
+  config?: string;
+}
+
 const PAGES: Page[] = ["chat", "models", "train", "datasets", "recipes", "export", "connect", "settings"];
 
 /** `#train` opens the Train page; used by deep links and screenshots. */
@@ -33,10 +40,10 @@ interface AppState {
   jobs: Job[];
   theme: Theme;
   /** Dataset picked on the Datasets page, handed to the training form. */
-  pendingDataset: string | null;
+  pendingDataset: PendingDataset | null;
   go: (page: Page) => void;
   setTheme: (theme: Theme) => void;
-  setPendingDataset: (source: string | null) => void;
+  setPendingDataset: (dataset: PendingDataset | null) => void;
   refreshEngine: () => Promise<void>;
   refreshSystem: () => Promise<void>;
   refreshRuntime: () => Promise<void>;

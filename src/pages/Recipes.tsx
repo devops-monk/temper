@@ -501,7 +501,7 @@ function RecipeRun({ job }: { job: Job }) {
       {result?.rows && result.columns && <RowsTable columns={result.columns} rows={result.rows} />}
       {state === "done" && output && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="primary" onClick={() => { setPendingDataset(output); go("train"); }}>
+          <Button size="sm" variant="primary" onClick={() => { setPendingDataset({ source: output }); go("train"); }}>
             <FlaskConical className="size-3.5" /> Train on these {result?.count ?? ""} rows
           </Button>
           <span className="truncate font-mono text-[11.5px] text-muted" title={output}>
@@ -566,7 +566,7 @@ function Gallery({ templates, saved, datasets, onOpen, onDelete }: { templates: 
                 <span className="text-[12.5px] text-muted tabular-nums">
                   {d.rows} rows · {bytes(d.size)}
                 </span>
-                <Button size="sm" onClick={() => { setPendingDataset(d.path); go("train"); }}>
+                <Button size="sm" onClick={() => { setPendingDataset({ source: d.path }); go("train"); }}>
                   <FlaskConical className="size-3.5" /> Train
                 </Button>
               </div>

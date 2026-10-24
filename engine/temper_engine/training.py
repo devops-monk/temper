@@ -22,6 +22,8 @@ class TrainConfig(BaseModel):
     base_model: str = "Qwen/Qwen3-4B-Instruct-2507"
     dataset: str = "mlabonne/FineTome-100k"
     dataset_split: str = "train"
+    # Hugging Face subset, for datasets that have several (e.g. openai/gsm8k "main").
+    dataset_config: str | None = None
     # auto: detect messages / conversations / instruction+output / text columns.
     dataset_format: Literal["auto", "messages", "sharegpt", "alpaca", "text"] = "auto"
     max_samples: int | None = Field(default=2000, ge=1)
@@ -38,6 +40,8 @@ class TrainConfig(BaseModel):
     warmup_steps: int = Field(default=5, ge=0)
     seed: int = 3407
     name: str | None = None
+    # Held-out rows for validation loss. A prepared `x.jsonl` with a sibling `x.eval.jsonl` uses it automatically.
+    eval_dataset: str | None = None
     # Set by the engine.
     backend: str | None = None
     output_dir: str | None = None
@@ -58,15 +62,17 @@ def start(cfg: TrainConfig):
     info = probe()
     trainer = info["capabilities"]["trainer"]
     if trainer is None:
-        if info["backend"] == "metal":
-            hint = "Add training support in Settings."
-        elif info["backend"] in ("cuda", "rocm"):
+        if info["backend"] in ("metal", "cuda", "rocm"):
             hint = "Add training support in Settings."
         else:
             hint = "Training needs an NVIDIA, AMD or Intel GPU, or an Apple Silicon Mac."
         raise HTTPException(409, f"No trainer is available on this machine. {hint}")
     if trainer == "mlx" and cfg.method == "full":
         raise HTTPException(400, "Full fine-tuning on Apple Silicon is not supported yet; choose LoRA.")
+
+    dataset = Path(cfg.dataset).expanduser()
+    if cfg.eval_dataset is None and dataset.suffix == ".jsonl" and dataset.with_suffix(".eval.jsonl").is_file():
+        cfg.eval_dataset = str(dataset.with_suffix(".eval.jsonl"))
 
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(cfg.name or cfg.base_model)
     out = runs_dir() / run_id

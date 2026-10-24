@@ -145,3 +145,45 @@ def test_recipe_config_from_file_seed(tmp_path):
     config = build_config(recipe, tmp_path)
     assert config["seed_config"] == {"source": {"seed_type": "local", "path": str(tmp_path / "rows.jsonl")}, "sampling_strategy": "shuffle"}
     assert config["model_configs"][0]["inference_parameters"] == {"temperature": 0.5}
+
+
+def test_guess_mapping_for_common_column_names():
+    from temper_engine.formats import guess_mapping
+
+    assert guess_mapping(["question", "answer", "id"]) == ("alpaca", {"instruction": "question", "output": "answer"})
+    assert guess_mapping(["prompt", "completion", "context"]) == ("alpaca", {"instruction": "prompt", "output": "completion", "input": "context"})
+    assert guess_mapping(["conversation"]) == ("messages", {"messages": "conversation"})
+    assert guess_mapping(["id", "label"]) is None
+
+
+def test_mapping_system_prompt_and_csv_turns():
+    from temper_engine.formats import to_messages
+
+    row = {"q": "Hi?", "a": "Hello."}
+    conv = to_messages(row, "alpaca", {"instruction": "q", "output": "a"}, "Be brief.")
+    assert conv == [{"role": "system", "content": "Be brief."}, {"role": "user", "content": "Hi?"}, {"role": "assistant", "content": "Hello."}]
+    csv_row = {"chat": json.dumps([{"from": "human", "value": "2+2?"}, {"from": "gpt", "value": "4"}])}
+    assert to_messages(csv_row, "sharegpt", {"conversations": "chat"})[1] == {"role": "assistant", "content": "4"}
+
+
+def test_clean_dedupes_filters_and_splits():
+    from temper_engine.formats import CleanOptions, clean
+
+    rows = [{"instruction": f"question {i}", "output": "an answer that is long enough"} for i in range(20)]
+    rows += [{"instruction": "Question 0 ", "output": "an  answer that is long enough"}]  # duplicate after folding
+    rows += [{"instruction": "q", "output": "ok"}]  # too short
+    rows += [{"instruction": "no reply", "output": ""}]  # malformed
+    result = clean(rows, "alpaca", None, None, CleanOptions(min_chars=20, eval_fraction=0.1))
+    assert result.stats == {"rows_in": 23, "malformed": 1, "duplicates": 1, "too_short": 1, "too_long": 0, "train": 18, "eval": 2}
+    assert len({json.dumps(c) for c in result.train + result.eval}) == 20
+
+
+def test_render_previews_mapped_rows(tmp_path):
+    data = tmp_path / "qa.jsonl"
+    data.write_text("\n".join(json.dumps({"question": f"Q{i}", "answer": f"A{i}" if i else ""}) for i in range(3)))
+    r = client.post("/api/datasets/render", headers=AUTH, json={"source": str(data), "format": "alpaca", "mapping": {"instruction": "question", "output": "answer"}})
+    body = r.json()
+    assert r.status_code == 200 and body["usable"] == 2
+    assert "error" in body["rows"][0] and body["rows"][1]["conversation"][0]["content"] == "Q1"
+    preview = client.get("/api/datasets/preview", headers=AUTH, params={"source": str(data)}).json()
+    assert preview["format"] is None and preview["suggested"]["mapping"] == {"instruction": "question", "output": "answer"}
