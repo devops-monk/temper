@@ -102,9 +102,15 @@ export interface HubModel {
 }
 
 export interface RepoFile {
+  /** The file, or a split GGUF's first part (llama.cpp loads the others from it). */
   name: string;
+  /** All parts together. */
   size: number;
   path?: string;
+  /** Every part's name; one entry for an unsplit file. */
+  parts: string[];
+  /** False while some parts of a split GGUF are missing. */
+  complete: boolean;
 }
 
 export interface LocalModel {

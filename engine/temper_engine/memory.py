@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import struct
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 
 GB = 1024**3
 MB = 1024**2
+SPLIT_PART = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$")
 
 
 # ------------------------------------------------------------------ model shape
@@ -368,12 +370,18 @@ def estimate_chat(req: ChatEstimate):
     try:
         if req.path:
             path = Path(req.path).expanduser()
-            shape, weights = gguf_shape_local(path), path.stat().st_size
+            # A split GGUF's header is in the first part; the weights are in all of them.
+            parts = sorted(path.parent.glob(SPLIT_PART.sub(r"-*-of-\2.gguf", path.name))) if SPLIT_PART.search(path.name) else [path]
+            shape, weights = gguf_shape_local(path), sum(p.stat().st_size for p in parts)
         elif req.repo_id and req.filename:
             from huggingface_hub import HfApi
 
             info = HfApi().model_info(req.repo_id, files_metadata=True)
-            size = next((s.size for s in info.siblings or [] if s.rfilename == req.filename), None)
+            sizes = {s.rfilename: s.size or 0 for s in info.siblings or []}
+            size = sizes.get(req.filename)
+            if size is not None and SPLIT_PART.search(req.filename):
+                stem = SPLIT_PART.sub("", req.filename)
+                size = sum(v for k, v in sizes.items() if SPLIT_PART.sub("", k) == stem)
             if size is None:
                 raise HTTPException(404, f"{req.filename} isn't in {req.repo_id}")
             shape, weights = gguf_shape_remote(req.repo_id, req.filename), size

@@ -119,8 +119,9 @@ temper/
 
 - [x] **2.1 Hugging Face search**: search by text, filter by author, sort by downloads, likes or recency.
 - [x] **2.2 Local library**: list models in the HF cache with size and last-used date.
-- [~] **2.3 Download manager**: background downloads with per-file progress and cancel. Still to do: byte-level progress, cancelling mid-file, an explicit resume button.
-- [~] **2.4 GGUF quant picker**: list every quant file in a repo (Q2_K … Q8_0, UD-dynamic quants, BF16) with size and an estimate of whether it fits in memory.
+- [x] **2.3 Download manager**: background downloads with byte-level progress, speed and time left. Pause stops mid-file and Resume continues from the partial file (HTTP Range into `blobs/<sha256>.temper-partial`), also after a failure or an engine restart; dropped connections retry with backoff. Finished files are checked against their SHA-256 and stored in the standard Hugging Face cache.
+- [x] **2.4 GGUF quant picker**: list every quant file in a repo (Q2_K … Q8_0, UD-dynamic quants, BF16) with size and an estimate of whether it fits in memory.
+  Split GGUFs (`-00001-of-00003`, often in a folder per quant) show as one entry with the total size and download together; the fit estimate uses the memory estimator (1.7).
 - [ ] **2.5 HF token and gated models**: store the token in the OS keychain and guide the user through gated-model access.
 - [ ] **2.6 ModelScope mirror**: alternative hub for users in regions where Hugging Face is slow or blocked.
 - [ ] **2.7 Model catalog**: curated cards for Qwen, Llama, Gemma, Mistral, gpt-oss, GLM, Kimi, DeepSeek, Phi and others, with recommended settings and chat templates.

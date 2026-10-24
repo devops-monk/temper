@@ -1,8 +1,8 @@
-import { ChevronDown, Download, Heart, Lock, Play, Search, X } from "lucide-react";
+import { ChevronDown, Download, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Toggle, cx } from "../components/ui";
 import { api } from "../lib/engine";
-import { bytes, compact, quantLabel, relativeDate } from "../lib/format";
+import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import type { Budget, Verdict } from "../components/MemoryEstimate";
 import type { HubModel, Job, LocalModel, RepoFile } from "../lib/types";
@@ -165,12 +165,15 @@ function RepoDetail({ id }: { id: string }) {
           return (
             <tr key={f.name} className="border-t border-line/70">
               <td className="py-1.5 pr-3 font-mono text-[12px]">{quantLabel(f.name)}</td>
-              <td className="py-1.5 pr-3 text-muted tabular-nums">{bytes(f.size)}</td>
+              <td className="py-1.5 pr-3 text-muted tabular-nums">
+                {bytes(f.size)}
+                {f.parts.length > 1 && <span className="text-muted/70"> in {f.parts.length} parts</span>}
+              </td>
               <td className="py-1.5 pr-3" title={f2.title}>
                 {f2.label && <Badge tone={f2.tone}>{f2.label}</Badge>}
               </td>
               <td className="py-1.5 text-right">
-                <Button size="sm" onClick={() => download([f.name], f.name)} disabled={started.has(f.name)}>
+                <Button size="sm" onClick={() => download(f.parts, f.name)} disabled={started.has(f.name)}>
                   <Download className="size-3.5" /> {started.has(f.name) ? "Downloading" : "Download"}
                 </Button>
               </td>
@@ -283,7 +286,11 @@ function LocalModels() {
                   <span className="font-mono text-[12px]">
                     {quantLabel(f.name)} <span className="font-sans text-muted">{bytes(f.size)}</span>
                   </span>
-                  <LoadButton path={f.path!} name={f.name.split("/").pop()!} />
+                  {f.complete ? (
+                    <LoadButton path={f.path!} name={f.name.split("/").pop()!} />
+                  ) : (
+                    <span className="text-[12px] text-muted">{f.parts.length} parts downloaded; download the rest to load it</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -298,30 +305,88 @@ function LocalModels() {
   );
 }
 
+interface DownloadStats {
+  received?: number;
+  total?: number;
+  speed?: number;
+  request?: { repo_id: string; patterns: string[] };
+}
+
+/** Active, paused and failed downloads. Pausing keeps the partial file, so Resume continues from it. */
 function Downloads() {
   const { jobs, refreshJobs } = useApp();
-  const active = jobs.filter((j) => j.kind === "download" && (j.status === "running" || Date.now() / 1000 - j.created < 600));
-  if (!active.length) return null;
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const downloads = jobs.filter((j) => j.kind === "download");
+  const running = downloads.some((j) => j.status === "running");
+  // A paused or failed download stays until resumed (a newer job with the same title) or dismissed.
+  const shown = downloads.filter((j) => {
+    if (dismissed.has(j.id)) return false;
+    if (j.status === "running") return true;
+    if (j.status === "done") return Date.now() / 1000 - j.created < 600;
+    return !downloads.some((o) => o.title === j.title && o.created > j.created);
+  });
+
+  // Byte counts move fast; refresh every second while something is downloading.
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => void refreshJobs(), 1000);
+    return () => clearInterval(id);
+  }, [running, refreshJobs]);
+
+  if (!shown.length) return null;
+
+  async function pause(id: string) {
+    await api(`/api/jobs/${id}/cancel`, { method: "POST" });
+    void refreshJobs();
+  }
+  async function resume(stats: DownloadStats) {
+    if (!stats.request) return;
+    await api("/api/models/download", { json: stats.request });
+    void refreshJobs();
+  }
+
   return (
     <div className="mx-7 mt-5 rounded-lg border border-line bg-surface px-4 py-3">
       <h2 className="mb-2 text-[13px] font-semibold">Downloads</h2>
-      <ul className="flex flex-col gap-2.5">
-        {active.map((j) => (
-          <li key={j.id} className="text-[13px]">
-            <div className="mb-1 flex items-center justify-between gap-3">
-              <span className="truncate">{j.title}</span>
-              <span className="flex shrink-0 items-center gap-2 text-muted">
-                {j.status === "running" ? `${Math.round((j.progress ?? 0) * 100)}%` : j.status === "done" ? "Done" : j.status === "failed" ? <span className="text-danger" title={j.error ?? ""}>Failed</span> : "Cancelled"}
-                {j.status === "running" && (
-                  <button aria-label="Cancel download" className="hover:text-text" onClick={async () => { await api(`/api/jobs/${j.id}/cancel`, { method: "POST" }); void refreshJobs(); }}>
-                    <X className="size-3.5" />
-                  </button>
-                )}
-              </span>
-            </div>
-            {j.status === "running" && <ProgressBar value={j.progress} />}
-          </li>
-        ))}
+      <ul className="flex flex-col gap-3">
+        {shown.map((j) => {
+          const st = j.result as DownloadStats;
+          const left = st.speed && st.total && st.received != null ? (st.total - st.received) / st.speed : null;
+          return (
+            <li key={j.id} className="text-[13px]">
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <span className="truncate">{j.title}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {j.status === "running" && (
+                    <Button size="sm" onClick={() => void pause(j.id)}>
+                      <Pause className="size-3.5" /> Pause
+                    </Button>
+                  )}
+                  {(j.status === "cancelled" || j.status === "failed") && st.request && (
+                    <Button size="sm" onClick={() => void resume(st)}>
+                      <Play className="size-3.5" /> Resume
+                    </Button>
+                  )}
+                  {j.status !== "running" && (
+                    <button aria-label="Dismiss" className="text-muted hover:text-text" onClick={() => setDismissed((d) => new Set(d).add(j.id))}>
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </span>
+              </div>
+              {j.status !== "done" && <ProgressBar value={j.progress} />}
+              <div className="mt-1 flex justify-between gap-3 text-[12px] text-muted tabular-nums">
+                <span>
+                  {st.total ? `${bytes(st.received ?? 0)} of ${bytes(st.total)}` : ""}
+                  {j.status === "running" && st.speed ? ` · ${bytes(st.speed)}/s` : ""}
+                </span>
+                <span className={cx(j.status === "failed" && "text-danger")} title={j.error ?? undefined}>
+                  {j.status === "running" ? (left != null ? `${duration(left)} left` : "Starting…") : j.status === "done" ? "Done" : j.status === "failed" ? (j.error ?? "Failed") : "Paused"}
+                </span>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -3,16 +3,38 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 
 from fastapi import APIRouter, HTTPException
-from huggingface_hub import HfApi, hf_hub_download, scan_cache_dir
+from huggingface_hub import HfApi, scan_cache_dir
 from huggingface_hub.utils import HfHubHTTPError
 from pydantic import BaseModel
 
+from . import downloads
 from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 api = HfApi()
+
+SPLIT = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$")
+
+
+def group_gguf(files: list[dict]) -> list[dict]:
+    """One entry per model file: split GGUFs (`x-00001-of-00003.gguf`) become a single entry with the
+    total size, every part's name, and the first part's name and path (llama.cpp loads the rest)."""
+    groups: dict[str, dict] = {}
+    for f in sorted(files, key=lambda f: f["name"]):
+        name = f["name"]
+        if not name.endswith(".gguf") or "mmproj" in name.lower():
+            continue
+        m = SPLIT.search(name)
+        key = SPLIT.sub(".gguf", name) if m else name
+        g = groups.setdefault(key, {**f, "size": 0, "parts": [], "split": int(m.group(2)) if m else 1})
+        g["size"] += f["size"] or 0
+        g["parts"].append(name)
+    for g in groups.values():
+        g["complete"] = len(g["parts"]) == g["split"]
+    return sorted(groups.values(), key=lambda g: g["size"])
 
 
 @router.get("/search")
@@ -54,7 +76,7 @@ def repo_files(id: str):
         "id": id,
         "gated": bool(info.gated),
         "files": files,
-        "gguf": [f for f in files if f["name"].endswith(".gguf") and "mmproj" not in f["name"].lower()],
+        "gguf": group_gguf(files),
     }
 
 
@@ -78,7 +100,7 @@ def local_models():
             "size": repo.size_on_disk,
             "last_used": repo.last_accessed,
             "path": str(revision.snapshot_path) if revision else None,
-            "gguf": [f for f in files if f["name"].endswith(".gguf") and "mmproj" not in f["name"].lower()],
+            "gguf": group_gguf(files),
             "files": len(files),
             "safetensors": any(f["name"].endswith(".safetensors") for f in files),
         })
@@ -93,21 +115,10 @@ class DownloadRequest(BaseModel):
 
 def _download(job: Job, req: DownloadRequest) -> None:
     info = api.model_info(req.repo_id, files_metadata=True)
-    files = [s for s in info.siblings or [] if not req.patterns or any(fnmatch.fnmatch(s.rfilename, p) for p in req.patterns)]
+    files = [(s.rfilename, s.size or 0) for s in info.siblings or [] if not req.patterns or any(fnmatch.fnmatch(s.rfilename, p) for p in req.patterns)]
     if not files:
         raise ValueError("No files in the repo match the selection")
-    total = sum(s.size or 0 for s in files) or 1
-    done = 0
-    job.emit("plan", files=len(files), bytes=total)
-    for s in files:
-        if job.cancel_requested:
-            return
-        job.log(f"Downloading {s.rfilename}")
-        path = hf_hub_download(req.repo_id, s.rfilename)
-        done += s.size or 0
-        job.progress = done / total
-        job.emit("progress", value=job.progress, file=s.rfilename)
-        job.result["path"] = path if s.rfilename.endswith(".gguf") else job.result.get("path", path)
+    downloads.download(job, req.repo_id, files)
 
 
 @router.post("/download")
@@ -115,5 +126,7 @@ def download(req: DownloadRequest):
     title = req.repo_id + (f" ({', '.join(req.patterns)})" if req.patterns else "")
     job = registry.create("download", title)
     job.progress = 0.0
+    # Kept so the UI can resume a paused or failed download with the same selection.
+    job.result["request"] = req.model_dump()
     registry.run_thread(job, lambda j: _download(j, req))
     return job.summary()
