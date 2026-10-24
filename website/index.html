@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Temper: make any model yours</title>
+    <meta name="description" content="Temper runs, fine-tunes and ships open-weight AI models on your own computer. Chat offline, train with LoRA on a Mac or GPU, build datasets from your documents, and export to GGUF." />
+    <meta name="theme-color" content="#000000" />
+    <meta property="og:title" content="Temper: make any model yours" />
+    <meta property="og:description" content="Run, fine-tune and ship open-weight AI models on your own computer." />
+    <meta property="og:image" content="https://temper.devops-monk.com/assets/og.png" />
+    <meta property="og:url" content="https://temper.devops-monk.com/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/icon-180.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav" id="nav">
+      <div class="nav-inner">
+        <a class="brand" href="#top" aria-label="Temper home">
+          <img src="/assets/icon.svg" alt="" width="22" height="22" />
+          <span>Temper</span>
+        </a>
+        <nav aria-label="Sections">
+          <a href="#chat">Chat</a>
+          <a href="#train">Train</a>
+          <a href="#recipes">Recipes</a>
+          <a href="#export">Export</a>
+        </nav>
+        <a class="nav-cta" href="#download">Download</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero dark" id="top">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <img class="hero-icon" src="/assets/icon.svg" alt="" width="104" height="104" />
+        <h1>Make any model yours.</h1>
+        <p class="lede">Temper runs, fine-tunes and ships open-weight AI models on your own computer. Your data stays with you.</p>
+        <div class="ctas">
+          <a class="button" href="#download">Download</a>
+          <a class="link" href="https://github.com/devops-monk/temper">View on GitHub <span aria-hidden="true">›</span></a>
+        </div>
+        <p class="platforms">For macOS, Windows and Linux. Free and open source.</p>
+        <figure class="window hero-shot" data-rise>
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="/assets/shot-train.webp" width="1440" height="900" alt="Temper's Train page: a loss chart falling over 40 steps while fine-tuning Qwen3 4B on math word problems." />
+        </figure>
+      </section>
+
+      <section class="feature light" id="chat">
+        <div class="copy" data-fade>
+          <p class="kicker">Chat</p>
+          <h2>Talk to open models. Offline.</h2>
+          <p>Find Qwen, Llama, Gemma, Mistral and thousands more on Hugging Face. Temper checks which quantization fits in your memory, downloads it in the background, and runs it with llama.cpp on Apple Silicon, NVIDIA and AMD.</p>
+        </div>
+        <figure class="window" data-fade>
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="/assets/shot-chat.webp" width="1440" height="900" loading="lazy" alt="A chat with a fine-tuned model that solves a word problem step by step." />
+        </figure>
+      </section>
+
+      <section class="feature dark" id="train">
+        <div class="copy" data-fade>
+          <p class="kicker">Train</p>
+          <h2>Fine-tune on the computer you already own.</h2>
+          <p>Pick a base model and a dataset, and press Start. On a Mac, Temper trains LoRA adapters with Apple's MLX. On NVIDIA and AMD GPUs it uses PyTorch with LoRA, QLoRA or full fine-tuning. Loss, validation loss and time left update as it runs.</p>
+        </div>
+        <ul class="stats" data-fade>
+          <li><strong>12 min</strong><span>to fine-tune a 4B model for 60 steps on an M1 Pro</span></li>
+          <li><strong>29 MB</strong><span>for the trained LoRA adapter</span></li>
+          <li><strong>0</strong><span>rows of your data sent to a server</span></li>
+        </ul>
+      </section>
+
+      <section class="feature light" id="recipes">
+        <div class="copy" data-fade>
+          <p class="kicker">Recipes</p>
+          <h2>Your documents in. A dataset out.</h2>
+          <p>Point a recipe at PDFs, Word files, web pages or a GitHub repository. A model writes grounded questions and answers, code with linting, or graded replies, row by row. Preview three rows, then generate thousands and train on them in one click.</p>
+        </div>
+        <figure class="window" data-fade>
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="/assets/shot-recipes.webp" width="1440" height="900" loading="lazy" alt="The Recipes page: columns for a topic, a question and an answer, with generated rows on the right." />
+        </figure>
+      </section>
+
+      <section class="feature tint" id="datasets">
+        <div class="copy" data-fade>
+          <p class="kicker">Datasets</p>
+          <h2>See your data the way the model will.</h2>
+          <p>Open any Hugging Face dataset or local file, map its columns to chat turns, and read each row as a conversation before you spend an hour training on it. Remove duplicates, filter by length and hold out an evaluation split in the same place.</p>
+        </div>
+        <figure class="window" data-fade>
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="/assets/shot-datasets.webp" width="1440" height="900" loading="lazy" alt="The Datasets page mapping a question column and an answer column to chat turns, with a preview of each conversation." />
+        </figure>
+      </section>
+
+      <section class="feature dark" id="export">
+        <div class="copy" data-fade>
+          <p class="kicker">Export</p>
+          <h2>Ship it anywhere.</h2>
+          <p>Merge your adapter and export GGUF in the quantization you need, for llama.cpp, Ollama and LM Studio. Chat with the result one click later, or serve it to coding agents through an OpenAI-compatible API.</p>
+        </div>
+        <figure class="window" data-fade>
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="/assets/shot-export.webp" width="1440" height="900" loading="lazy" alt="The Export page with a finished Q4_K_M GGUF export and a button to chat with it." />
+        </figure>
+      </section>
+
+      <section class="grid-section light">
+        <h2 class="center" data-fade>Everything in one app.</h2>
+        <div class="grid">
+          <article data-fade>
+            <h3>Knows your hardware</h3>
+            <p>Detects Apple Silicon, NVIDIA and AMD GPUs, shows memory in use, and tells you which models fit before you download them.</p>
+          </article>
+          <article data-fade>
+            <h3>Sets itself up</h3>
+            <p>The first launch installs Python and the engine for you, about 150 MB for chat or 600 MB with training on a Mac. Nothing to configure.</p>
+          </article>
+          <article data-fade>
+            <h3>Pinned and verified</h3>
+            <p>Every tool Temper downloads is pinned to an exact version and checked against its SHA-256 checksum before it runs.</p>
+          </article>
+          <article data-fade>
+            <h3>Works with your tools</h3>
+            <p>Ready-made settings for Codex, OpenCode, Continue and Aider, plus Python and curl examples for your own scripts.</p>
+          </article>
+          <article data-fade>
+            <h3>Stays awake</h3>
+            <p>Long training runs and exports keep your computer from going to sleep until they finish, then let it rest.</p>
+          </article>
+          <article data-fade>
+            <h3>Open source</h3>
+            <p>Apache-2.0. Read the code, file an issue, or build it yourself from the repository.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="download dark" id="download">
+        <img src="/assets/icon.svg" alt="" width="88" height="88" data-fade />
+        <h2 data-fade>Get Temper.</h2>
+        <p class="lede" data-fade>Free for macOS, Windows and Linux.</p>
+        <div class="downloads" data-fade>
+          <a class="platform" href="https://github.com/devops-monk/temper/releases">
+            <strong>macOS</strong>
+            <span>Apple Silicon and Intel</span>
+          </a>
+          <a class="platform" href="https://github.com/devops-monk/temper/releases">
+            <strong>Windows</strong>
+            <span>x64 and ARM64</span>
+          </a>
+          <a class="platform" href="https://github.com/devops-monk/temper/releases">
+            <strong>Linux</strong>
+            <span>AppImage, deb and rpm</span>
+          </a>
+        </div>
+        <p class="fine" data-fade>Temper is an early preview. Installers are published on GitHub Releases and are not code-signed yet, so your system may ask you to confirm the first launch. Until the first release is out, <a href="https://github.com/devops-monk/temper#develop">build it from source</a>.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>Temper is open source under the Apache-2.0 licence.</span>
+        <nav aria-label="Footer">
+          <a href="https://github.com/devops-monk/temper">GitHub</a>
+          <a href="https://github.com/devops-monk/temper/issues">Report an issue</a>
+          <a href="https://github.com/devops-monk/temper/blob/main/THIRD_PARTY.md">Third-party software</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
