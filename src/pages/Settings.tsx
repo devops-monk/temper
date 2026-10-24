@@ -3,14 +3,7 @@ import { useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { HfAccount } from "../components/HfAccount";
 import { LicensesDialog } from "../components/Licenses";
-import {
-  Badge,
-  Button,
-  Notice,
-  PageHeader,
-  Section,
-  cx,
-} from "../components/ui";
+import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
@@ -38,34 +31,13 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Updates() {
-  const {
-    version,
-    status,
-    update,
-    received,
-    total,
-    error,
-    checkedAt,
-    auto,
-    check,
-    install,
-    setAuto,
-  } = useUpdates();
+  const { version, status, update, received, total, error, checkedAt, auto, check, install, setAuto } = useUpdates();
   const jobs = useApp((a) => a.jobs);
   const busy = jobs.some((j) => j.status === "running");
-  const working =
-    status === "checking" ||
-    status === "downloading" ||
-    status === "installing";
+  const working = status === "checking" || status === "downloading" || status === "installing";
 
   async function restart() {
-    if (
-      busy &&
-      !confirm(
-        "A download, training run or export is still running. Updating restarts Temper and stops it. Update anyway?",
-      )
-    )
-      return;
+    if (busy && !confirm("A download, training run or export is still running. Updating restarts Temper and stops it. Update anyway?")) return;
     await install();
   }
 
@@ -76,13 +48,7 @@ function Updates() {
         inTauri &&
         !update && (
           <Button size="sm" disabled={working} onClick={() => void check()}>
-            <RotateCw
-              className={cx(
-                "size-3.5",
-                status === "checking" && "animate-spin",
-              )}
-            />{" "}
-            Check for updates
+            <RotateCw className={cx("size-3.5", status === "checking" && "animate-spin")} /> Check for updates
           </Button>
         )
       }
@@ -92,41 +58,22 @@ function Updates() {
         <Row label="Status">
           {status === "checking" && "Checking…"}
           {status === "current" && "Temper is up to date"}
-          {status === "idle" &&
-            (inTauri ? "Not checked yet" : "Updates work in the desktop app")}
+          {status === "idle" && (inTauri ? "Not checked yet" : "Updates work in the desktop app")}
           {status === "error" && "Couldn't check"}
-          {update && status === "available" && (
-            <Badge tone="accent">Temper {update.version} is available</Badge>
-          )}
-          {status === "downloading" &&
-            `Downloading${total ? ` ${Math.round((received / total) * 100)}%` : "…"}`}
+          {update && status === "available" && <Badge tone="accent">Temper {update.version} is available</Badge>}
+          {status === "downloading" && `Downloading${total ? ` ${Math.round((received / total) * 100)}%` : "…"}`}
           {status === "installing" && "Installing, Temper will restart"}
         </Row>
-        {checkedAt && (
-          <Row label="Last checked">{new Date(checkedAt).toLocaleString()}</Row>
-        )}
+        {checkedAt && <Row label="Last checked">{new Date(checkedAt).toLocaleString()}</Row>}
       </div>
-      {update &&
-        (status === "available" ||
-          status === "downloading" ||
-          status === "installing") && (
-          <div className="mt-3 rounded-lg border border-line bg-surface px-4 py-3">
-            {update.body && (
-              <p className="text-[13px] whitespace-pre-line text-muted">
-                {update.body.split("\n").slice(0, 8).join("\n")}
-              </p>
-            )}
-            <Button
-              className="mt-3"
-              size="sm"
-              variant="primary"
-              disabled={working}
-              onClick={() => void restart()}
-            >
-              Update and restart
-            </Button>
-          </div>
-        )}
+      {update && (status === "available" || status === "downloading" || status === "installing") && (
+        <div className="mt-3 rounded-lg border border-line bg-surface px-4 py-3">
+          {update.body && <p className="text-[13px] whitespace-pre-line text-muted">{update.body.split("\n").slice(0, 8).join("\n")}</p>}
+          <Button className="mt-3" size="sm" variant="primary" disabled={working} onClick={() => void restart()}>
+            Update and restart
+          </Button>
+        </div>
+      )}
       {error && (
         <div className="mt-3">
           <Notice tone="error">{error}</Notice>
@@ -134,12 +81,7 @@ function Updates() {
       )}
       {inTauri && (
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13px]">
-          <input
-            type="checkbox"
-            checked={auto}
-            onChange={(e) => setAuto(e.target.checked)}
-            className="accent-[var(--accent)]"
-          />
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-[var(--accent)]" />
           Check for updates automatically
         </label>
       )}
@@ -153,13 +95,7 @@ export function SettingsPage() {
   const [licenses, setLicenses] = useState(false);
 
   async function reinstall(profile: "chat" | "train", clean: boolean) {
-    if (
-      clean &&
-      !confirm(
-        "Reinstall the engine? Temper deletes and rebuilds its Python environment. Your models, runs and exports are kept.",
-      )
-    )
-      return;
+    if (clean && !confirm("Reinstall the engine? Temper deletes and rebuilds its Python environment. Your models, runs and exports are kept.")) return;
     await installEngine(profile, clean);
     await refreshEngine();
     go("chat");
@@ -171,11 +107,7 @@ export function SettingsPage() {
       <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-10">
         <div className="max-w-[640px]">
           <Section title="Appearance">
-            <div
-              className="inline-flex rounded-lg border border-line bg-surface p-1"
-              role="radiogroup"
-              aria-label="Theme"
-            >
+            <div className="inline-flex rounded-lg border border-line bg-surface p-1" role="radiogroup" aria-label="Theme">
               {(
                 [
                   ["system", "Match system", Monitor],
@@ -188,12 +120,7 @@ export function SettingsPage() {
                   role="radio"
                   aria-checked={theme === value}
                   onClick={() => setTheme(value)}
-                  className={cx(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium",
-                    theme === value
-                      ? "bg-surface-2 text-text shadow-[0_0_0_1px_var(--line)]"
-                      : "text-muted hover:text-text",
-                  )}
+                  className={cx("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium", theme === value ? "bg-surface-2 text-text shadow-[0_0_0_1px_var(--line)]" : "text-muted hover:text-text")}
                 >
                   <Icon className="size-3.5" /> {label}
                 </button>
@@ -205,13 +132,7 @@ export function SettingsPage() {
             title="Engine"
             aside={
               inTauri && (
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    await restartEngine();
-                    await refreshEngine();
-                  }}
-                >
+                <Button size="sm" onClick={async () => { await restartEngine(); await refreshEngine(); }}>
                   <RotateCw className="size-3.5" /> Restart engine
                 </Button>
               )
@@ -219,34 +140,21 @@ export function SettingsPage() {
           >
             <div className="rounded-lg border border-line bg-surface px-4">
               <Row label="Status">
-                <Badge tone={engine?.status === "running" ? "ok" : "warn"}>
-                  {STATUS_LABEL[engine?.status ?? "starting"]}
-                </Badge>
+                <Badge tone={engine?.status === "running" ? "ok" : "warn"}>{STATUS_LABEL[engine?.status ?? "starting"]}</Badge>
               </Row>
               <Row label="Address">
-                <span className="font-mono text-[12.5px]">
-                  {engine?.url ?? "–"}
-                </span>
+                <span className="font-mono text-[12.5px]">{engine?.url ?? "–"}</span>
               </Row>
-              {setup?.installed && (
-                <Row label="Installed">{PROFILE_LABEL[setup.installed]}</Row>
-              )}
+              {setup?.installed && <Row label="Installed">{PROFILE_LABEL[setup.installed]}</Row>}
             </div>
             {setup?.installed && engine?.status !== "installing" && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {setup.installed === "chat" && setup.hardware?.can_train && (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => reinstall("train", false)}
-                  >
+                  <Button size="sm" variant="primary" onClick={() => reinstall("train", false)}>
                     Add training support
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  onClick={() => reinstall(setup.installed ?? "chat", true)}
-                >
+                <Button size="sm" onClick={() => reinstall(setup.installed ?? "chat", true)}>
                   Reinstall engine
                 </Button>
               </div>
@@ -270,40 +178,19 @@ export function SettingsPage() {
                 <Row label="Memory">{bytes(system.memory.total)}</Row>
                 {system.gpus.map((g) => (
                   <Row key={g.index} label={`GPU ${g.index}`}>
-                    {g.name}, {bytes(g.memory_total)}{" "}
-                    {g.unified_memory ? "unified" : "VRAM"}
+                    {g.name}, {bytes(g.memory_total)} {g.unified_memory ? "unified" : "VRAM"}
                   </Row>
                 ))}
                 <Row label="Free disk space">{bytes(system.disk.free)}</Row>
-                <Row label="Chat runtime">
-                  {system.capabilities.gguf_inference ? (
-                    <Badge tone="ok">llama.cpp found</Badge>
-                  ) : (
-                    <Badge tone="warn">llama.cpp not installed</Badge>
-                  )}
-                </Row>
-                <Row label="Trainer">
-                  {system.capabilities.trainer ? (
-                    <Badge tone="ok">
-                      {system.capabilities.trainer === "mlx"
-                        ? "MLX"
-                        : "PyTorch"}
-                    </Badge>
-                  ) : (
-                    <Badge tone="warn">Not installed</Badge>
-                  )}
-                </Row>
+                <Row label="Chat runtime">{system.capabilities.gguf_inference ? <Badge tone="ok">llama.cpp found</Badge> : <Badge tone="warn">llama.cpp not installed</Badge>}</Row>
+                <Row label="Trainer">{system.capabilities.trainer ? <Badge tone="ok">{system.capabilities.trainer === "mlx" ? "MLX" : "PyTorch"}</Badge> : <Badge tone="warn">Not installed</Badge>}</Row>
               </div>
             </Section>
           )}
 
           <HfAccount ready={engine?.status === "running"} />
 
-          <Diagnostics
-            ready={engine?.status === "running"}
-            installed={setup?.installed ?? "chat"}
-            onReinstall={(profile, clean) => void reinstall(profile, clean)}
-          />
+          <Diagnostics ready={engine?.status === "running"} installed={setup?.installed ?? "chat"} onReinstall={(profile, clean) => void reinstall(profile, clean)} />
 
           <Updates />
 
@@ -320,10 +207,7 @@ export function SettingsPage() {
               <Row label="Training">PyTorch, TRL and MLX</Row>
               <Row label="Chat">llama.cpp (MIT)</Row>
             </div>
-            <LicensesDialog
-              open={licenses}
-              onClose={() => setLicenses(false)}
-            />
+            <LicensesDialog open={licenses} onClose={() => setLicenses(false)} />
           </Section>
         </div>
       </div>

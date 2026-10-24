@@ -23,10 +23,7 @@ interface Access {
 
 const TOKENS_URL = "https://huggingface.co/settings/tokens";
 
-async function keychain(
-  command: "hf_token_save" | "hf_token_delete",
-  args?: Record<string, unknown>,
-) {
+async function keychain(command: "hf_token_save" | "hf_token_delete", args?: Record<string, unknown>) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke(command, args);
@@ -52,16 +49,11 @@ export function HfAccount({ ready }: { ready: boolean }) {
     setError(null);
     setWarning(null);
     try {
-      const next = await api<Account>("/api/hf/token", {
-        method: "POST",
-        json: { token },
-      });
+      const next = await api<Account>("/api/hf/token", { method: "POST", json: { token } });
       setAccount(next);
       setToken("");
       // The engine already uses it; the keychain only matters for the next launch.
-      await keychain("hf_token_save", { token }).catch((e) =>
-        setWarning(String(e)),
-      );
+      await keychain("hf_token_save", { token }).catch((e) => setWarning(String(e)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -86,27 +78,15 @@ export function HfAccount({ ready }: { ready: boolean }) {
   return (
     <Section title="Hugging Face account">
       <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
-        {!account && (
-          <p className="text-muted">
-            {ready ? "Checking…" : "Start the engine to manage your token."}
-          </p>
-        )}
+        {!account && <p className="text-muted">{ready ? "Checking…" : "Start the engine to manage your token."}</p>}
         {account?.signed_in && (
           <div className="flex items-center justify-between gap-3">
             <div>
               <span className="font-medium">{account.name ?? "Signed in"}</span>
-              {account.offline && (
-                <span className="text-muted"> (offline, not checked)</span>
-              )}
+              {account.offline && <span className="text-muted"> (offline, not checked)</span>}
               <p className="mt-0.5 text-[12px] text-muted">
-                {ownToken
-                  ? inTauri
-                    ? "Token saved in your system keychain."
-                    : "Token set for this engine session."
-                  : "Using the token from huggingface-cli login."}
-                {account.orgs &&
-                  account.orgs.length > 0 &&
-                  ` Member of ${account.orgs.join(", ")}.`}
+                {ownToken ? (inTauri ? "Token saved in your system keychain." : "Token set for this engine session.") : "Using the token from huggingface-cli login."}
+                {account.orgs && account.orgs.length > 0 && ` Member of ${account.orgs.join(", ")}.`}
               </p>
             </div>
             {ownToken ? (
@@ -120,9 +100,7 @@ export function HfAccount({ ready }: { ready: boolean }) {
         )}
         {account && !account.signed_in && (
           <p className="text-muted">
-            {account.invalid
-              ? "The saved token no longer works. Add a new one."
-              : "No token. Public models download without one; gated models such as Llama and Gemma need it."}
+            {account.invalid ? "The saved token no longer works. Add a new one." : "No token. Public models download without one; gated models such as Llama and Gemma need it."}
           </p>
         )}
         {account && (!account.signed_in || !ownToken) && (
@@ -133,33 +111,15 @@ export function HfAccount({ ready }: { ready: boolean }) {
               if (token.trim()) void save();
             }}
           >
-            <Input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="hf_…"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className="flex-1"
-              aria-label="Hugging Face token"
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={busy || !token.trim()}
-            >
+            <Input type="password" autoComplete="off" spellCheck={false} placeholder="hf_…" value={token} onChange={(e) => setToken(e.target.value)} className="flex-1" aria-label="Hugging Face token" />
+            <Button type="submit" variant="primary" disabled={busy || !token.trim()}>
               {busy ? "Checking…" : "Save token"}
             </Button>
           </form>
         )}
         {account && !ownToken && (
-          <button
-            type="button"
-            className="mt-2 inline-flex items-center gap-1 text-[12px] text-accent hover:underline"
-            onClick={() => void openExternal(TOKENS_URL)}
-          >
-            Create a read token on Hugging Face{" "}
-            <ExternalLink className="size-3" />
+          <button type="button" className="mt-2 inline-flex items-center gap-1 text-[12px] text-accent hover:underline" onClick={() => void openExternal(TOKENS_URL)}>
+            Create a read token on Hugging Face <ExternalLink className="size-3" />
           </button>
         )}
       </div>
@@ -208,8 +168,7 @@ export function RepoAccess({ repoId }: { repoId: string }) {
           </Button>
         )}
         <Button size="sm" variant="ghost" disabled={checking} onClick={check}>
-          <RotateCw className={cx("size-3.5", checking && "animate-spin")} />{" "}
-          Check again
+          <RotateCw className={cx("size-3.5", checking && "animate-spin")} /> Check again
         </Button>
       </div>
     </Notice>
