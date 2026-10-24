@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import sys
 import threading
 import time
 
@@ -17,6 +18,11 @@ def _exit_with_parent(pid: int) -> None:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["doctor"]:
+        from .doctor import report
+
+        sys.exit(report())
+
     parser = argparse.ArgumentParser(prog="temper-engine")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -27,6 +33,8 @@ def main() -> None:
     if args.parent_pid:
         threading.Thread(target=_exit_with_parent, args=(args.parent_pid,), daemon=True).start()
 
+    # The doctor reports when the shell had to fall back from the usual port.
+    os.environ["TEMPER_PORT"] = str(args.port)
     from .app import create_app
 
     uvicorn.run(create_app(token=args.token), host=args.host, port=args.port, log_level="warning")

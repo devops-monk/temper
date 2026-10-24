@@ -109,7 +109,8 @@ temper/
 - [ ] **1.3 Multi-GPU**: list every device, choose which GPUs to use per model and per job, NVLink/P2P detection.
 - [ ] **1.4 Backends**: NVIDIA CUDA, AMD ROCm (including RDNA2 APUs), Intel XPU, Apple Metal/MLX, Vulkan, CPU, and NPUs (Intel/AMD/Qualcomm).
 - [ ] **1.5 iGPU memory carve-out helper**: explain and adjust shared-memory limits on APUs.
-- [ ] **1.6 Doctor**: `temper doctor` and a Settings → Diagnostics page that checks drivers, CUDA/ROCm versions, disk space, ports and engine packages, with fix suggestions.
+- [x] **1.6 Doctor**: `temper doctor` and a Settings → Diagnostics page that checks drivers, CUDA/ROCm versions, disk space, ports and engine packages, with fix suggestions.
+  Checks the engine and its package versions, free disk (and the model cache disk), memory, the GPU and driver (NVIDIA driver and CUDA version, ROCm, macOS for MLX, a GPU whose driver is missing), whether PyTorch or MLX can actually use the GPU, whether llama.cpp starts, who holds port 8765, and whether Hugging Face is reachable (proxy aware). Fixes the app can apply have a button: install llama.cpp, add training, reinstall the engine. "Copy report" copies the results for a bug report. CI runs `temper-engine doctor` on every OS.
 - [ ] **1.7 VRAM estimator**: before load or training, estimate memory for a given model, quantization, context, LoRA rank and batch size, and warn before running out of memory.
 - [ ] **1.8 In-app runtime updates** *(audit)*: update the bundled llama.cpp build and upgrade `transformers` in place when a newly released model needs it, with rollback.
 

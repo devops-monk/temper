@@ -124,6 +124,13 @@ def llama_server_path() -> str | None:
 GPU_TRAINER = "unsloth"
 
 
+def probe_backend() -> str:
+    """cuda, rocm, metal or cpu: what training and chat run on."""
+    vm = psutil.virtual_memory()
+    gpus = nvidia_gpus() or amd_gpus() or apple_gpu(vm.total, 0)
+    return gpus[0]["backend"] if gpus else "cpu"
+
+
 def probe() -> dict:
     vm = psutil.virtual_memory()
     gpus = nvidia_gpus() or amd_gpus() or apple_gpu(vm.total, vm.total - vm.available)

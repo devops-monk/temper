@@ -26,6 +26,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv run --extra dev pytest -q
+      # The same checks as Settings → Diagnostics; exits 1 if any of them fails on a clean runner.
+      - run: uv run --extra dev temper-engine doctor
 
   shell:
     strategy:

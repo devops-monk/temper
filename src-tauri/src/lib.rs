@@ -40,9 +40,23 @@ fn headless_setup() -> Option<(Profile, bool)> {
     Some((profile, args.iter().any(|a| a == "--clean")))
 }
 
+/// Release builds on Windows have no console of their own; borrow the terminal that started us
+/// so `temper doctor` and `temper --setup` can print.
+fn attach_console() {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let headless = headless_setup();
+    let doctor = std::env::args().nth(1).as_deref() == Some("doctor");
+    if headless.is_some() || doctor {
+        attach_console();
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -50,6 +64,20 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Engine::new())
         .setup(move |app| {
+            if doctor {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let code = match engine::doctor_command(&handle).and_then(|mut c| c.status().map_err(|e| e.to_string())) {
+                        Ok(status) => status.code().unwrap_or(1),
+                        Err(e) => {
+                            eprintln!("{e}");
+                            1
+                        }
+                    };
+                    handle.exit(code);
+                });
+                return Ok(());
+            }
             if let Some((profile, clean)) = headless {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {

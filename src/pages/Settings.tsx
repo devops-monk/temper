@@ -1,5 +1,6 @@
 import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Diagnostics } from "../components/Diagnostics";
 import { LicensesDialog } from "../components/Licenses";
 import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
@@ -185,6 +186,8 @@ export function SettingsPage() {
               </div>
             </Section>
           )}
+
+          <Diagnostics ready={engine?.status === "running"} installed={setup?.installed ?? "chat"} onReinstall={(profile, clean) => void reinstall(profile, clean)} />
 
           <Updates />
 

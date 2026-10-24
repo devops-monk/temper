@@ -72,6 +72,31 @@ pub fn uses_setup() -> bool {
     !cfg!(debug_assertions) || std::env::var_os("TEMPER_BOOTSTRAP").is_some()
 }
 
+/// What `temper doctor` runs: the engine's checks, printed as text.
+pub fn doctor_command(app: &AppHandle) -> Result<Command, String> {
+    let mut cmd = if uses_setup() {
+        let layout = layout(app);
+        match setup::check(&layout, &app.package_info().version.to_string()) {
+            Check::Ready => Command::new(layout.engine_exe()),
+            Check::FirstRun => return Err("Temper isn't set up yet. Open the app once, or run: temper --setup chat".into()),
+            Check::Outdated(p) => {
+                let p = if p == Profile::Train { "train" } else { "chat" };
+                return Err(format!("Temper's engine is out of date. Open the app once to update it, or run: temper --setup {p}"));
+            }
+        }
+    } else {
+        let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine");
+        let mut c = Command::new(find_uv().ok_or("uv isn't installed")?);
+        c.arg("run").arg("--quiet").arg("--project").arg(project).arg("temper-engine");
+        c
+    };
+    cmd.arg("doctor");
+    if let Ok(data) = app.path().app_data_dir() {
+        cmd.env("TEMPER_HOME", data);
+    }
+    Ok(cmd)
+}
+
 pub fn layout(app: &AppHandle) -> Layout {
     let data = app.path().app_data_dir().expect("no app data directory");
     let project = if cfg!(debug_assertions) {
