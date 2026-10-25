@@ -54,7 +54,12 @@ def test_save_search_rename_pin_and_export():
     md = call("GET", f"/api/chats/{chat['id']}/export", params={"format": "md"})
     assert md["filename"] == "Sourdough.md" and md["text"].startswith("# Sourdough") and "## You" in md["text"]
     data = json.loads(call("GET", f"/api/chats/{chat['id']}/export", params={"format": "json"})["text"])
-    assert data["messages"][0]["content"] == long_question
+    assert data["messages"][0]["content"] == long_question and "reasoning" not in data["messages"][0]
+    # A thinking model's reasoning is kept with its reply and exported folded away.
+    call("PUT", f"/api/chats/{chat['id']}/messages", json={"messages": [{"role": "user", "content": "2+2?"}, {"role": "assistant", "content": "4", "reasoning": "Two and two make four."}]})
+    assert call("GET", f"/api/chats/{chat['id']}")["messages"][1]["reasoning"] == "Two and two make four."
+    md = call("GET", f"/api/chats/{chat['id']}/export", params={"format": "md"})["text"]
+    assert "<details><summary>Thinking</summary>\n\nTwo and two make four." in md
     call("DELETE", f"/api/chats/{chat['id']}")
     assert client.get(f"/api/chats/{chat['id']}", headers=AUTH).status_code == 404
 

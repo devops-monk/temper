@@ -33,6 +33,21 @@ class LoadRequest(BaseModel):
     flash_attention: bool = True
 
 
+def reasoning_support(props: dict) -> dict:
+    """What the loaded model's chat template allows, from llama-server's /props.
+
+    `thinks`: the model reasons before answering (llama-server streams that as reasoning_content).
+    `toggle`: thinking can be switched off per request (the template reads `enable_thinking`).
+    `effort`: the template takes a reasoning effort level (gpt-oss and others).
+    """
+    template = props.get("chat_template") or ""
+    caps = props.get("chat_template_caps") or {}
+    toggle = "enable_thinking" in template
+    effort = bool(caps.get("supports_reasoning_effort")) or "reasoning_effort" in template
+    thinks = toggle or effort or any(tag in template for tag in ("<think>", "reasoning_content", "<|channel|>analysis", "thinking"))
+    return {"thinks": thinks, "toggle": toggle, "effort": effort}
+
+
 class RuntimeManager:
     def __init__(self) -> None:
         self.proc: subprocess.Popen | None = None
@@ -42,6 +57,7 @@ class RuntimeManager:
         self.state = "idle"  # idle | loading | ready | failed
         self.error: str | None = None
         self.log: list[str] = []
+        self.reasoning: dict | None = None
         self.lock = threading.Lock()
 
     @property
@@ -56,6 +72,7 @@ class RuntimeManager:
             "error": self.error,
             "engine": "llama.cpp",
             "available": llama_server_path() is not None,
+            "reasoning": self.reasoning,
         }
 
     def load(self, req: LoadRequest) -> None:
@@ -70,6 +87,7 @@ class RuntimeManager:
         with self.lock:
             self.port = _free_port()
             self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
+            self.reasoning = None
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
                 "-c", str(req.context), "-ngl", str(req.gpu_layers), "--jinja",
@@ -95,6 +113,10 @@ class RuntimeManager:
         while time.time() < deadline and proc.poll() is None and proc is self.proc:
             try:
                 if httpx.get(f"{self.base}/health", timeout=1).status_code == 200:
+                    try:
+                        self.reasoning = reasoning_support(httpx.get(f"{self.base}/props", timeout=5).json())
+                    except (httpx.HTTPError, ValueError):
+                        self.reasoning = None
                     self.state = "ready"
                     return
             except httpx.HTTPError:
@@ -104,7 +126,7 @@ class RuntimeManager:
     def unload(self) -> None:
         with self.lock:
             proc, self.proc = self.proc, None
-            self.state, self.model, self.path, self.error = "idle", None, None, None
+            self.state, self.model, self.path, self.error, self.reasoning = "idle", None, None, None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:

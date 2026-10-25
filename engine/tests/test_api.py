@@ -206,3 +206,13 @@ def test_training_text_matches_inference_prompt():
     prompt, completion = render(_ThinkTemplate(), [{"role": "user", "content": "2+2?"}, {"role": "assistant", "content": "4"}])
     assert prompt == "<|im_start|>user\n2+2?<|im_end|>\n<|im_start|>assistant\n"
     assert completion == "4<|im_end|>\n"  # no think block the model would never see at inference
+
+
+def test_reasoning_support_from_template():
+    from temper_engine.runtime import reasoning_support
+
+    qwen3 = {"chat_template": "{%- if enable_thinking is defined and enable_thinking is false %}<think>\n\n</think>{% endif %}", "chat_template_caps": {}}
+    assert reasoning_support(qwen3) == {"thinks": True, "toggle": True, "effort": False}
+    gpt_oss = {"chat_template": "Reasoning: {{ reasoning_effort }}<|channel|>analysis", "chat_template_caps": {"supports_reasoning_effort": True}}
+    assert reasoning_support(gpt_oss) == {"thinks": True, "toggle": False, "effort": True}
+    assert reasoning_support({"chat_template": "<|im_start|>{{ message.content }}"}) == {"thinks": False, "toggle": False, "effort": False}

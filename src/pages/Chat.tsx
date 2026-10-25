@@ -1,10 +1,10 @@
-import { ArrowUp, Boxes, History, MessageSquare, RotateCcw, Square } from "lucide-react";
+import { ArrowUp, Boxes, Brain, ChevronRight, History, MessageSquare, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { ChatList } from "../components/ChatList";
-import { Button, CopyButton, EmptyState, Field, Input, Notice, cx } from "../components/ui";
+import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
 import { api, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
 
@@ -14,6 +14,53 @@ interface Message {
   error?: boolean;
   /** The model that wrote a reply. */
   model?: string | null;
+  /** What a thinking model reasoned before answering. */
+  reasoning?: string | null;
+  /** Seconds spent thinking, known only for replies written in this session. */
+  thought?: number;
+}
+
+/** Per-model thinking choices, remembered in this browser. */
+interface Thinking {
+  on: boolean;
+  effort: "default" | "low" | "medium" | "high";
+  /** Most tokens to spend thinking; 0 for no limit. */
+  budget: number;
+}
+
+const THINKING_DEFAULTS: Thinking = { on: true, effort: "default", budget: 0 };
+
+function loadThinking(model: string | null): Thinking {
+  try {
+    return { ...THINKING_DEFAULTS, ...JSON.parse(localStorage.getItem(`temper.thinking.${model}`) ?? "{}") };
+  } catch {
+    return THINKING_DEFAULTS;
+  }
+}
+
+function saveThinking(model: string | null, value: Thinking) {
+  try {
+    localStorage.setItem(`temper.thinking.${model}`, JSON.stringify(value));
+  } catch {
+    /* private window: the choice lasts until the page closes */
+  }
+}
+
+/** A reply's reasoning, open while the model thinks and folded away once it starts answering. */
+function ThinkingBlock({ text, live, seconds }: { text: string; live: boolean; seconds?: number }) {
+  const [open, setOpen] = useState<boolean | null>(null);
+  const shown = open ?? live;
+  const label = live ? "Thinking…" : seconds !== undefined ? `Thought for ${seconds < 1 ? "under a second" : `${Math.round(seconds)} s`}` : "Thinking";
+  return (
+    <div className="mb-3">
+      <button onClick={() => setOpen(!shown)} className="flex items-center gap-1.5 text-[12.5px] text-muted hover:text-text" aria-expanded={shown}>
+        <Brain className={cx("size-3.5", live && "animate-pulse-dot")} />
+        {label}
+        <ChevronRight className={cx("size-3 transition-transform", shown && "rotate-90")} />
+      </button>
+      {shown && <div className="mt-2 max-h-80 overflow-y-auto border-l-2 border-line pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">{text}</div>}
+    </div>
+  );
 }
 
 interface SavedChat {
@@ -89,11 +136,20 @@ export function ChatPage() {
   const [chat, setChat] = useState<{ id: string; title: string; source: string | null } | null>(null);
   const chatId = useRef<string | null>(null);
   const [listVersion, setListVersion] = useState(0);
+  const [thinking, setThinking] = useState<Thinking>(THINKING_DEFAULTS);
+  const reasoning = ready ? runtime?.reasoning : null;
+  useEffect(() => setThinking(loadThinking(runtime?.model ?? null)), [runtime?.model]);
+  const changeThinking = (next: Partial<Thinking>) =>
+    setThinking((t) => {
+      const value = { ...t, ...next };
+      saveThinking(runtime?.model ?? null, value);
+      return value;
+    });
   const [saveError, setSaveError] = useState<string | null>(null);
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
-    const body = { messages: history.map(({ role, content, error, model }) => ({ role, content, error: !!error, model: model ?? null })), model: runtime?.model ?? null, settings };
+    const body = { messages: history.map(({ role, content, error, model, reasoning }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null })), model: runtime?.model ?? null, settings };
     try {
       if (id) await api(`/api/chats/${id}/messages`, { method: "PUT", json: body });
       else {
@@ -122,7 +178,7 @@ export function ChatPage() {
     if (!saved) return;
     chatId.current = id;
     setChat({ id, title: saved.title, source: saved.source });
-    setMessages(saved.messages.map(({ role, content, error, model }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model })));
+    setMessages(saved.messages.map(({ role, content, error, model, reasoning }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning })));
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
   }
@@ -162,6 +218,17 @@ export function ChatPage() {
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  /** Request fields for the thinking choices, only those the model's template understands. */
+  function thinkingFields() {
+    if (!reasoning) return {};
+    const thinkingOn = !reasoning.toggle || thinking.on;
+    return {
+      ...(reasoning.toggle && !thinking.on && { chat_template_kwargs: { enable_thinking: false } }),
+      ...(reasoning.effort && thinking.effort !== "default" && { reasoning_effort: thinking.effort }),
+      ...(thinkingOn && thinking.budget > 0 && { thinking_budget_tokens: thinking.budget }),
+    };
+  }
+
   async function send(history: Message[]) {
     setMessages([...history, { role: "assistant", content: "" }]);
     setBusy(true);
@@ -170,7 +237,11 @@ export function ChatPage() {
     const { system, ...sampling } = settings;
     const model = runtime?.model ?? null;
     let text = "";
+    let thoughts = "";
+    let thought: number | undefined;
+    const started = performance.now();
     let failure: string | null = null;
+    const current = (): Message => ({ role: "assistant", content: text, model, reasoning: thoughts || null, thought });
     // Saved before the reply streams, so a long answer or a crash never loses the question.
     const id = await persist(chatId.current, history);
     try {
@@ -179,10 +250,13 @@ export function ChatPage() {
         (data) => {
           if (data === "[DONE]") return;
           const delta = JSON.parse(data).choices?.[0]?.delta;
+          const thinkingPiece = (delta?.reasoning_content ?? "") as string;
           const piece = (delta?.content ?? "") as string;
-          if (!piece) return;
+          if (!piece && !thinkingPiece) return;
+          thoughts += thinkingPiece;
+          if (piece && thoughts && thought === undefined) thought = (performance.now() - started) / 1000;
           text += piece;
-          if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: text, model }]);
+          if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), current()]);
         },
         {
           signal: ctrl.signal,
@@ -190,22 +264,25 @@ export function ChatPage() {
             stream: true,
             messages: [...(system.trim() ? [{ role: "system", content: system }] : []), ...history.map(({ role, content }) => ({ role, content }))],
             ...sampling,
+            ...thinkingFields(),
           },
         },
       );
     } catch (err) {
       if (!ctrl.signal.aborted) {
         failure = (err as Error).message;
-        if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: text || failure!, error: !text, model }]);
+        if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), text || thoughts ? current() : { role: "assistant", content: failure!, error: true, model }]);
       }
     } finally {
       setBusy(false);
       abort.current = null;
     }
-    // A stopped reply keeps what was written; an empty one isn't saved.
-    const reply: Message | null = text ? { role: "assistant", content: text, model } : failure ? { role: "assistant", content: failure, error: true, model } : null;
+    if (thoughts && thought === undefined) thought = (performance.now() - started) / 1000;
+    // A stopped reply keeps what was written (thinking included); an empty one isn't saved.
+    const reply: Message | null = text || thoughts ? current() : failure ? { role: "assistant", content: failure, error: true, model } : null;
+    if (reply && chatId.current === id) setMessages([...history, reply]);
     if (id) await persist(id, reply ? [...history, reply] : history);
-    if (!text && !failure && chatId.current === id) setMessages(history);
+    if (!reply && chatId.current === id) setMessages(history);
   }
 
   function submit() {
@@ -256,10 +333,17 @@ export function ChatPage() {
                     <Notice tone="error">{m.content}</Notice>
                   ) : (
                     <div className="prose-chat leading-relaxed">
-                      {m.content ? <Markdown remarkPlugins={[remarkGfm]}>{literalAsterisks(m.content)}</Markdown> : <span className="animate-pulse-dot text-muted">Thinking…</span>}
+                      {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
+                      {m.content ? (
+                        <Markdown remarkPlugins={[remarkGfm]}>{literalAsterisks(m.content)}</Markdown>
+                      ) : !m.reasoning ? (
+                        <span className="animate-pulse-dot text-muted">Thinking…</span>
+                      ) : !(busy && i === messages.length - 1) ? (
+                        <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens, or set a thinking budget, and regenerate.</p>
+                      ) : null}
                     </div>
                   )}
-                  {m.role === "assistant" && m.content && !(busy && i === messages.length - 1) && (
+                  {m.role === "assistant" && (m.content || m.reasoning) && !(busy && i === messages.length - 1) && (
                     <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <CopyButton text={m.content} />
                       {i === messages.length - 1 && (
@@ -338,9 +422,33 @@ export function ChatPage() {
           <Slider label="Min P" value={settings.min_p} min={0} max={1} step={0.01} onChange={set("min_p")} />
           <Slider label="Repeat penalty" value={settings.repeat_penalty} min={1} max={2} step={0.01} onChange={set("repeat_penalty")} />
           <Slider label="Presence penalty" value={settings.presence_penalty} min={0} max={2} step={0.05} onChange={set("presence_penalty")} />
-          <Field label="Max new tokens">
+          <Field label="Max new tokens" hint={reasoning?.thinks ? "Thinking counts toward this." : undefined}>
             <Input type="number" min={16} value={settings.max_tokens} onChange={(e) => set("max_tokens")(Number(e.target.value))} />
           </Field>
+          {reasoning && (reasoning.toggle || reasoning.effort || reasoning.thinks) && (
+            <div className="flex flex-col gap-3 border-t border-line pt-4">
+              <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+                <Brain className="size-3.5" /> Thinking
+              </h3>
+              {reasoning.toggle && <Toggle label="Think before answering" checked={thinking.on} onChange={(on) => changeThinking({ on })} />}
+              {reasoning.effort && (
+                <Field label="Reasoning effort">
+                  <Select value={thinking.effort} onChange={(e) => changeThinking({ effort: e.target.value as Thinking["effort"] })}>
+                    <option value="default">Model default</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </Select>
+                </Field>
+              )}
+              {(!reasoning.toggle || thinking.on) && (
+                <Field label="Thinking budget" hint="Most tokens to spend thinking before answering. Empty for no limit.">
+                  <Input type="number" min={0} step={256} placeholder="No limit" value={thinking.budget || ""} onChange={(e) => changeThinking({ budget: Math.max(0, Number(e.target.value) || 0) })} />
+                </Field>
+              )}
+              <p className="text-[12px] text-muted">Remembered for {runtime?.model}.</p>
+            </div>
+          )}
           {recommended ? (
             <Button size="sm" variant="ghost" disabled={usingRecommended} onClick={() => setSettings((s) => recommendedSettings(s, recommended))}>
               Use recommended settings

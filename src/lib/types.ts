@@ -70,6 +70,8 @@ export interface RuntimeStatus {
   error: string | null;
   engine: string;
   available: boolean;
+  /** What the loaded model's chat template allows; null until it's ready. */
+  reasoning?: { thinks: boolean; toggle: boolean; effort: boolean } | null;
 }
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
