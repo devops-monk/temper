@@ -103,4 +103,10 @@ def match(model: str) -> dict | None:
 
 @router.get("/match")
 def match_route(model: str):
+    """Settings for a loaded model: those imported with it (Ollama's Modelfile) first, then the catalog's."""
+    from .library import settings_for
+
+    if found := settings_for(model):
+        name, settings = found
+        return {"match": {"id": name, "label": name, "publisher": settings["source"], "sampling": settings.get("sampling") or {}, "system": settings.get("system")}}
     return {"match": match(model)}

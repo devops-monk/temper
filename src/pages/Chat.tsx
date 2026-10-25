@@ -28,7 +28,10 @@ const DEFAULTS: Settings = { system: "", temperature: 0.7, top_p: 0.8, top_k: 20
 /** What a publisher's recommendation leaves unset means "off", as in the libraries they test with. */
 const NEUTRAL = { top_p: 1, top_k: 0, min_p: 0, repeat_penalty: 1, presence_penalty: 0 };
 
-type Recommended = Pick<CatalogModel, "id" | "sampling"> & { publisher: string };
+type Recommended = Pick<CatalogModel, "id" | "sampling"> & { publisher: string; system?: string | null };
+
+/** "Qwen/Qwen3.5-4B" → "Qwen3.5-4B"; an Ollama name like "qwen2.5:7b" stays as it is. */
+const shortName = (id: string) => id.split("/").pop()!;
 
 function recommendedSettings(base: Settings, rec: Recommended): Settings {
   const { repetition_penalty, ...rest } = rec.sampling;
@@ -77,12 +80,16 @@ export function ChatPage() {
   useEffect(() => {
     if (!loaded) return;
     let stale = false;
-    api<{ match: (CatalogModel & { publisher: string }) | null }>(`/api/catalog/match?model=${encodeURIComponent(loaded)}`)
+    api<{ match: (CatalogModel & { publisher: string; system?: string | null }) | null }>(`/api/catalog/match?model=${encodeURIComponent(loaded)}`)
       .then(({ match }) => {
         if (stale) return;
         const rec = match && Object.keys(match.sampling).length ? match : null;
         setRecommended(rec);
-        setSettings((s) => (rec ? recommendedSettings(s, rec) : { ...s, ...Object.fromEntries(SAMPLING_KEYS.map((k) => [k, DEFAULTS[k]])) }));
+        setSettings((s) => {
+          const next = rec ? recommendedSettings(s, rec) : { ...s, ...Object.fromEntries(SAMPLING_KEYS.map((k) => [k, DEFAULTS[k]])) };
+          // A system prompt that came with the model (an Ollama Modelfile) fills an empty one, never replaces yours.
+          return match?.system && !s.system.trim() ? { ...next, system: match.system } : next;
+        });
       })
       .catch(() => setRecommended(null));
     return () => {
@@ -234,7 +241,13 @@ export function ChatPage() {
         </div>
         {recommended && (
           <p className="-mt-1 mb-4 text-[12px] text-muted" title={samplingText(recommended.sampling)}>
-            {usingRecommended ? `Using ${recommended.publisher}'s recommended settings for ${recommended.id.split("/")[1]}.` : `Changed from ${recommended.publisher}'s recommended settings for ${recommended.id.split("/")[1]}.`}
+            {recommended.publisher === "Ollama"
+              ? usingRecommended
+                ? `Using the settings from ${recommended.id}'s Ollama Modelfile.`
+                : `Changed from ${recommended.id}'s Ollama Modelfile settings.`
+              : usingRecommended
+                ? `Using ${recommended.publisher}'s recommended settings for ${shortName(recommended.id)}.`
+                : `Changed from ${recommended.publisher}'s recommended settings for ${shortName(recommended.id)}.`}
           </p>
         )}
         <div className="flex flex-col gap-4">

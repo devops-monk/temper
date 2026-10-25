@@ -107,7 +107,7 @@ function LoadButton({ path, name }: { path: string; name: string }) {
             if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
           }
           try {
-            await api("/api/runtime/load", { json: { path } });
+            await api("/api/runtime/load", { json: { path, name } });
             await refreshRuntime();
             go("chat");
           } catch (e) {
@@ -319,6 +319,60 @@ function ImportBar({ onImported }: { onImported: (errors: string[]) => void }) {
   );
 }
 
+interface OllamaModel {
+  name: string;
+  size: number;
+  imported: boolean;
+  vision: boolean;
+}
+
+/** Models downloaded with Ollama that aren't in the library yet, offered without copying them. */
+function OllamaModels({ version, onImported }: { version: number; onImported: (errors: string[]) => void }) {
+  const [models, setModels] = useState<OllamaModel[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<{ models: OllamaModel[] }>("/api/ollama").then((r) => setModels(r.models.filter((m) => !m.imported)), () => setModels([]));
+  }, [version]);
+  if (!models.length) return null;
+
+  async function add(names: string[]) {
+    setBusy(true);
+    const errors = await api("/api/ollama/import", { json: { names } }).then(
+      () => [],
+      (e: Error) => [e.message],
+    );
+    setBusy(false);
+    onImported(errors);
+  }
+
+  return (
+    <div className="mx-7 mt-4 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
+      <div className="flex items-center justify-between gap-3">
+        <p>
+          <span className="font-medium">Found in Ollama.</span> <span className="text-muted">Temper can use these files as they are, with their Modelfile settings; nothing is copied.</span>
+        </p>
+        {models.length > 1 && (
+          <Button size="sm" disabled={busy} onClick={() => void add(models.map((m) => m.name))}>
+            Add all
+          </Button>
+        )}
+      </div>
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {models.map((m) => (
+          <li key={m.name} className="flex items-center justify-between gap-3">
+            <span>
+              <span className="font-mono text-[12.5px]">{m.name}</span> <span className="text-muted">{bytes(m.size)}</span>
+            </span>
+            <Button size="sm" disabled={busy} onClick={() => void add([m.name])}>
+              Add to library
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const KIND_LABEL = { safetensors: "Safetensors weights", mlx: "MLX weights", gguf: "GGUF" };
 
 function LocalModels({ version, onImported }: { version: number; onImported: (errors: string[]) => void }) {
@@ -355,6 +409,7 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
   return (
     <>
       <ImportBar onImported={onImported} />
+      <OllamaModels version={version} onImported={onImported} />
       {!models.length ? (
         <EmptyState icon={<Download className="size-7" />} title="No models on this computer yet">
           Pick one from the Catalog, search under Find models, or import a .gguf file you already have.

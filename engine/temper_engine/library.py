@@ -89,7 +89,8 @@ def inspect(raw: str) -> dict:
     if (path / "snapshots").is_dir() and (path / "refs" / "main").is_file():  # a cache repo folder: use its current snapshot
         path = path / "snapshots" / (path / "refs" / "main").read_text().strip()
     if path.is_file():
-        if path.suffix.lower() != ".gguf":
+        # Ollama's blobs are GGUFs without the extension, so the header decides.
+        if path.suffix.lower() != ".gguf" and not _is_gguf(path):
             raise HTTPException(400, "Import a .gguf file, or a folder that holds a model (config.json and .safetensors files).")
         try:
             name = _gguf_name(path)
@@ -99,7 +100,11 @@ def inspect(raw: str) -> dict:
             raise HTTPException(400, f"{path.name} looks damaged: Temper couldn't read its header ({e}).") from e
         if "mmproj" in path.name.lower():
             raise HTTPException(400, f"{path.name} is a vision projector, not a model. Import the model's GGUF; Temper finds the projector beside it.")
-        gguf = _ggufs(path.parent, only=path)
+        if path.suffix.lower() == ".gguf":
+            gguf = _ggufs(path.parent, only=path)
+        else:
+            size = path.stat().st_size
+            gguf = [{"name": path.name, "size": size, "path": str(path), "parts": [path.name], "split": 1, "complete": True}]
         return {"kind": "gguf", "name": name or _name(path), "path": str(path), "gguf": gguf, "size": sum(g["size"] for g in gguf)}
 
     config_file = path / "config.json"
@@ -132,6 +137,9 @@ def entries() -> list[dict]:
         except HTTPException as e:
             out.append({"id": item["name"], "path": item["path"], "kind": item["kind"], "imported": True, "missing": e.detail, "size": 0, "last_used": item["added"], "gguf": [], "files": 0, "safetensors": False})
             continue
+        gguf = found.get("gguf", [])
+        if found["kind"] == "gguf" and not found["path"].lower().endswith(".gguf"):
+            gguf = [{**g, "name": item["name"]} for g in gguf]  # a blob named by its hash: show the import's name
         out.append({
             "id": item["name"],
             "path": found["path"],
@@ -139,10 +147,11 @@ def entries() -> list[dict]:
             "imported": True,
             "size": found["size"],
             "last_used": item["added"],
-            "gguf": found.get("gguf", []),
-            "files": len(found.get("gguf", [])) or 1,
+            "gguf": gguf,
+            "files": len(gguf) or 1,
             "safetensors": found["kind"] in ("safetensors", "mlx"),
             "warnings": found.get("warnings", []),
+            "source": (item.get("settings") or {}).get("source"),
         })
     return out
 
@@ -151,13 +160,30 @@ class ImportRequest(BaseModel):
     path: str
 
 
+def add_entry(path: str, name: str | None = None, settings: dict | None = None) -> dict:
+    """Adds (or refreshes) an import. `settings` are chat settings that came with it, e.g. from Ollama."""
+    found = inspect(path)
+    imports = [i for i in _imports() if i["path"] != found["path"]]
+    entry = {"name": name or found["name"], "path": found["path"], "kind": found["kind"], "added": time.time()}
+    if settings:
+        entry["settings"] = settings
+    imports.insert(0, entry)
+    _save(imports)
+    return {**found, "name": entry["name"]}
+
+
+def settings_for(path: str) -> tuple[str, dict] | None:
+    """(name, settings) for an imported model file that came with chat settings."""
+    target = os.path.abspath(path)
+    for item in _imports():
+        if item.get("settings") and os.path.abspath(item["path"]) == target:
+            return item["name"], item["settings"]
+    return None
+
+
 @router.post("")
 def add(req: ImportRequest):
-    found = inspect(req.path)
-    imports = [i for i in _imports() if i["path"] != found["path"]]
-    imports.insert(0, {"name": found["name"], "path": found["path"], "kind": found["kind"], "added": time.time()})
-    _save(imports)
-    return found
+    return add_entry(req.path)
 
 
 @router.delete("")

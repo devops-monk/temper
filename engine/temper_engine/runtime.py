@@ -26,6 +26,8 @@ def _free_port() -> int:
 
 class LoadRequest(BaseModel):
     path: str
+    # What to call it; Ollama's blobs are named by their hash.
+    name: str | None = None
     context: int = 8192
     gpu_layers: int = 999
     flash_attention: bool = True
@@ -67,7 +69,7 @@ class RuntimeManager:
         self.unload()
         with self.lock:
             self.port = _free_port()
-            self.model, self.path, self.state, self.error, self.log = Path(req.path).name, req.path, "loading", None, []
+            self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
                 "-c", str(req.context), "-ngl", str(req.gpu_layers), "--jinja",

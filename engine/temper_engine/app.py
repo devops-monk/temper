@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, catalog, datasets, doctor, export, hardware, hub, jobs, library, llamacpp, memory, recipes, runtime, sources, storage, training
+from . import __version__, account, catalog, datasets, doctor, export, hardware, hub, jobs, library, llamacpp, memory, ollama, recipes, runtime, sources, storage, training
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health"}
@@ -45,7 +45,7 @@ def create_app(token: str = "") -> FastAPI:
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (hardware, doctor, account, sources, storage, catalog, memory, hub, library, jobs, runtime, training, export, datasets, llamacpp, recipes):
+    for module in (hardware, doctor, account, sources, storage, catalog, memory, hub, library, ollama, jobs, runtime, training, export, datasets, llamacpp, recipes):
         app.include_router(module.router)
 
     return app
