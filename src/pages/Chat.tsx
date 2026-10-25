@@ -1,9 +1,10 @@
-import { ArrowUp, Boxes, Brain, Columns2, History, MessageSquare, RotateCcw, Square } from "lucide-react";
+import { ArrowUp, Boxes, Brain, Columns2, History, ListPlus, MessageSquare, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { ChatList } from "../components/ChatList";
 import { Compare } from "../components/Compare";
 import { PresetBar, type Preset } from "../components/Presets";
+import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
 import { api, stream } from "../lib/engine";
@@ -123,6 +124,16 @@ export function ChatPage() {
     });
   const [saveError, setSaveError] = useState<string | null>(null);
   const [comparing, setComparing] = useState(false);
+  // Follow-ups typed while a reply is written; the ref is what the send loop reads.
+  const [queue, setQueueState] = useState<Queued[]>([]);
+  const queueRef = useRef<Queued[]>([]);
+  const nextQueued = useRef(0);
+  const [paused, setPaused] = useState(false);
+  const setQueue = (items: Queued[]) => {
+    queueRef.current = items;
+    setQueueState(items);
+    if (!items.length) setPaused(false);
+  };
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
@@ -148,6 +159,7 @@ export function ChatPage() {
   async function openChat(id: string) {
     setComparing(false);
     if (id === chatId.current) return;
+    setQueue([]);
     abort.current?.abort();
     const saved = await api<SavedChat>(`/api/chats/${id}`).catch((e: Error) => {
       setSaveError(e.message);
@@ -163,6 +175,7 @@ export function ChatPage() {
 
   function newChat() {
     setComparing(false);
+    setQueue([]);
     abort.current?.abort();
     chatId.current = null;
     setChat(null);
@@ -258,7 +271,8 @@ export function ChatPage() {
     };
   }
 
-  async function send(history: Message[]) {
+  /** Streams a reply to `history`; returns the thread with it, or null if it was stopped, failed or the chat changed. */
+  async function send(history: Message[]): Promise<Message[] | null> {
     setMessages([...history, { role: "assistant", content: "" }]);
     setBusy(true);
     const ctrl = new AbortController();
@@ -312,13 +326,34 @@ export function ChatPage() {
     if (reply && chatId.current === id) setMessages([...history, reply]);
     if (id) await persist(id, reply ? [...history, reply] : history);
     if (!reply && chatId.current === id) setMessages(history);
+    return reply && !failure && !ctrl.signal.aborted && chatId.current === id ? [...history, reply] : null;
+  }
+
+  /** Sends, then the queued follow-ups one by one; a stopped or failed reply pauses the queue. */
+  async function run(history: Message[]) {
+    setPaused(false);
+    let thread = await send(history);
+    while (thread && queueRef.current.length) {
+      const [item, ...rest] = queueRef.current;
+      setQueue(rest);
+      thread = await send([...thread, { role: "user", content: item.text }]);
+    }
+    if (!thread && queueRef.current.length) setPaused(true);
+  }
+
+  function resume() {
+    const [item, ...rest] = queueRef.current;
+    if (!item || busy || !ready) return;
+    setQueue(rest);
+    void run([...messages, { role: "user", content: item.text }]);
   }
 
   function submit() {
     const content = draft.trim();
-    if (!content || busy || !ready) return;
+    if (!content || !ready) return;
     setDraft("");
-    void send([...messages, { role: "user", content }]);
+    if (busy) setQueue([...queueRef.current, { id: nextQueued.current++, text: content }]);
+    else void run([...messages, { role: "user", content }]);
   }
 
   const set = <K extends keyof Settings>(k: K) => (v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
@@ -396,7 +431,7 @@ export function ChatPage() {
                         <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                           <CopyButton text={m.content} />
                           {i === messages.length - 1 && (
-                            <Button size="sm" variant="ghost" onClick={() => void send(messages.slice(0, -1))}>
+                            <Button size="sm" variant="ghost" onClick={() => void run(messages.slice(0, -1))}>
                               <RotateCcw className="size-3.5" /> Regenerate
                             </Button>
                           )}
@@ -410,6 +445,7 @@ export function ChatPage() {
 
             <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
               {saveError && <p className="mb-2 text-center text-[12px] text-danger">{saveError}</p>}
+              <PromptQueue items={queue} paused={paused && !busy} onChange={setQueue} onResume={resume} />
               <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 focus-within:border-accent">
                 <textarea
                   value={draft}
@@ -421,22 +457,29 @@ export function ChatPage() {
                     }
                   }}
                   rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-                  placeholder={ready ? "Message the model" : "Load a model first"}
+                  placeholder={!ready ? "Load a model first" : busy ? "Queue a follow-up" : "Message the model"}
                   disabled={!ready}
                   className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
                   aria-label="Message"
                 />
-                {busy ? (
+                {busy && (
                   <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
                     <Square className="size-3.5 fill-current" />
                   </Button>
+                )}
+                {busy ? (
+                  draft.trim() && (
+                    <Button variant="primary" onClick={submit} aria-label="Add to queue" title="Sent when the reply finishes" className="size-9 rounded-xl px-0">
+                      <ListPlus className="size-4" />
+                    </Button>
+                  )
                 ) : (
                   <Button variant="primary" onClick={submit} disabled={!draft.trim() || !ready} aria-label="Send" className="size-9 rounded-xl px-0">
                     <ArrowUp className="size-4" />
                   </Button>
                 )}
               </div>
-              <p className="mt-1.5 text-center text-[11.5px] text-muted">Enter to send, Shift+Enter for a new line</p>
+              <p className="mt-1.5 text-center text-[11.5px] text-muted">{busy ? "Enter to queue it for when the reply finishes" : "Enter to send, Shift+Enter for a new line"}</p>
             </div>
           </>
         )}
