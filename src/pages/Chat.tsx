@@ -4,6 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { ChatList } from "../components/ChatList";
+import { PresetBar, type Preset } from "../components/Presets";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
 import { api, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
@@ -86,7 +87,8 @@ const DEFAULTS: Settings = { system: "", temperature: 0.7, top_p: 0.8, top_k: 20
 /** What a publisher's recommendation leaves unset means "off", as in the libraries they test with. */
 const NEUTRAL = { top_p: 1, top_k: 0, min_p: 0, repeat_penalty: 1, presence_penalty: 0 };
 
-type Recommended = Pick<CatalogModel, "id" | "sampling"> & { publisher: string; system?: string | null };
+/** Where recommended settings came from: a publisher (catalog), an Ollama Modelfile, or `source` (the GGUF, generation_config.json). */
+type Recommended = Pick<CatalogModel, "id" | "sampling"> & { publisher: string | null; system?: string | null; source?: string | null };
 
 /** "Qwen/Qwen3.5-4B" → "Qwen3.5-4B"; an Ollama name like "qwen2.5:7b" stays as it is. */
 const shortName = (id: string) => id.split("/").pop()!;
@@ -138,6 +140,9 @@ export function ChatPage() {
   const [listVersion, setListVersion] = useState(0);
   const [thinking, setThinking] = useState<Thinking>(THINKING_DEFAULTS);
   const reasoning = ready ? runtime?.reasoning : null;
+  // Templates that mention <think> only to strip it from history don't make a model think, so without a
+  // switch or effort level, thinking controls appear once the model has actually thought.
+  const thinks = !!reasoning && (reasoning.toggle || reasoning.effort || messages.some((m) => m.reasoning && m.model === runtime?.model));
   useEffect(() => setThinking(loadThinking(runtime?.model ?? null)), [runtime?.model]);
   const changeThinking = (next: Partial<Thinking>) =>
     setThinking((t) => {
@@ -190,28 +195,78 @@ export function ChatPage() {
     setMessages([]);
   }
 
-  // A model from the catalog gets its publisher's sampling settings when it loads.
+  // When a model loads: its default preset if it has one, else its recommended settings (catalog,
+  // Ollama Modelfile, the GGUF or generation_config.json), else Temper's defaults.
   const loaded = ready ? (runtime?.path ?? runtime?.model ?? null) : null;
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [defaultPreset, setDefaultPreset] = useState<string | null>(null);
+  const [selected, setSelected] = useState("defaults");
+  const presetsFor = (model: string | null) => api<{ presets: Preset[]; default: string | null }>(`/api/presets${model ? `?model=${encodeURIComponent(model)}` : ""}`);
   useEffect(() => {
     if (!loaded) return;
     let stale = false;
-    api<{ match: (CatalogModel & { publisher: string; system?: string | null }) | null }>(`/api/catalog/match?model=${encodeURIComponent(loaded)}`)
-      .then(({ match }) => {
-        if (stale) return;
-        const rec = match && Object.keys(match.sampling).length ? match : null;
-        setRecommended(rec);
-        setSettings((s) => {
-          const next = rec ? recommendedSettings(s, rec) : { ...s, ...Object.fromEntries(SAMPLING_KEYS.map((k) => [k, DEFAULTS[k]])) };
-          // A system prompt that came with the model (an Ollama Modelfile) fills an empty one, never replaces yours.
-          return match?.system && !s.system.trim() ? { ...next, system: match.system } : next;
-        });
-      })
-      .catch(() => setRecommended(null));
+    const model = runtime?.model ?? null;
+    void Promise.all([
+      api<{ match: Recommended | null }>(`/api/catalog/match?model=${encodeURIComponent(loaded)}`).catch(() => ({ match: null })),
+      presetsFor(model).catch(() => ({ presets: [], default: null })),
+    ]).then(([{ match }, saved]) => {
+      if (stale) return;
+      const rec = match && Object.keys(match.sampling).length ? match : null;
+      setRecommended(rec);
+      setPresets(saved.presets);
+      setDefaultPreset(saved.default);
+      const preset = saved.presets.find((p) => p.id === saved.default);
+      if (preset) {
+        applyPreset(preset);
+        setSelected(preset.id);
+        return;
+      }
+      setSelected(rec ? "recommended" : "defaults");
+      setSettings((s) => {
+        const next = rec ? recommendedSettings(s, rec) : { ...s, ...Object.fromEntries(SAMPLING_KEYS.map((k) => [k, DEFAULTS[k]])) };
+        // A system prompt that came with the model (an Ollama Modelfile) fills an empty one, never replaces yours.
+        return match?.system && !s.system.trim() ? { ...next, system: match.system } : next;
+      });
+    });
     return () => {
       stale = true;
     };
+    // runtime.model changes together with `loaded`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
+
+  function applyPreset(preset: Preset) {
+    setSettings({ ...DEFAULTS, ...(preset.settings as Partial<Settings>) });
+    if (preset.thinking) changeThinking(preset.thinking as Partial<Thinking>);
+  }
+
+  function choose(value: string) {
+    setSelected(value);
+    if (value === "recommended" && recommended) setSettings((s) => recommendedSettings(s, recommended));
+    else if (value === "defaults") setSettings((s) => ({ ...DEFAULTS, system: s.system }));
+    else {
+      const preset = presets.find((p) => p.id === value);
+      if (preset) applyPreset(preset);
+    }
+  }
+
+  async function reloadPresets(select?: string) {
+    const saved = await presetsFor(runtime?.model ?? null).catch(() => null);
+    if (!saved) return;
+    setPresets(saved.presets);
+    setDefaultPreset(saved.default);
+    if (select) setSelected(select);
+    if (select === "recommended" || select === "defaults") choose(select);
+  }
+
   const usingRecommended = recommended !== null && SAMPLING_KEYS.every((k) => settings[k] === recommendedSettings(settings, recommended)[k]);
+  const chosenPreset = presets.find((p) => p.id === selected);
+  const modified =
+    selected === "recommended"
+      ? !usingRecommended
+      : selected === "defaults"
+        ? [...SAMPLING_KEYS, "max_tokens" as const].some((k) => settings[k] !== DEFAULTS[k])
+        : !!chosenPreset && (Object.keys(DEFAULTS) as (keyof Settings)[]).some((k) => settings[k] !== ({ ...DEFAULTS, ...chosenPreset.settings } as Settings)[k]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -392,18 +447,27 @@ export function ChatPage() {
       </div>
 
       <aside className="w-[272px] shrink-0 overflow-y-auto border-l border-line bg-surface/40 px-4 py-5">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">Generation</h2>
         </div>
-        {recommended && (
-          <p className="-mt-1 mb-4 text-[12px] text-muted" title={samplingText(recommended.sampling)}>
+        <PresetBar
+          model={ready ? (runtime?.model ?? null) : null}
+          presets={presets}
+          selected={selected}
+          modified={modified}
+          defaultId={defaultPreset}
+          hasRecommended={recommended !== null}
+          current={{ settings, thinking }}
+          onSelect={choose}
+          onReload={(id) => void reloadPresets(id)}
+        />
+        {recommended && selected === "recommended" && (
+          <p className="-mt-2 mb-4 text-[12px] text-muted" title={samplingText(recommended.sampling)}>
             {recommended.publisher === "Ollama"
-              ? usingRecommended
-                ? `Using the settings from ${recommended.id}'s Ollama Modelfile.`
-                : `Changed from ${recommended.id}'s Ollama Modelfile settings.`
-              : usingRecommended
-                ? `Using ${recommended.publisher}'s recommended settings for ${shortName(recommended.id)}.`
-                : `Changed from ${recommended.publisher}'s recommended settings for ${shortName(recommended.id)}.`}
+              ? `From ${recommended.id}'s Ollama Modelfile.`
+              : recommended.source
+                ? `From ${recommended.source}.`
+                : `${recommended.publisher}'s recommended settings for ${shortName(recommended.id)}.`}
           </p>
         )}
         <div className="flex flex-col gap-4">
@@ -422,10 +486,10 @@ export function ChatPage() {
           <Slider label="Min P" value={settings.min_p} min={0} max={1} step={0.01} onChange={set("min_p")} />
           <Slider label="Repeat penalty" value={settings.repeat_penalty} min={1} max={2} step={0.01} onChange={set("repeat_penalty")} />
           <Slider label="Presence penalty" value={settings.presence_penalty} min={0} max={2} step={0.05} onChange={set("presence_penalty")} />
-          <Field label="Max new tokens" hint={reasoning?.thinks ? "Thinking counts toward this." : undefined}>
+          <Field label="Max new tokens" hint={thinks ? "Thinking counts toward this." : undefined}>
             <Input type="number" min={16} value={settings.max_tokens} onChange={(e) => set("max_tokens")(Number(e.target.value))} />
           </Field>
-          {reasoning && (reasoning.toggle || reasoning.effort || reasoning.thinks) && (
+          {reasoning && thinks && (
             <div className="flex flex-col gap-3 border-t border-line pt-4">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
                 <Brain className="size-3.5" /> Thinking
@@ -448,15 +512,6 @@ export function ChatPage() {
               )}
               <p className="text-[12px] text-muted">Remembered for {runtime?.model}.</p>
             </div>
-          )}
-          {recommended ? (
-            <Button size="sm" variant="ghost" disabled={usingRecommended} onClick={() => setSettings((s) => recommendedSettings(s, recommended))}>
-              Use recommended settings
-            </Button>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={() => setSettings(DEFAULTS)}>
-              Reset to defaults
-            </Button>
           )}
         </div>
       </aside>
