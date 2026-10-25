@@ -81,7 +81,7 @@ def storage(fresh: bool = False):
             "models": [models_dir()],
             "exports": [root / "exports", root / "converted"],
             "runs": [root / "runs", root / "recipe-runs"],
-            "datasets": [root / "datasets", root / "prepare", datasets_cache],
+            "datasets": [root / "datasets", root / "prepare", root / "uploads", datasets_cache],
             "engine": [root / p for p in ENGINE_PARTS],
         }
         with ThreadPoolExecutor(8) as pool:

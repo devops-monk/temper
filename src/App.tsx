@@ -8,6 +8,7 @@ import { ChatPage } from "./pages/Chat";
 import { ConnectPage } from "./pages/Connect";
 import { DatasetsPage } from "./pages/Datasets";
 import { ExportPage } from "./pages/Export";
+import { LibraryPage } from "./pages/Library";
 import { ModelsPage } from "./pages/Models";
 import { RecipesPage } from "./pages/Recipes";
 import { SettingsPage } from "./pages/Settings";
@@ -55,6 +56,7 @@ export function App() {
             <>
               {page === "chat" && <ChatPage />}
               {page === "models" && <ModelsPage />}
+              {page === "library" && <LibraryPage />}
               {page === "train" && <TrainPage />}
               {page === "datasets" && <DatasetsPage />}
               {page === "recipes" && <RecipesPage />}

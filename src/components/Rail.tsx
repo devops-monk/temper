@@ -1,4 +1,4 @@
-import { Boxes, Cable, ChefHat, Database, FlaskConical, MessageSquare, PackageOpen, Settings } from "lucide-react";
+import { Boxes, Cable, ChefHat, Database, FlaskConical, Library, MessageSquare, PackageOpen, Settings } from "lucide-react";
 import type { ComponentType } from "react";
 import { useApp } from "../lib/store";
 import type { Page } from "../lib/types";
@@ -8,6 +8,7 @@ import { cx } from "./ui";
 const ITEMS: { page: Page; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: "chat", label: "Chat", icon: MessageSquare },
   { page: "models", label: "Models", icon: Boxes },
+  { page: "library", label: "Library", icon: Library },
   { page: "train", label: "Train", icon: FlaskConical },
   { page: "datasets", label: "Datasets", icon: Database },
   { page: "recipes", label: "Recipes", icon: ChefHat },

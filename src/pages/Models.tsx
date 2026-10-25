@@ -1,29 +1,16 @@
 import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pause, Play, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CatalogView } from "../components/Catalog";
+import { CHAT_CONTEXT, type ChatEstimate, LoadButton } from "../components/LoadButton";
 import { RepoAccess } from "../components/HfAccount";
 import { SOURCE_NAME, useHubSource } from "../components/HubSource";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
-import type { Budget, Verdict } from "../components/MemoryEstimate";
 import type { HubModel, Job, LocalModel, RepoFile } from "../lib/types";
+import { useFileDrop } from "../lib/useFileDrop";
 import { useJob } from "../lib/useJob";
-
-/** Temper loads chat models with this context (runtime.LoadRequest), so estimates use it too. */
-const CHAT_CONTEXT = 8192;
-
-interface ChatEstimate {
-  weights: number;
-  kv_cache: number;
-  overhead: number;
-  total: number;
-  context: number;
-  budget: Budget;
-  verdict: Verdict;
-  advice: string[];
-}
 
 /** Whether a GGUF of `size` bytes fits: the file, plus the KV cache and compute buffers for the model's
  * shape (same for every quantization in a repo), against what the GPU can use. Without an estimate,
@@ -85,39 +72,6 @@ function InstallRuntime() {
         </Button>
       </div>
     </Notice>
-  );
-}
-
-function LoadButton({ path, name }: { path: string; name: string }) {
-  const { refreshRuntime, go, runtime } = useApp();
-  const [error, setError] = useState<string | null>(null);
-  const loaded = runtime?.state === "ready" && runtime.model === name;
-  return (
-    <span className="flex items-center gap-2">
-      {error && <span className="max-w-[260px] truncate text-[12px] text-danger" title={error}>{error}</span>}
-      <Button
-        size="sm"
-        variant={loaded ? "secondary" : "primary"}
-        onClick={async () => {
-          if (loaded) return go("chat");
-          setError(null);
-          const est = await api<ChatEstimate>("/api/memory/chat", { json: { path, context: CHAT_CONTEXT } }).catch(() => null);
-          if (est?.verdict === "too_large") {
-            const tips = est.advice.length ? `\n\n${est.advice.join("\n")}` : "";
-            if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
-          }
-          try {
-            await api("/api/runtime/load", { json: { path, name } });
-            await refreshRuntime();
-            go("chat");
-          } catch (e) {
-            setError((e as Error).message);
-          }
-        }}
-      >
-        <Play className="size-3.5" /> {loaded ? "Open chat" : "Load"}
-      </Button>
-    </span>
   );
 }
 
@@ -562,32 +516,6 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
       )}
     </>
   );
-}
-
-/** Files dragged onto the window, from the desktop shell (the webview's own drop events carry no paths). */
-function useFileDrop(onDrop: (paths: string[]) => void) {
-  const [over, setOver] = useState(false);
-  const latest = useRef(onDrop);
-  latest.current = onDrop;
-  useEffect(() => {
-    if (!inTauri) return;
-    let unlisten: (() => void) | undefined;
-    let gone = false;
-    void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
-      getCurrentWebview()
-        .onDragDropEvent(({ payload }) => {
-          if (payload.type === "enter" || payload.type === "over") setOver(true);
-          else setOver(false);
-          if (payload.type === "drop" && payload.paths.length) latest.current(payload.paths);
-        })
-        .then((fn) => (gone ? fn() : (unlisten = fn))),
-    );
-    return () => {
-      gone = true;
-      unlisten?.();
-    };
-  }, []);
-  return over;
 }
 
 interface DownloadStats {

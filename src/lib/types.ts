@@ -143,7 +143,7 @@ export interface Run {
   path: string;
 }
 
-export type Page = "chat" | "models" | "train" | "datasets" | "recipes" | "export" | "connect" | "settings";
+export type Page = "chat" | "models" | "library" | "train" | "datasets" | "recipes" | "export" | "connect" | "settings";
 
 /** A recipe column in data-designer's format; the editor knows the common fields of each type. */
 export interface RecipeColumn {
