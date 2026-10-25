@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import socket
 import subprocess
 import threading
@@ -16,6 +17,8 @@ from pydantic import BaseModel
 from .hardware import llama_server_path
 
 router = APIRouter(tags=["runtime"])
+
+UNKNOWN_ARCH = re.compile(r"unknown model architecture: '([^']+)'")
 
 
 def _free_port() -> int:
@@ -106,7 +109,9 @@ class RuntimeManager:
         if proc is self.proc and self.state != "idle":
             self.state = "failed"
             tail = "\n".join(self.log[-8:])
-            self.error = f"llama-server exited with code {code}\n{tail}"
+            arch = next((m.group(1) for line in self.log if (m := UNKNOWN_ARCH.search(line))), None)
+            reason = f"llama.cpp can't run {self.model}: it doesn't support the {arch} architecture." if arch else f"llama-server exited with code {code}"
+            self.error = f"{reason}\n{tail}"
 
     def _wait_ready(self, proc: subprocess.Popen) -> None:
         deadline = time.time() + 600
@@ -145,6 +150,9 @@ def runtime_status():
 
 @router.post("/api/runtime/load")
 def runtime_load(req: LoadRequest):
+    from .compare import pool
+
+    pool.unload_all()  # compare mode's models would compete with it for memory
     manager.load(req)
     return manager.status()
 
@@ -168,9 +176,17 @@ def v1_models():
 
 @router.post("/v1/chat/completions")
 async def v1_chat(request: Request):
-    _require_ready()
+    from .compare import pool
+
     body = await request.json()
-    url = f"{manager.base}/v1/chat/completions"
+    # Compare mode's models are asked for by path or name; anything else goes to chat's model.
+    server = pool.find(body.get("model"))
+    if server is None:
+        _require_ready()
+        server = manager
+    elif server.state != "ready":
+        raise HTTPException(409, f"{server.model} is still loading." if server.state == "loading" else server.error or f"{server.model} isn't loaded.")
+    url = f"{server.base}/v1/chat/completions"
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
             r = await client.post(url, json=body)

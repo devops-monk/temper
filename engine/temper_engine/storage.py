@@ -116,11 +116,11 @@ def _repo_dir(repo_id: str) -> Path:
 
 
 def _check_not_busy(folder: Path) -> None:
-    from .runtime import manager
+    from .compare import loaded_paths
 
     # The loaded path goes through the snapshot link, so compare the path itself, not where it resolves.
-    if manager.path and Path(os.path.abspath(manager.path)).is_relative_to(folder):
-        raise HTTPException(409, "That model is loaded in chat. Unload it first.")
+    if any(Path(os.path.abspath(p)).is_relative_to(folder) for p in loaded_paths()):
+        raise HTTPException(409, "That model is loaded in chat or compare mode. Unload it first.")
     name = folder.name.removeprefix("models--").replace("--", "/")
     for job in registry.jobs.values():
         if job.kind == "download" and job.status == "running" and (job.result.get("request") or {}).get("repo_id") == name:

@@ -1,10 +1,10 @@
-import { ArrowUp, Boxes, Brain, ChevronRight, History, MessageSquare, RotateCcw, Square } from "lucide-react";
+import { ArrowUp, Boxes, Brain, Columns2, History, MessageSquare, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { ChatList } from "../components/ChatList";
+import { Compare } from "../components/Compare";
 import { PresetBar, type Preset } from "../components/Presets";
+import { ReplyText, ThinkingBlock } from "../components/Reply";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
 import { api, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
@@ -45,23 +45,6 @@ function saveThinking(model: string | null, value: Thinking) {
   } catch {
     /* private window: the choice lasts until the page closes */
   }
-}
-
-/** A reply's reasoning, open while the model thinks and folded away once it starts answering. */
-function ThinkingBlock({ text, live, seconds }: { text: string; live: boolean; seconds?: number }) {
-  const [open, setOpen] = useState<boolean | null>(null);
-  const shown = open ?? live;
-  const label = live ? "Thinking…" : seconds !== undefined ? `Thought for ${seconds < 1 ? "under a second" : `${Math.round(seconds)} s`}` : "Thinking";
-  return (
-    <div className="mb-3">
-      <button onClick={() => setOpen(!shown)} className="flex items-center gap-1.5 text-[12.5px] text-muted hover:text-text" aria-expanded={shown}>
-        <Brain className={cx("size-3.5", live && "animate-pulse-dot")} />
-        {label}
-        <ChevronRight className={cx("size-3 transition-transform", shown && "rotate-90")} />
-      </button>
-      {shown && <div className="mt-2 max-h-80 overflow-y-auto border-l-2 border-line pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">{text}</div>}
-    </div>
-  );
 }
 
 interface SavedChat {
@@ -112,18 +95,6 @@ function Slider({ label, value, min, max, step, onChange }: { label: string; val
   );
 }
 
-/**
- * Markdown lets `*` emphasise inside a word, so "4*3 = 12 … 6*1.5" renders half a sentence in
- * italics. Escape a `*` with a letter or digit on both sides, outside code; real emphasis always has
- * a space or punctuation on one side.
- */
-function literalAsterisks(markdown: string): string {
-  return markdown
-    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g)
-    .map((part, i) => (i % 2 ? part : part.replace(/([\p{L}\p{N}])\*(?=[\p{L}\p{N}])/gu, "$1\\*")))
-    .join("");
-}
-
 export function ChatPage() {
   const { runtime, go } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -151,6 +122,7 @@ export function ChatPage() {
       return value;
     });
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [comparing, setComparing] = useState(false);
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
@@ -174,6 +146,7 @@ export function ChatPage() {
   }
 
   async function openChat(id: string) {
+    setComparing(false);
     if (id === chatId.current) return;
     abort.current?.abort();
     const saved = await api<SavedChat>(`/api/chats/${id}`).catch((e: Error) => {
@@ -189,6 +162,7 @@ export function ChatPage() {
   }
 
   function newChat() {
+    setComparing(false);
     abort.current?.abort();
     chatId.current = null;
     setChat(null);
@@ -353,97 +327,119 @@ export function ChatPage() {
     <div className="flex min-h-0 flex-1">
       <ChatList activeId={chat?.id ?? null} version={listVersion} onOpen={(id) => void openChat(id)} onNew={newChat} onDeleted={(id) => id === chatId.current && newChat()} />
       <div className="flex min-w-0 flex-1 flex-col">
-        {chat?.source && (
-          <div className="flex items-center gap-2 border-b border-line px-6 py-2 text-[12.5px] text-muted">
-            <History className="size-3.5" /> Imported from {chat.source}. {ready ? "Messages you send continue it with the loaded model." : "Load a model to continue it."}
+        <div className="flex items-center gap-3 border-b border-line px-6 py-2">
+          <div className="flex rounded-lg bg-surface-2 p-0.5 text-[12.5px]" role="tablist" aria-label="Chat mode">
+            {([["Chat", MessageSquare, false], ["Compare", Columns2, true]] as const).map(([label, Icon, value]) => (
+              <button
+                key={label}
+                role="tab"
+                aria-selected={comparing === value}
+                onClick={() => setComparing(value)}
+                disabled={busy}
+                className={cx("flex items-center gap-1.5 rounded-md px-2.5 py-1", comparing === value ? "bg-surface font-medium shadow-[0_0_0_1px_var(--line)]" : "text-muted hover:text-text")}
+              >
+                <Icon className="size-3.5" /> {label}
+              </button>
+            ))}
           </div>
-        )}
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
-            ready ? (
-              <EmptyState icon={<MessageSquare className="size-8" />} title={`Chat with ${runtime?.model}`}>
-                Everything runs on this computer. Nothing you type leaves it.
-              </EmptyState>
-            ) : (
-              <EmptyState icon={<Boxes className="size-8" />} title={runtime?.state === "loading" ? `Loading ${runtime.model}…` : "Load a model to start chatting"}>
-                {runtime?.state === "loading" ? (
-                  "Large models can take a minute to load into memory."
-                ) : (
-                  <>
-                    <p>Pick a GGUF model you've downloaded, or find one on Hugging Face.</p>
-                    <Button variant="primary" className="mt-4" onClick={() => go("models")}>
-                      Open models
-                    </Button>
-                  </>
-                )}
-              </EmptyState>
-            )
-          ) : (
-            <div className="mx-auto flex max-w-[760px] flex-col gap-6 px-6 py-8">
-              {messages.map((m, i) => (
-                <div key={i} className={cx("group", m.role === "user" && "self-end")}>
-                  {m.role === "user" ? (
-                    <div className="prose-chat max-w-[620px] rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>
-                  ) : m.error ? (
-                    <Notice tone="error">{m.content}</Notice>
-                  ) : (
-                    <div className="prose-chat leading-relaxed">
-                      {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
-                      {m.content ? (
-                        <Markdown remarkPlugins={[remarkGfm]}>{literalAsterisks(m.content)}</Markdown>
-                      ) : !m.reasoning ? (
-                        <span className="animate-pulse-dot text-muted">Thinking…</span>
-                      ) : !(busy && i === messages.length - 1) ? (
-                        <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens, or set a thinking budget, and regenerate.</p>
-                      ) : null}
-                    </div>
-                  )}
-                  {m.role === "assistant" && (m.content || m.reasoning) && !(busy && i === messages.length - 1) && (
-                    <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      <CopyButton text={m.content} />
-                      {i === messages.length - 1 && (
-                        <Button size="sm" variant="ghost" onClick={() => void send(messages.slice(0, -1))}>
-                          <RotateCcw className="size-3.5" /> Regenerate
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+          {chat?.source && !comparing && (
+            <span className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
+              <History className="size-3.5 shrink-0" /> <span className="truncate">Imported from {chat.source}. {ready ? "Messages you send continue it with the loaded model." : "Load a model to continue it."}</span>
+            </span>
           )}
         </div>
+        {comparing ? (
+          <Compare settings={settings} />
+        ) : (
+          <>
+            <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+              {messages.length === 0 ? (
+                ready ? (
+                  <EmptyState icon={<MessageSquare className="size-8" />} title={`Chat with ${runtime?.model}`}>
+                    Everything runs on this computer. Nothing you type leaves it.
+                  </EmptyState>
+                ) : (
+                  <EmptyState icon={<Boxes className="size-8" />} title={runtime?.state === "loading" ? `Loading ${runtime.model}…` : "Load a model to start chatting"}>
+                    {runtime?.state === "loading" ? (
+                      "Large models can take a minute to load into memory."
+                    ) : (
+                      <>
+                        <p>Pick a GGUF model you've downloaded, or find one on Hugging Face.</p>
+                        <Button variant="primary" className="mt-4" onClick={() => go("models")}>
+                          Open models
+                        </Button>
+                      </>
+                    )}
+                  </EmptyState>
+                )
+              ) : (
+                <div className="mx-auto flex max-w-[760px] flex-col gap-6 px-6 py-8">
+                  {messages.map((m, i) => (
+                    <div key={i} className={cx("group", m.role === "user" && "self-end")}>
+                      {m.role === "user" ? (
+                        <div className="prose-chat max-w-[620px] rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>
+                      ) : m.error ? (
+                        <Notice tone="error">{m.content}</Notice>
+                      ) : (
+                        <div className="prose-chat leading-relaxed">
+                          {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
+                          {m.content ? (
+                            <ReplyText text={m.content} />
+                          ) : !m.reasoning ? (
+                            <span className="animate-pulse-dot text-muted">Thinking…</span>
+                          ) : !(busy && i === messages.length - 1) ? (
+                            <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens, or set a thinking budget, and regenerate.</p>
+                          ) : null}
+                        </div>
+                      )}
+                      {m.role === "assistant" && (m.content || m.reasoning) && !(busy && i === messages.length - 1) && (
+                        <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                          <CopyButton text={m.content} />
+                          {i === messages.length - 1 && (
+                            <Button size="sm" variant="ghost" onClick={() => void send(messages.slice(0, -1))}>
+                              <RotateCcw className="size-3.5" /> Regenerate
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
-          {saveError && <p className="mb-2 text-center text-[12px] text-danger">{saveError}</p>}
-          <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 focus-within:border-accent">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-              placeholder={ready ? "Message the model" : "Load a model first"}
-              disabled={!ready}
-              className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
-              aria-label="Message"
-            />
-            {busy ? (
-              <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
-                <Square className="size-3.5 fill-current" />
-              </Button>
-            ) : (
-              <Button variant="primary" onClick={submit} disabled={!draft.trim() || !ready} aria-label="Send" className="size-9 rounded-xl px-0">
-                <ArrowUp className="size-4" />
-              </Button>
-            )}
-          </div>
-          <p className="mt-1.5 text-center text-[11.5px] text-muted">Enter to send, Shift+Enter for a new line</p>
-        </div>
+            <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
+              {saveError && <p className="mb-2 text-center text-[12px] text-danger">{saveError}</p>}
+              <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 focus-within:border-accent">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                  rows={Math.min(8, Math.max(1, draft.split("\n").length))}
+                  placeholder={ready ? "Message the model" : "Load a model first"}
+                  disabled={!ready}
+                  className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
+                  aria-label="Message"
+                />
+                {busy ? (
+                  <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
+                    <Square className="size-3.5 fill-current" />
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={submit} disabled={!draft.trim() || !ready} aria-label="Send" className="size-9 rounded-xl px-0">
+                    <ArrowUp className="size-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="mt-1.5 text-center text-[11.5px] text-muted">Enter to send, Shift+Enter for a new line</p>
+            </div>
+          </>
+        )}
       </div>
 
       <aside className="w-[272px] shrink-0 overflow-y-auto border-l border-line bg-surface/40 px-4 py-5">
@@ -489,7 +485,7 @@ export function ChatPage() {
           <Field label="Max new tokens" hint={thinks ? "Thinking counts toward this." : undefined}>
             <Input type="number" min={16} value={settings.max_tokens} onChange={(e) => set("max_tokens")(Number(e.target.value))} />
           </Field>
-          {reasoning && thinks && (
+          {reasoning && thinks && !comparing && (
             <div className="flex flex-col gap-3 border-t border-line pt-4">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
                 <Brain className="size-3.5" /> Thinking

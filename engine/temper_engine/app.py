@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, catalog, chat_import, chats, convert, datasets, doctor, export, files, hardware, hub, jobs, library, llamacpp, memory, ollama, presets, recipes, runtime, sources, storage, training
+from . import __version__, account, catalog, chat_import, chats, compare, convert, datasets, doctor, export, files, hardware, hub, jobs, library, llamacpp, memory, ollama, presets, recipes, runtime, sources, storage, training
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health"}
@@ -15,6 +15,7 @@ OPEN_PATHS = {"/api/health"}
 async def lifespan(_app: FastAPI):
     yield
     runtime.manager.unload()
+    compare.pool.unload_all()
     jobs.registry.cancel_all()
 
 
@@ -45,7 +46,7 @@ def create_app(token: str = "") -> FastAPI:
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (chat_import, chats, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, runtime, presets, training, export, datasets, files, llamacpp, recipes):
+    for module in (chat_import, chats, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, runtime, compare, presets, training, export, datasets, files, llamacpp, recipes):
         app.include_router(module.router)
 
     return app

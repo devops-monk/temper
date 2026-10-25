@@ -374,14 +374,23 @@ class ChatEstimate(BaseModel):
     context: int = Field(default=8192, ge=256, le=1_048_576)
 
 
+def local_gguf(path: Path) -> tuple[Shape, int]:
+    """A local GGUF's shape and the size of its weights. A split GGUF's header is in the first part; the weights are in all of them."""
+    parts = sorted(path.parent.glob(SPLIT_PART.sub(r"-*-of-\2.gguf", path.name))) if SPLIT_PART.search(path.name) else [path]
+    return gguf_shape_local(path), sum(p.stat().st_size for p in parts)
+
+
+def local_chat_estimate(path: Path, context: int) -> dict:
+    """inference_estimate for a local GGUF, at `context` or the model's own maximum if that's smaller."""
+    shape, weights = local_gguf(path)
+    return inference_estimate(shape, weights, min(context, shape.context_max or context))
+
+
 @router.post("/chat")
 def estimate_chat(req: ChatEstimate):
     try:
         if req.path:
-            path = Path(req.path).expanduser()
-            # A split GGUF's header is in the first part; the weights are in all of them.
-            parts = sorted(path.parent.glob(SPLIT_PART.sub(r"-*-of-\2.gguf", path.name))) if SPLIT_PART.search(path.name) else [path]
-            shape, weights = gguf_shape_local(path), sum(p.stat().st_size for p in parts)
+            shape, weights = local_gguf(Path(req.path).expanduser())
         elif req.repo_id and req.filename:
             from .hub import list_files
 
@@ -395,7 +404,7 @@ def estimate_chat(req: ChatEstimate):
             shape, weights = gguf_shape_remote(req.repo_id, req.filename), size
         else:
             raise HTTPException(400, "Give a local GGUF path, or a repo_id and filename.")
-    except (OSError, ValueError, httpx.HTTPError, LookupError) as e:
+    except (OSError, ValueError, httpx.HTTPError, LookupError, TypeError, ZeroDivisionError) as e:  # TypeError: not a language model's header
         raise HTTPException(422, f"Couldn't read the model's header: {e}") from e
     context = min(req.context, shape.context_max or req.context)
     est = inference_estimate(shape, weights, context)

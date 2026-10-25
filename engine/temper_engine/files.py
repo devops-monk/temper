@@ -286,11 +286,11 @@ def upload(req: UploadRequest):
 
 
 def _check_not_busy(item: dict) -> None:
-    from .runtime import manager
+    from .compare import loaded_paths
 
     path = Path(item["path"])
-    if manager.path and Path(os.path.abspath(manager.path)).is_relative_to(path):
-        raise HTTPException(409, "That model is loaded in chat. Unload it first.")
+    if any(Path(os.path.abspath(p)).is_relative_to(path) for p in loaded_paths()):
+        raise HTTPException(409, "That model is loaded in chat or compare mode. Unload it first.")
     for job in registry.jobs.values():
         if job.status != "running":
             continue
