@@ -1,8 +1,9 @@
-import { ArrowUp, Boxes, Eraser, MessageSquare, RotateCcw, Square } from "lucide-react";
+import { ArrowUp, Boxes, History, MessageSquare, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { samplingText, type CatalogModel } from "../components/Catalog";
+import { ChatList } from "../components/ChatList";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, cx } from "../components/ui";
 import { api, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
@@ -11,6 +12,16 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   error?: boolean;
+  /** The model that wrote a reply. */
+  model?: string | null;
+}
+
+interface SavedChat {
+  id: string;
+  title: string;
+  source: string | null;
+  messages: Message[];
+  settings: Partial<Settings> | null;
 }
 
 interface Settings {
@@ -74,6 +85,54 @@ export function ChatPage() {
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const ready = runtime?.state === "ready";
+  // The saved thread on screen; null until the first message of a new chat is sent.
+  const [chat, setChat] = useState<{ id: string; title: string; source: string | null } | null>(null);
+  const chatId = useRef<string | null>(null);
+  const [listVersion, setListVersion] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
+  async function persist(id: string | null, history: Message[]): Promise<string | null> {
+    const body = { messages: history.map(({ role, content, error, model }) => ({ role, content, error: !!error, model: model ?? null })), model: runtime?.model ?? null, settings };
+    try {
+      if (id) await api(`/api/chats/${id}/messages`, { method: "PUT", json: body });
+      else {
+        const created = await api<SavedChat>("/api/chats", { json: body });
+        id = created.id;
+        if (chatId.current === null) {
+          chatId.current = id;
+          setChat({ id, title: created.title, source: null });
+        }
+      }
+      setSaveError(null);
+      setListVersion((v) => v + 1);
+    } catch (e) {
+      setSaveError(`This chat couldn't be saved: ${(e as Error).message}`);
+    }
+    return id;
+  }
+
+  async function openChat(id: string) {
+    if (id === chatId.current) return;
+    abort.current?.abort();
+    const saved = await api<SavedChat>(`/api/chats/${id}`).catch((e: Error) => {
+      setSaveError(e.message);
+      return null;
+    });
+    if (!saved) return;
+    chatId.current = id;
+    setChat({ id, title: saved.title, source: saved.source });
+    setMessages(saved.messages.map(({ role, content, error, model }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model })));
+    // The thread's own system prompt comes back with it; sampling stays with the loaded model.
+    setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
+  }
+
+  function newChat() {
+    abort.current?.abort();
+    chatId.current = null;
+    setChat(null);
+    setMessages([]);
+  }
 
   // A model from the catalog gets its publisher's sampling settings when it loads.
   const loaded = ready ? (runtime?.path ?? runtime?.model ?? null) : null;
@@ -109,7 +168,11 @@ export function ChatPage() {
     const ctrl = new AbortController();
     abort.current = ctrl;
     const { system, ...sampling } = settings;
+    const model = runtime?.model ?? null;
     let text = "";
+    let failure: string | null = null;
+    // Saved before the reply streams, so a long answer or a crash never loses the question.
+    const id = await persist(chatId.current, history);
     try {
       await stream(
         "/v1/chat/completions",
@@ -119,7 +182,7 @@ export function ChatPage() {
           const piece = (delta?.content ?? "") as string;
           if (!piece) return;
           text += piece;
-          setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: text }]);
+          if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: text, model }]);
         },
         {
           signal: ctrl.signal,
@@ -132,12 +195,17 @@ export function ChatPage() {
       );
     } catch (err) {
       if (!ctrl.signal.aborted) {
-        setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: text || (err as Error).message, error: !text }]);
+        failure = (err as Error).message;
+        if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: text || failure!, error: !text, model }]);
       }
     } finally {
       setBusy(false);
       abort.current = null;
     }
+    // A stopped reply keeps what was written; an empty one isn't saved.
+    const reply: Message | null = text ? { role: "assistant", content: text, model } : failure ? { role: "assistant", content: failure, error: true, model } : null;
+    if (id) await persist(id, reply ? [...history, reply] : history);
+    if (!text && !failure && chatId.current === id) setMessages(history);
   }
 
   function submit() {
@@ -151,7 +219,13 @@ export function ChatPage() {
 
   return (
     <div className="flex min-h-0 flex-1">
+      <ChatList activeId={chat?.id ?? null} version={listVersion} onOpen={(id) => void openChat(id)} onNew={newChat} onDeleted={(id) => id === chatId.current && newChat()} />
       <div className="flex min-w-0 flex-1 flex-col">
+        {chat?.source && (
+          <div className="flex items-center gap-2 border-b border-line px-6 py-2 text-[12.5px] text-muted">
+            <History className="size-3.5" /> Imported from {chat.source}. {ready ? "Messages you send continue it with the loaded model." : "Load a model to continue it."}
+          </div>
+        )}
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             ready ? (
@@ -202,6 +276,7 @@ export function ChatPage() {
         </div>
 
         <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
+          {saveError && <p className="mb-2 text-center text-[12px] text-danger">{saveError}</p>}
           <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 focus-within:border-accent">
             <textarea
               value={draft}
@@ -235,9 +310,6 @@ export function ChatPage() {
       <aside className="w-[272px] shrink-0 overflow-y-auto border-l border-line bg-surface/40 px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-semibold">Generation</h2>
-          <Button size="sm" variant="ghost" onClick={() => setMessages([])} disabled={busy || !messages.length}>
-            <Eraser className="size-3.5" /> Clear chat
-          </Button>
         </div>
         {recommended && (
           <p className="-mt-1 mb-4 text-[12px] text-muted" title={samplingText(recommended.sampling)}>
