@@ -115,6 +115,7 @@ def local_models():
             {"name": f.file_name, "path": str(f.file_path), "size": f.size_on_disk}
             for f in (revision.files if revision else [])
         ]
+        safetensors = any(f["name"].endswith(".safetensors") for f in files)
         models.append({
             "id": repo.repo_id,
             "size": repo.size_on_disk,
@@ -122,7 +123,8 @@ def local_models():
             "path": str(revision.snapshot_path) if revision else None,
             "gguf": group_gguf(files),
             "files": len(files),
-            "safetensors": any(f["name"].endswith(".safetensors") for f in files),
+            "safetensors": safetensors,
+            **(library.checkpoint(revision.snapshot_path) if revision and safetensors else {"quantization": None, "convertible": False}),
         })
     return library.entries() + sorted(models, key=lambda m: m["last_used"] or 0, reverse=True)
 

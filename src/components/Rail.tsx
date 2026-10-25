@@ -18,7 +18,7 @@ const ITEMS: { page: Page; label: string; icon: ComponentType<{ className?: stri
 export function Rail() {
   const { page, go, jobs } = useApp();
   const running = (kind: string) => jobs.some((j) => j.kind === kind && j.status === "running");
-  const busy: Partial<Record<Page, boolean>> = { models: running("download"), train: running("train"), export: running("export"), recipes: running("recipe"), datasets: running("prepare") };
+  const busy: Partial<Record<Page, boolean>> = { models: running("download") || running("convert"), train: running("train"), export: running("export"), recipes: running("recipe"), datasets: running("prepare") };
 
   const item = (p: Page, label: string, Icon: ComponentType<{ className?: string }>) => (
     <button

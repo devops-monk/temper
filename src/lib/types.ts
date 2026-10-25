@@ -76,7 +76,7 @@ export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
-  kind: "download" | "train" | "export" | "recipe" | "prepare";
+  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move";
   title: string;
   status: JobStatus;
   progress: number | null;
@@ -124,10 +124,14 @@ export interface LocalModel {
   safetensors: boolean;
   /** Added from the user's own files rather than downloaded. */
   imported?: boolean;
-  kind?: "gguf" | "safetensors" | "mlx";
+  kind?: "gguf" | "safetensors" | "mlx" | "mistral";
   /** Why an imported model can't be found any more. */
   missing?: string;
   warnings?: string[];
+  /** How the checkpoint was quantized before it was published (FP8, NVFP4, …); null for 16-bit weights. */
+  quantization?: { label: string; convertible: boolean; note?: string } | null;
+  /** llama.cpp's converter can turn it into a GGUF for chat. */
+  convertible?: boolean;
 }
 
 export interface Run {

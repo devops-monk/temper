@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogView } from "../components/Catalog";
 import { RepoAccess } from "../components/HfAccount";
 import { SOURCE_NAME, useHubSource } from "../components/HubSource";
-import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Toggle, cx } from "../components/ui";
+import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
@@ -373,7 +373,84 @@ function OllamaModels({ version, onImported }: { version: number; onImported: (e
   );
 }
 
-const KIND_LABEL = { safetensors: "Safetensors weights", mlx: "MLX weights", gguf: "GGUF" };
+const KIND_LABEL = { safetensors: "Safetensors weights", mlx: "MLX weights", gguf: "GGUF", mistral: "Mistral-format weights" };
+const CONVERT_QUANTS = [
+  ["q4_k_m", "Q4_K_M"],
+  ["q8_0", "Q8_0"],
+  ["f16", "F16"],
+] as const;
+
+/** What a weights folder is for, in one line: training, export, or converting to chat with it. */
+function weightsSummary(m: LocalModel) {
+  const kind = KIND_LABEL[m.kind ?? "safetensors"] + (m.quantization ? `, pre-quantized as ${m.quantization.label}` : "");
+  const uses = m.kind === "mlx" ? "for fine-tuning and export" : m.kind === "mistral" || m.quantization ? "convert to a GGUF to chat with it" : "for fine-tuning and export, or convert to a GGUF to chat with it";
+  return `${kind}: ${uses}.`;
+}
+
+/** Converts a safetensors, pre-quantized or Mistral-format checkpoint to a GGUF, which is what chat runs. */
+function ConvertButton({ model, onDone }: { model: LocalModel; onDone: () => void }) {
+  const { jobs, refreshJobs } = useApp();
+  const [quant, setQuant] = useState("q4_k_m");
+  const [started, setStarted] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // A conversion started earlier (or before the page was reopened) is picked up from the job list.
+  const existing = jobs.find((j) => j.kind === "convert" && j.status === "running" && j.result.source === model.path);
+  const jobId = started ?? existing?.id ?? null;
+  const { status, events } = useJob(jobId);
+  const running = jobId !== null && (status === null || status === "running");
+  const phase = [...events].reverse().find((e) => e.event === "phase")?.name as string | undefined;
+  const progress = [...events].reverse().find((e) => e.event === "progress")?.value as number | undefined;
+  const failure = events.find((e) => e.event === "status" && e.status === "failed")?.error as string | undefined;
+
+  useEffect(() => {
+    if (status === "done") onDone();
+    if (status && status !== "running") void refreshJobs();
+  }, [status, onDone, refreshJobs]);
+
+  async function start() {
+    setError(null);
+    try {
+      const job = await api<Job>("/api/models/convert", { json: { path: model.path, quant } });
+      setStarted(job.id);
+      void refreshJobs();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  if (running)
+    return (
+      <span className="flex items-center gap-2 text-[12px] text-muted">
+        {phase ?? "Starting"}…
+        <span className="w-28">
+          <ProgressBar value={progress ?? null} />
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => void api(`/api/jobs/${jobId}/cancel`, { method: "POST" })}>
+          Cancel
+        </Button>
+      </span>
+    );
+  const message = error ?? (status === "failed" ? `Conversion failed: ${failure ?? "unknown error"}` : null);
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      {message && (
+        <span className="truncate text-[12px] text-danger" title={message}>
+          {message}
+        </span>
+      )}
+      <Select value={quant} onChange={(e) => setQuant(e.target.value)} className="h-7 w-auto text-[12.5px]" aria-label="GGUF quantization">
+        {CONVERT_QUANTS.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </Select>
+      <Button size="sm" onClick={() => void start()} title="Convert with llama.cpp so chat can load it. The original files stay as they are.">
+        Convert to GGUF
+      </Button>
+    </span>
+  );
+}
 
 function LocalModels({ version, onImported }: { version: number; onImported: (errors: string[]) => void }) {
   const [models, setModels] = useState<LocalModel[] | null>(null);
@@ -462,14 +539,19 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
                     </div>
                   ))}
                 </div>
-              ) : m.safetensors ? (
+              ) : m.safetensors || m.kind === "mistral" ? (
                 <div className="mt-1 flex items-center justify-between gap-3">
-                  <p className="text-[12.5px] text-muted">
-                    {KIND_LABEL[m.kind ?? "safetensors"]}, for fine-tuning and export. {m.warnings?.join(" ")}
+                  <p className="min-w-0 text-[12.5px] text-muted">
+                    {weightsSummary(m)} {m.warnings?.join(" ")}
                   </p>
-                  <Button size="sm" onClick={() => fineTune(m.imported ? m.path! : m.id)}>
-                    <FlaskConical className="size-3.5" /> Fine-tune
-                  </Button>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {m.convertible && m.path && <ConvertButton model={m} onDone={load} />}
+                    {m.safetensors && !m.quantization && (
+                      <Button size="sm" onClick={() => fineTune(m.imported ? m.path! : m.id)}>
+                        <FlaskConical className="size-3.5" /> Fine-tune
+                      </Button>
+                    )}
+                  </span>
                 </div>
               ) : (
                 <p className="mt-1 text-[12.5px] text-muted">No model weights downloaded, only metadata files.</p>

@@ -79,21 +79,13 @@ def export_gguf(model_dir: Path, dest: Path, cfg: dict) -> None:
 
 
 def downgrade_tokenizer_config(model_dir: Path) -> None:
-    """Rewrite a transformers 5 tokenizer config so the converter's pinned transformers 4 can read it.
-
-    v5 saves `extra_special_tokens` as a list of strings; v4 expects a dict there and keeps the list
-    under `additional_special_tokens`.
-    """
+    """Rewrite a transformers 5 tokenizer config in place so the converter can read it (see llamacpp)."""
     path = model_dir / "tokenizer_config.json"
     if not path.is_file():
         return
-    config = json.loads(path.read_text(encoding="utf-8"))
-    extra = config.get("extra_special_tokens")
-    if not isinstance(extra, list):
-        return
-    del config["extra_special_tokens"]
-    config["additional_special_tokens"] = list(dict.fromkeys(config.get("additional_special_tokens", []) + extra))
-    path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+    config = llamacpp.downgraded_tokenizer_config(json.loads(path.read_text(encoding="utf-8")))
+    if config is not None:
+        path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def main() -> None:

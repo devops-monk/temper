@@ -63,7 +63,7 @@ def test_bad_imports_say_why(tmp_path):
     (tmp_path / "notes.txt").write_text("hi")
     assert post(tmp_path / "notes.txt").status_code == 400
     (tmp_path / "params.json").write_text("{}")
-    assert "Mistral-format" in post(tmp_path).json()["detail"]
+    assert "no consolidated.safetensors" in post(tmp_path).json()["detail"]
     assert post(tmp_path / "missing").status_code == 400
 
 

@@ -79,7 +79,7 @@ def storage(fresh: bool = False):
         datasets_cache = Path(constants.HF_HOME) / "datasets"
         parts = {
             "models": [models_dir()],
-            "exports": [root / "exports"],
+            "exports": [root / "exports", root / "converted"],
             "runs": [root / "runs", root / "recipe-runs"],
             "datasets": [root / "datasets", root / "prepare", datasets_cache],
             "engine": [root / p for p in ENGINE_PARTS],

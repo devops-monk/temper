@@ -234,19 +234,37 @@ def uv_binary() -> str:
     raise RuntimeError("uv was not found, so the GGUF converter cannot run. Reinstall the engine from Settings.")
 
 
-def convert_command(model_dir: Path, outfile: Path, outtype: str = "f16") -> tuple[list[str], dict[str, str]]:
-    """Command that converts a Hugging Face folder to GGUF.
+def convert_command(model_dir: Path, outfile: Path, outtype: str = "f16", mistral_format: bool = False) -> tuple[list[str], dict[str, str]]:
+    """Command that converts a Hugging Face folder (or, with `mistral_format`, a Mistral-format one) to GGUF.
 
     The converter needs PyTorch and transformers, which the engine does not ship; uv runs it in a
-    cached, isolated environment built from llama.cpp's own pinned requirements.
+    cached, isolated environment built from llama.cpp's own pinned requirements. Mistral's format
+    also needs mistral-common for its tokenizer.
     """
     conv = install_converter()
     cmd = [
         uv_binary(), "run", "--no-project", "--python", "3.12",
         "--with-requirements", str(conv / "requirements" / "requirements-convert_hf_to_gguf.txt"),
+        *(["--with", "mistral-common"] if mistral_format else []),
         "python", str(conv / "convert_hf_to_gguf.py"), str(model_dir), "--outfile", str(outfile), "--outtype", outtype,
+        *(["--mistral-format"] if mistral_format else []),
     ]
     return cmd, uv_env()
+
+
+def downgraded_tokenizer_config(config: dict) -> dict | None:
+    """A transformers 5 tokenizer config rewritten so the converter's pinned transformers 4 can read it;
+    None if it needs no change.
+
+    v5 saves `extra_special_tokens` as a list of strings; v4 expects a dict there and keeps the list
+    under `additional_special_tokens`.
+    """
+    extra = config.get("extra_special_tokens")
+    if not isinstance(extra, list):
+        return None
+    config = {k: v for k, v in config.items() if k != "extra_special_tokens"}
+    config["additional_special_tokens"] = list(dict.fromkeys(config.get("additional_special_tokens", []) + extra))
+    return config
 
 
 def uv_env() -> dict[str, str]:
