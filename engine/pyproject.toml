@@ -11,6 +11,7 @@ dependencies = [
   "psutil>=6.0",
   "huggingface_hub>=0.26",
   "packaging>=23",
+  "pypdf>=5",
 ]
 
 [project.optional-dependencies]

@@ -11,12 +11,15 @@ export function Button({
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "sm" | "md" }) {
+  // A px- class given here replaces the default padding; both together would leave whichever Tailwind emits last.
+  const padding = /(^|\s)px-/.test(className ?? "") ? null : size === "sm" ? "px-2.5" : "px-3.5";
   return (
     <button
       {...props}
       className={cx(
         "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-45",
-        size === "sm" ? "h-7 px-2.5 text-[13px]" : "h-9 px-3.5",
+        size === "sm" ? "h-7 text-[13px]" : "h-9",
+        padding,
         variant === "primary" && "bg-accent text-accent-text hover:brightness-110",
         variant === "secondary" && "border border-line bg-surface hover:bg-surface-2",
         variant === "ghost" && "text-muted hover:bg-surface-2 hover:text-text",

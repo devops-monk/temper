@@ -376,8 +376,11 @@ class ChatEstimate(BaseModel):
 
 def local_gguf(path: Path) -> tuple[Shape, int]:
     """A local GGUF's shape and the size of its weights. A split GGUF's header is in the first part; the weights are in all of them."""
+    from .runtime import find_projector
+
     parts = sorted(path.parent.glob(SPLIT_PART.sub(r"-*-of-\2.gguf", path.name))) if SPLIT_PART.search(path.name) else [path]
-    return gguf_shape_local(path), sum(p.stat().st_size for p in parts)
+    projector = find_projector(str(path))  # chat loads it too
+    return gguf_shape_local(path), sum(p.stat().st_size for p in parts) + (Path(projector).stat().st_size if projector else 0)
 
 
 def local_chat_estimate(path: Path, context: int) -> dict:

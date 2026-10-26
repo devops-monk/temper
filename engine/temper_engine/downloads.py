@@ -174,7 +174,7 @@ def download(job: Job, repo_id: str, files: list[tuple[str, int]]) -> None:
         except Cancelled:
             job.log("Paused. Resume picks up from here.")
             return
-        if name.endswith(".gguf"):
+        if name.endswith(".gguf") and "mmproj" not in name.lower():  # the model, not its projector
             job.result["path"] = path
         job.result.setdefault("path", path)
     progress.add(0, files[-1][0], force=True)

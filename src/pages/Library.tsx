@@ -7,7 +7,7 @@ import { bytes, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import { useFileDrop } from "../lib/useFileDrop";
 
-type Kind = "upload" | "dataset" | "fine-tune" | "export" | "model";
+type Kind = "upload" | "dataset" | "fine-tune" | "export" | "model" | "attachment";
 
 interface Item {
   id: string;
@@ -36,6 +36,7 @@ const KINDS: { kind: Kind; label: string; plural: string }[] = [
   { kind: "fine-tune", label: "Fine-tune", plural: "Fine-tunes" },
   { kind: "export", label: "Export", plural: "Exports" },
   { kind: "model", label: "Converted model", plural: "Converted models" },
+  { kind: "attachment", label: "Chat attachment", plural: "Chat attachments" },
 ];
 const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<Kind, string>;
 

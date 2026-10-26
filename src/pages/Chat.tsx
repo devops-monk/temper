@@ -1,14 +1,17 @@
-import { ArrowUp, Boxes, Brain, Columns2, History, ListPlus, MessageSquare, RotateCcw, Square } from "lucide-react";
+import { ArrowUp, Boxes, Brain, Columns2, History, ListPlus, MessageSquare, Paperclip, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { samplingText, type CatalogModel } from "../components/Catalog";
+import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
+import { CHAT_CONTEXT } from "../components/LoadButton";
 import { Compare } from "../components/Compare";
 import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
-import { api, stream } from "../lib/engine";
+import { api, inTauri, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
+import { useFileDrop } from "../lib/useFileDrop";
 
 interface Message {
   role: "user" | "assistant";
@@ -20,6 +23,8 @@ interface Message {
   reasoning?: string | null;
   /** Seconds spent thinking, known only for replies written in this session. */
   thought?: number;
+  /** Files sent with a user message. */
+  attachments?: Attachment[];
 }
 
 /** Per-model thinking choices, remembered in this browser. */
@@ -137,7 +142,7 @@ export function ChatPage() {
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
-    const body = { messages: history.map(({ role, content, error, model, reasoning }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null })), model: runtime?.model ?? null, settings };
+    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null })), model: runtime?.model ?? null, settings };
     try {
       if (id) await api(`/api/chats/${id}/messages`, { method: "PUT", json: body });
       else {
@@ -168,7 +173,7 @@ export function ChatPage() {
     if (!saved) return;
     chatId.current = id;
     setChat({ id, title: saved.title, source: saved.source });
-    setMessages(saved.messages.map(({ role, content, error, model, reasoning }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning })));
+    setMessages(saved.messages.map(({ role, content, error, model, reasoning, attachments }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning, attachments: attachments ?? undefined })));
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
   }
@@ -305,7 +310,7 @@ export function ChatPage() {
           signal: ctrl.signal,
           json: {
             stream: true,
-            messages: [...(system.trim() ? [{ role: "system", content: system }] : []), ...history.map(({ role, content }) => ({ role, content }))],
+            messages: [...(system.trim() ? [{ role: "system", content: system }] : []), ...history.map(({ role, content, attachments }) => ({ role, content: attachments?.length ? [...attachments.map(attachmentPart), ...(content ? [{ type: "text", text: content }] : [])] : content }))],
             ...sampling,
             ...thinkingFields(),
           },
@@ -336,7 +341,7 @@ export function ChatPage() {
     while (thread && queueRef.current.length) {
       const [item, ...rest] = queueRef.current;
       setQueue(rest);
-      thread = await send([...thread, { role: "user", content: item.text }]);
+      thread = await send([...thread, { role: "user", content: item.text, attachments: item.files }]);
     }
     if (!thread && queueRef.current.length) setPaused(true);
   }
@@ -345,16 +350,43 @@ export function ChatPage() {
     const [item, ...rest] = queueRef.current;
     if (!item || busy || !ready) return;
     setQueue(rest);
-    void run([...messages, { role: "user", content: item.text }]);
+    void run([...messages, { role: "user", content: item.text, attachments: item.files }]);
   }
 
   function submit() {
     const content = draft.trim();
-    if (!content || !ready) return;
+    if ((!content && !files.length) || !ready || attaching || cantTake) return;
     setDraft("");
-    if (busy) setQueue([...queueRef.current, { id: nextQueued.current++, text: content }]);
-    else void run([...messages, { role: "user", content }]);
+    setFiles([]);
+    const sent = files.length ? files : undefined;
+    if (busy) setQueue([...queueRef.current, { id: nextQueued.current++, text: content, files: sent }]);
+    else void run([...messages, { role: "user", content, attachments: sent }]);
   }
+
+  // Files waiting in the message box; they're copied into Temper's home as soon as they're added.
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  async function addFiles(picked: (string | File)[]) {
+    if (!picked.length) return;
+    setAttaching(true);
+    const { added, errors } = await attach(picked);
+    setAttaching(false);
+    setFiles((f) => [...f, ...added]);
+    setAttachError(errors.length ? errors.join(" ") : null);
+  }
+  function removeFile(a: Attachment) {
+    setFiles((f) => f.filter((x) => x.id !== a.id));
+    void api(`/api/attachments/${a.id}`, { method: "DELETE" }).catch(() => {}); // never sent, so nothing refers to it
+  }
+  const dropping = useFileDrop((paths) => !comparing && ready && void addFiles(paths));
+  const modalities = runtime?.modalities ?? {};
+  const kinds = new Set(files.map((f) => f.kind));
+  const lacking = kinds.has("image") && !modalities.vision ? "see images" : kinds.has("audio") && !modalities.audio ? "hear audio" : null;
+  const cantTake =
+    ready && lacking
+      ? `${runtime?.model} can't ${lacking}. ${runtime?.projector ? "" : "Load a model that can; Temper loads its projector (an mmproj .gguf) from beside the model."}`.trim()
+      : null;
 
   const set = <K extends keyof Settings>(k: K) => (v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
 
@@ -412,7 +444,16 @@ export function ChatPage() {
                   {messages.map((m, i) => (
                     <div key={i} className={cx("group", m.role === "user" && "self-end")}>
                       {m.role === "user" ? (
-                        <div className="prose-chat max-w-[620px] rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>
+                        <div className="flex max-w-[620px] flex-col items-end gap-2">
+                          {m.attachments?.length ? (
+                            <div className="flex flex-wrap items-start justify-end gap-2">
+                              {m.attachments.map((a) => (
+                                <AttachmentChip key={a.id} attachment={a} context={CHAT_CONTEXT} />
+                              ))}
+                            </div>
+                          ) : null}
+                          {m.content && <div className="prose-chat rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>}
+                        </div>
                       ) : m.error ? (
                         <Notice tone="error">{m.content}</Notice>
                       ) : (
@@ -446,38 +487,68 @@ export function ChatPage() {
             <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
               {saveError && <p className="mb-2 text-center text-[12px] text-danger">{saveError}</p>}
               <PromptQueue items={queue} paused={paused && !busy} onChange={setQueue} onResume={resume} />
-              <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 focus-within:border-accent">
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              {cantTake && <p className="mb-2 text-center text-[12px] text-danger">{cantTake}</p>}
+              {attachError && <p className="mb-2 text-center text-[12px] text-danger">{attachError}</p>}
+              <div
+                className={cx("flex flex-col gap-2 rounded-2xl border bg-surface p-2 focus-within:border-accent", dropping && ready ? "border-accent border-dashed" : "border-line")}
+                onDragOver={(e) => e.dataTransfer.types.includes("Files") && e.preventDefault()}
+                onDrop={(e) => {
+                  // The desktop app gets paths through useFileDrop; a browser only gets the files.
+                  if (inTauri || !e.dataTransfer.files.length) return;
+                  e.preventDefault();
+                  if (ready) void addFiles([...e.dataTransfer.files]);
+                }}
+              >
+                {(files.length > 0 || attaching) && (
+                  <div className="flex flex-wrap items-start gap-2">
+                    {files.map((a) => (
+                      <AttachmentChip key={a.id} attachment={a} context={CHAT_CONTEXT} onRemove={() => removeFile(a)} />
+                    ))}
+                    {attaching && <span className="animate-pulse-dot self-center px-1 text-[12px] text-muted">Reading…</span>}
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <Button variant="ghost" onClick={() => void pickFiles().then(addFiles)} disabled={!ready} aria-label="Attach files" title="Attach images, audio or documents" className="size-9 rounded-xl px-0 text-muted">
+                    <Paperclip className="size-[18px]" />
+                  </Button>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const pasted = [...e.clipboardData.files];
+                      if (!pasted.length || !ready) return;
                       e.preventDefault();
-                      submit();
-                    }
-                  }}
-                  rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-                  placeholder={!ready ? "Load a model first" : busy ? "Queue a follow-up" : "Message the model"}
-                  disabled={!ready}
-                  className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
-                  aria-label="Message"
-                />
-                {busy && (
-                  <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
-                    <Square className="size-3.5 fill-current" />
-                  </Button>
-                )}
-                {busy ? (
-                  draft.trim() && (
-                    <Button variant="primary" onClick={submit} aria-label="Add to queue" title="Sent when the reply finishes" className="size-9 rounded-xl px-0">
-                      <ListPlus className="size-4" />
+                      void addFiles(pasted);
+                    }}
+                    rows={Math.min(8, Math.max(1, draft.split("\n").length))}
+                    placeholder={!ready ? "Load a model first" : busy ? "Queue a follow-up" : "Message the model"}
+                    disabled={!ready}
+                    className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
+                    aria-label="Message"
+                  />
+                  {busy && (
+                    <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
+                      <Square className="size-3.5 fill-current" />
                     </Button>
-                  )
-                ) : (
-                  <Button variant="primary" onClick={submit} disabled={!draft.trim() || !ready} aria-label="Send" className="size-9 rounded-xl px-0">
-                    <ArrowUp className="size-4" />
-                  </Button>
-                )}
+                  )}
+                  {busy ? (
+                    (draft.trim() || files.length > 0) && (
+                      <Button variant="primary" onClick={submit} aria-label="Add to queue" title="Sent when the reply finishes" className="size-9 rounded-xl px-0">
+                        <ListPlus className="size-4" />
+                      </Button>
+                    )
+                  ) : (
+                    <Button variant="primary" onClick={submit} disabled={(!draft.trim() && !files.length) || !ready || attaching || !!cantTake} aria-label="Send" className="size-9 rounded-xl px-0">
+                      <ArrowUp className="size-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
               <p className="mt-1.5 text-center text-[11.5px] text-muted">{busy ? "Enter to queue it for when the reply finishes" : "Enter to send, Shift+Enter for a new line"}</p>
             </div>

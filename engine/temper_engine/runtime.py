@@ -34,6 +34,24 @@ class LoadRequest(BaseModel):
     context: int = 8192
     gpu_layers: int = 999
     flash_attention: bool = True
+    # A vision or audio projector; by default an mmproj*.gguf beside the model, if there is one.
+    mmproj: str | None = None
+
+
+PROJECTOR_PREFERENCE = ("f16", "bf16", "f32", "q8")
+
+
+def find_projector(model: str) -> str | None:
+    """The mmproj GGUF beside a model (as Hugging Face repos ship them), preferring 16-bit over quantized ones."""
+    folder = Path(model).parent
+    found = sorted((p for p in folder.glob("*.gguf") if "mmproj" in p.name.lower() and p.is_file()), key=lambda p: p.name)
+    if not found:
+        return None
+    for tag in PROJECTOR_PREFERENCE:
+        for p in found:
+            if re.search(rf"(^|[-_.]){tag}([-_.]|$)", p.name.lower()):
+                return str(p)
+    return str(found[0])
 
 
 def reasoning_support(props: dict) -> dict:
@@ -61,6 +79,9 @@ class RuntimeManager:
         self.error: str | None = None
         self.log: list[str] = []
         self.reasoning: dict | None = None
+        self.projector: str | None = None
+        # What the model takes besides text, from llama-server's /props: {"vision": bool, "audio": bool}.
+        self.modalities: dict | None = None
         self.lock = threading.Lock()
 
     @property
@@ -76,6 +97,8 @@ class RuntimeManager:
             "engine": "llama.cpp",
             "available": llama_server_path() is not None,
             "reasoning": self.reasoning,
+            "projector": Path(self.projector).name if self.projector else None,
+            "modalities": self.modalities,
         }
 
     def load(self, req: LoadRequest) -> None:
@@ -90,11 +113,14 @@ class RuntimeManager:
         with self.lock:
             self.port = _free_port()
             self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
-            self.reasoning = None
+            self.reasoning, self.modalities = None, None
+            self.projector = req.mmproj or find_projector(req.path)
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
                 "-c", str(req.context), "-ngl", str(req.gpu_layers), "--jinja",
             ]
+            if self.projector:
+                cmd += ["--mmproj", self.projector]
             if req.flash_attention:
                 cmd += ["-fa", "on"]
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
@@ -119,9 +145,11 @@ class RuntimeManager:
             try:
                 if httpx.get(f"{self.base}/health", timeout=1).status_code == 200:
                     try:
-                        self.reasoning = reasoning_support(httpx.get(f"{self.base}/props", timeout=5).json())
+                        props = httpx.get(f"{self.base}/props", timeout=5).json()
+                        self.reasoning = reasoning_support(props)
+                        self.modalities = {k: bool(v) for k, v in (props.get("modalities") or {}).items()}
                     except (httpx.HTTPError, ValueError):
-                        self.reasoning = None
+                        self.reasoning, self.modalities = None, None
                     self.state = "ready"
                     return
             except httpx.HTTPError:
@@ -132,6 +160,7 @@ class RuntimeManager:
         with self.lock:
             proc, self.proc = self.proc, None
             self.state, self.model, self.path, self.error, self.reasoning = "idle", None, None, None, None
+            self.projector, self.modalities = None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:
@@ -186,6 +215,16 @@ async def v1_chat(request: Request):
         server = manager
     elif server.state != "ready":
         raise HTTPException(409, f"{server.model} is still loading." if server.state == "loading" else server.error or f"{server.model} isn't loaded.")
+    if isinstance(body.get("messages"), list):
+        from . import attachments
+
+        kinds = attachments.used(body["messages"])
+        takes = server.modalities or {}
+        for kind, modality, what in (("image", "vision", "see images"), ("audio", "audio", "hear audio")):
+            if kind in kinds and not takes.get(modality):
+                hint = " Its projector (an mmproj .gguf) wasn't found beside it." if not server.projector else ""
+                raise HTTPException(400, f"{server.model} can't {what}.{hint} Load a model that can, or remove the attachment.")
+        body["messages"] = attachments.expand(body["messages"])
     url = f"{server.base}/v1/chat/completions"
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:

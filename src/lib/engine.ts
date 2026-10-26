@@ -93,6 +93,14 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   return res.json() as Promise<T>;
 }
 
+/** A file from the engine, for an <img> or <audio> (which can't send the auth header themselves). */
+export async function apiBlob(path: string): Promise<Blob> {
+  const { url, token } = connection();
+  const res = await fetch(url + path, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new EngineError(`${res.status} ${res.statusText}`, res.status);
+  return res.blob();
+}
+
 /**
  * Reads a server-sent-event stream with fetch (EventSource cannot send the auth header).
  * Calls `onData` with each `data:` payload until the stream ends or `signal` aborts.

@@ -13,6 +13,7 @@ from huggingface_hub.utils import HfHubHTTPError
 from pydantic import BaseModel
 
 from . import downloads, sources, storage
+from .runtime import PROJECTOR_PREFERENCE
 from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -136,9 +137,15 @@ class DownloadRequest(BaseModel):
 
 
 def _download(job: Job, req: DownloadRequest) -> None:
-    files = [(f["name"], f["size"]) for f in list_files(req.repo_id) if not req.patterns or any(fnmatch.fnmatch(f["name"], p) for p in req.patterns)]
+    listing = list_files(req.repo_id)
+    files = [(f["name"], f["size"]) for f in listing if not req.patterns or any(fnmatch.fnmatch(f["name"], p) for p in req.patterns)]
     if not files:
         raise ValueError("No files in the repo match the selection")
+    # A vision or audio model's GGUF needs its projector beside it; fetch one with the first quant.
+    projectors = [(f["name"], f["size"]) for f in listing if f["name"].endswith(".gguf") and "mmproj" in f["name"].lower()]
+    if projectors and any(n.endswith(".gguf") and "mmproj" not in n.lower() for n, _ in files) and not any("mmproj" in n.lower() for n, _ in files):
+        projector = next((p for tag in PROJECTOR_PREFERENCE for p in projectors if re.search(rf"(^|[-_.]){tag}([-_.]|$)", p[0].lower())), projectors[0])
+        files.append(projector)
     downloads.download(job, req.repo_id, files)
 
 

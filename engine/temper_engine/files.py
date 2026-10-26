@@ -115,12 +115,22 @@ def _converted() -> Iterator[tuple[Path, dict]]:
             yield p, {"gguf": [str(p)]}
 
 
+def _attachments() -> Iterator[tuple[Path, dict]]:
+    """Files sent with chat messages; the file itself, named as it was attached."""
+    root = home() / "attachments"
+    for d in sorted(root.iterdir()) if root.is_dir() else []:
+        info = _read_json(d / "meta.json")
+        if info.get("file") and (d / info["file"]).is_file():
+            yield d / info["file"], {"title": Path(info["name"]).stem, "attached": info.get("kind")}
+
+
 KINDS: dict[str, Callable[[], Iterator[tuple[Path, dict]]]] = {
     "upload": _uploads,
     "dataset": _datasets,
     "fine-tune": _runs,
     "export": _exports,
     "model": _converted,
+    "attachment": _attachments,
 }
 
 
@@ -307,6 +317,8 @@ def delete_item(id: str):
     freed = item["size"]
     if path.is_dir():
         shutil.rmtree(path)
+    elif item["kind"] == "attachment":
+        shutil.rmtree(path.parent)  # with its meta.json and extracted text; chats that sent it keep its name
     else:
         for part in item.get("parts") or [str(path)]:
             Path(part).unlink(missing_ok=True)

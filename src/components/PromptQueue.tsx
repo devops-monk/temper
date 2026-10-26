@@ -1,10 +1,12 @@
 import { GripVertical, Pencil, Play, X } from "lucide-react";
 import { useState } from "react";
+import type { Attachment } from "./Attachments";
 import { cx } from "./ui";
 
 export interface Queued {
   id: number;
   text: string;
+  files?: Attachment[];
 }
 
 function move<T>(items: T[], from: number, to: number): T[] {
@@ -40,7 +42,8 @@ function QueueRow({ item, onSave, onRemove }: { item: Queued; onSave: (text: str
   ) : (
     <>
       <button className="line-clamp-2 min-w-0 flex-1 text-left text-[13px] whitespace-pre-wrap" onClick={() => setEditing(true)} title="Edit">
-        {item.text}
+        {item.text || <span className="text-muted">(no text)</span>}
+        {item.files?.length ? <span className="ml-1.5 text-[12px] text-muted">+ {item.files.map((f) => f.name).join(", ")}</span> : null}
       </button>
       <button className="rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-text focus:opacity-100" onClick={() => setEditing(true)} aria-label="Edit queued message">
         <Pencil className="size-3" />

@@ -72,6 +72,10 @@ export interface RuntimeStatus {
   available: boolean;
   /** What the loaded model's chat template allows; null until it's ready. */
   reasoning?: { thinks: boolean; toggle: boolean; effort: boolean } | null;
+  /** The vision or audio projector loaded with the model, if any. */
+  projector?: string | null;
+  /** What the model takes besides text; null until it's ready. */
+  modalities?: { vision?: boolean; audio?: boolean } | null;
 }
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
