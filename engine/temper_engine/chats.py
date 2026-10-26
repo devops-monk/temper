@@ -37,7 +37,8 @@ create table if not exists chats(
   updated real not null,
   source text,
   source_ref text,
-  project text
+  project text,
+  compaction text
 );
 create unique index if not exists chats_source on chats(source, source_ref);
 create table if not exists messages(
@@ -77,6 +78,8 @@ def db() -> Iterator[sqlite3.Connection]:
             for column in ("reasoning", "attachments"):  # added with the reasoning view and with attachments
                 if column not in columns:
                     con.execute(f"alter table messages add column {column} text")
+            if "compaction" not in {r["name"] for r in con.execute("pragma table_info(chats)")}:  # added with auto-compaction
+                con.execute("alter table chats add column compaction text")
             yield con
             con.commit()
         finally:
@@ -219,7 +222,7 @@ def _with_messages(con: sqlite3.Connection, chat_id: str) -> dict:
         {"role": m["role"], "content": m["content"], "model": m["model"], "error": bool(m["error"]), "created": m["created"], "reasoning": m["reasoning"], "attachments": json.loads(m["attachments"]) if m["attachments"] else None}
         for m in con.execute("select * from messages where chat_id = ? order by seq", (chat_id,))
     ]
-    return {**_summary(row), "messages": messages, "settings": json.loads(row["settings"]) if row["settings"] else None}
+    return {**_summary(row), "messages": messages, "settings": json.loads(row["settings"]) if row["settings"] else None, "compaction": json.loads(row["compaction"]) if row["compaction"] else None}
 
 
 @router.get("/{chat_id}")
@@ -232,6 +235,8 @@ class SaveMessages(BaseModel):
     messages: list[Message]
     model: str | None = None
     settings: dict | None = None
+    # The summary standing in for messages[:upto] when the thread outgrew the context: {upto, text}.
+    compaction: dict | None = None
 
 
 @router.put("/{chat_id}/messages")
@@ -242,8 +247,8 @@ def save_messages(chat_id: str, req: SaveMessages):
         row = _get(con, chat_id)
         write_messages(con, chat_id, messages)
         con.execute(
-            "update chats set updated = ?, title = ?, model = coalesce(?, model), settings = coalesce(?, settings) where id = ?",
-            (time.time(), row["title"] or title_from(messages), req.model, json.dumps(req.settings) if req.settings else None, chat_id),
+            "update chats set updated = ?, title = ?, model = coalesce(?, model), settings = coalesce(?, settings), compaction = ? where id = ?",
+            (time.time(), row["title"] or title_from(messages), req.model, json.dumps(req.settings) if req.settings else None, json.dumps(req.compaction) if req.compaction else None, chat_id),
         )
         return _summary(_get(con, chat_id))
 

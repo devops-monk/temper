@@ -82,6 +82,7 @@ class RuntimeManager:
         self.projector: str | None = None
         # What the model takes besides text, from llama-server's /props: {"vision": bool, "audio": bool}.
         self.modalities: dict | None = None
+        self.context: int | None = None  # tokens, as llama-server set it up
         self.lock = threading.Lock()
 
     @property
@@ -99,6 +100,7 @@ class RuntimeManager:
             "reasoning": self.reasoning,
             "projector": Path(self.projector).name if self.projector else None,
             "modalities": self.modalities,
+            "context": self.context,
         }
 
     def load(self, req: LoadRequest) -> None:
@@ -113,7 +115,7 @@ class RuntimeManager:
         with self.lock:
             self.port = _free_port()
             self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
-            self.reasoning, self.modalities = None, None
+            self.reasoning, self.modalities, self.context = None, None, None
             self.projector = req.mmproj or find_projector(req.path)
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
@@ -148,8 +150,9 @@ class RuntimeManager:
                         props = httpx.get(f"{self.base}/props", timeout=5).json()
                         self.reasoning = reasoning_support(props)
                         self.modalities = {k: bool(v) for k, v in (props.get("modalities") or {}).items()}
+                        self.context = (props.get("default_generation_settings") or {}).get("n_ctx")
                     except (httpx.HTTPError, ValueError):
-                        self.reasoning, self.modalities = None, None
+                        self.reasoning, self.modalities, self.context = None, None, None
                     self.state = "ready"
                     return
             except httpx.HTTPError:
@@ -160,7 +163,7 @@ class RuntimeManager:
         with self.lock:
             proc, self.proc = self.proc, None
             self.state, self.model, self.path, self.error, self.reasoning = "idle", None, None, None, None
-            self.projector, self.modalities = None, None
+            self.projector, self.modalities, self.context = None, None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:

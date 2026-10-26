@@ -1,5 +1,5 @@
-import { ArrowUp, Boxes, Brain, Columns2, History, ListPlus, MessageSquare, Paperclip, RotateCcw, Square } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Boxes, Brain, ChevronRight, Columns2, History, Layers, ListPlus, MessageSquare, Paperclip, RotateCcw, Square } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
@@ -53,12 +53,42 @@ function saveThinking(model: string | null, value: Thinking) {
   }
 }
 
+/** The summary standing in for messages[:upto] once the thread outgrew the model's context (engine compaction.py). */
+interface Compaction {
+  upto: number;
+  text: string;
+}
+
+interface Prepared {
+  messages: unknown[];
+  summary: Compaction | null;
+  compacted: boolean;
+  prompt: number;
+  context: number;
+  reserve: number;
+}
+
+function loadFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+/** A message as llama.cpp takes it; attachments become parts the engine expands, and failed replies are marked for it to leave out. */
+const toApi = ({ role, content, attachments, error }: Message) => ({ role, content: attachments?.length ? [...attachments.map(attachmentPart), ...(content ? [{ type: "text", text: content }] : [])] : content, ...(error && { error }) });
+
+const kTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+
 interface SavedChat {
   id: string;
   title: string;
   source: string | null;
   messages: Message[];
   settings: Partial<Settings> | null;
+  compaction: Compaction | null;
 }
 
 interface Settings {
@@ -101,6 +131,24 @@ function Slider({ label, value, min, max, step, onChange }: { label: string; val
   );
 }
 
+/** Where the summary starts: the messages above it reach the model only as this summary. */
+function CompactionDivider({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3 text-[12px] text-muted">
+        <span className="h-px flex-1 bg-line" />
+        <button onClick={() => setOpen(!open)} className="flex items-center gap-1 hover:text-text" aria-expanded={open}>
+          <Layers className="size-3.5" /> Earlier messages are summarised to fit the model's context
+          <ChevronRight className={cx("size-3 transition-transform", open && "rotate-90")} />
+        </button>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      {open && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">{text}</p>}
+    </div>
+  );
+}
+
 export function ChatPage() {
   const { runtime, go } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -129,6 +177,24 @@ export function ChatPage() {
     });
   const [saveError, setSaveError] = useState<string | null>(null);
   const [comparing, setComparing] = useState(false);
+  // Auto-compaction: the thread's summary (kept in a ref too, for the queue's send loop) and the context used.
+  const [compaction, setCompactionState] = useState<Compaction | null>(null);
+  const compactionRef = useRef<Compaction | null>(null);
+  const setCompaction = (c: Compaction | null) => {
+    compactionRef.current = c;
+    setCompactionState(c);
+  };
+  const [usage, setUsage] = useState<{ tokens: number; context: number } | null>(null);
+  const [compacting, setCompacting] = useState(false);
+  const [autoCompact, setAutoCompact] = useState(() => loadFlag("temper.autoCompact", true));
+  const changeAutoCompact = (on: boolean) => {
+    setAutoCompact(on);
+    try {
+      localStorage.setItem("temper.autoCompact", on ? "1" : "0");
+    } catch {
+      /* private window */
+    }
+  };
   // Follow-ups typed while a reply is written; the ref is what the send loop reads.
   const [queue, setQueueState] = useState<Queued[]>([]);
   const queueRef = useRef<Queued[]>([]);
@@ -142,7 +208,7 @@ export function ChatPage() {
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
-    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null })), model: runtime?.model ?? null, settings };
+    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null })), model: runtime?.model ?? null, settings, compaction: compactionRef.current && compactionRef.current.upto <= history.length ? compactionRef.current : null };
     try {
       if (id) await api(`/api/chats/${id}/messages`, { method: "PUT", json: body });
       else {
@@ -173,6 +239,8 @@ export function ChatPage() {
     if (!saved) return;
     chatId.current = id;
     setChat({ id, title: saved.title, source: saved.source });
+    setCompaction(saved.compaction);
+    setUsage(null);
     setMessages(saved.messages.map(({ role, content, error, model, reasoning, attachments }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning, attachments: attachments ?? undefined })));
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
@@ -181,6 +249,8 @@ export function ChatPage() {
   function newChat() {
     setComparing(false);
     setQueue([]);
+    setCompaction(null);
+    setUsage(null);
     abort.current?.abort();
     chatId.current = null;
     setChat(null);
@@ -287,17 +357,29 @@ export function ChatPage() {
     let text = "";
     let thoughts = "";
     let thought: number | undefined;
-    const started = performance.now();
+    let started = performance.now();
     let failure: string | null = null;
+    let replyTokens = 0;
     const current = (): Message => ({ role: "assistant", content: text, model, reasoning: thoughts || null, thought });
+    // A summary of turns that regenerating or editing removed no longer applies.
+    if (compactionRef.current && compactionRef.current.upto > history.length) setCompaction(null);
     // Saved before the reply streams, so a long answer or a crash never loses the question.
     const id = await persist(chatId.current, history);
     try {
+      // Fits the thread into the model's context, summarising its oldest turns if it has to.
+      const ask = { messages: history.map(toApi), system, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact };
+      const check = await api<{ fits: boolean }>("/api/chat/prepare", { json: { ...ask, check: true }, signal: ctrl.signal });
+      if (!check.fits && autoCompact) setCompacting(true);
+      const prepared = await api<Prepared>("/api/chat/prepare", { json: ask, signal: ctrl.signal }).finally(() => setCompacting(false));
+      if (chatId.current === id) setCompaction(prepared.summary);
+      started = performance.now();
       await stream(
         "/v1/chat/completions",
         (data) => {
           if (data === "[DONE]") return;
-          const delta = JSON.parse(data).choices?.[0]?.delta;
+          const chunk = JSON.parse(data);
+          if (chunk.timings?.predicted_n) replyTokens = chunk.timings.predicted_n;
+          const delta = chunk.choices?.[0]?.delta;
           const thinkingPiece = (delta?.reasoning_content ?? "") as string;
           const piece = (delta?.content ?? "") as string;
           if (!piece && !thinkingPiece) return;
@@ -310,12 +392,13 @@ export function ChatPage() {
           signal: ctrl.signal,
           json: {
             stream: true,
-            messages: [...(system.trim() ? [{ role: "system", content: system }] : []), ...history.map(({ role, content, attachments }) => ({ role, content: attachments?.length ? [...attachments.map(attachmentPart), ...(content ? [{ type: "text", text: content }] : [])] : content }))],
+            messages: prepared.messages,
             ...sampling,
             ...thinkingFields(),
           },
         },
       );
+      if (chatId.current === id) setUsage({ tokens: prepared.prompt + replyTokens, context: prepared.context });
     } catch (err) {
       if (!ctrl.signal.aborted) {
         failure = (err as Error).message;
@@ -326,7 +409,10 @@ export function ChatPage() {
       abort.current = null;
     }
     if (thoughts && thought === undefined) thought = (performance.now() - started) / 1000;
-    // A stopped reply keeps what was written (thinking included); an empty one isn't saved.
+    // A stopped reply keeps what was written (thinking included); one stopped before it began isn't saved.
+    // A model that ends without writing anything says so, rather than leaving the question unanswered.
+    const empty = !text && !thoughts && !failure && !ctrl.signal.aborted;
+    if (empty) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
     const reply: Message | null = text || thoughts ? current() : failure ? { role: "assistant", content: failure, error: true, model } : null;
     if (reply && chatId.current === id) setMessages([...history, reply]);
     if (id) await persist(id, reply ? [...history, reply] : history);
@@ -442,43 +528,46 @@ export function ChatPage() {
               ) : (
                 <div className="mx-auto flex max-w-[760px] flex-col gap-6 px-6 py-8">
                   {messages.map((m, i) => (
-                    <div key={i} className={cx("group", m.role === "user" && "self-end")}>
-                      {m.role === "user" ? (
-                        <div className="flex max-w-[620px] flex-col items-end gap-2">
-                          {m.attachments?.length ? (
-                            <div className="flex flex-wrap items-start justify-end gap-2">
-                              {m.attachments.map((a) => (
-                                <AttachmentChip key={a.id} attachment={a} context={CHAT_CONTEXT} />
-                              ))}
-                            </div>
-                          ) : null}
-                          {m.content && <div className="prose-chat rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>}
-                        </div>
-                      ) : m.error ? (
-                        <Notice tone="error">{m.content}</Notice>
-                      ) : (
-                        <div className="prose-chat leading-relaxed">
-                          {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
-                          {m.content ? (
-                            <ReplyText text={m.content} />
-                          ) : !m.reasoning ? (
-                            <span className="animate-pulse-dot text-muted">Thinking…</span>
-                          ) : !(busy && i === messages.length - 1) ? (
-                            <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens, or set a thinking budget, and regenerate.</p>
-                          ) : null}
-                        </div>
-                      )}
-                      {m.role === "assistant" && (m.content || m.reasoning) && !(busy && i === messages.length - 1) && (
-                        <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                          <CopyButton text={m.content} />
-                          {i === messages.length - 1 && (
-                            <Button size="sm" variant="ghost" onClick={() => void run(messages.slice(0, -1))}>
-                              <RotateCcw className="size-3.5" /> Regenerate
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <Fragment key={i}>
+                      {compaction && i === compaction.upto && <CompactionDivider text={compaction.text} />}
+                      <div className={cx("group", m.role === "user" && "self-end", compaction && i < compaction.upto && "opacity-60")}>
+                        {m.role === "user" ? (
+                          <div className="flex max-w-[620px] flex-col items-end gap-2">
+                            {m.attachments?.length ? (
+                              <div className="flex flex-wrap items-start justify-end gap-2">
+                                {m.attachments.map((a) => (
+                                  <AttachmentChip key={a.id} attachment={a} context={CHAT_CONTEXT} />
+                                ))}
+                              </div>
+                            ) : null}
+                            {m.content && <div className="prose-chat rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>}
+                          </div>
+                        ) : m.error ? (
+                          <Notice tone="error">{m.content}</Notice>
+                        ) : (
+                          <div className="prose-chat leading-relaxed">
+                            {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
+                            {m.content ? (
+                              <ReplyText text={m.content} />
+                            ) : !m.reasoning ? (
+                              <span className="animate-pulse-dot text-muted">{compacting && i === messages.length - 1 ? "Summarising earlier messages to fit the context…" : "Thinking…"}</span>
+                            ) : !(busy && i === messages.length - 1) ? (
+                              <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens, or set a thinking budget, and regenerate.</p>
+                            ) : null}
+                          </div>
+                        )}
+                        {m.role === "assistant" && (m.content || m.reasoning) && !(busy && i === messages.length - 1) && (
+                          <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                            <CopyButton text={m.content} />
+                            {i === messages.length - 1 && (
+                              <Button size="sm" variant="ghost" onClick={() => void run(messages.slice(0, -1))}>
+                                <RotateCcw className="size-3.5" /> Regenerate
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </Fragment>
                   ))}
                 </div>
               )}
@@ -550,7 +639,14 @@ export function ChatPage() {
                   )}
                 </div>
               </div>
-              <p className="mt-1.5 text-center text-[11.5px] text-muted">{busy ? "Enter to queue it for when the reply finishes" : "Enter to send, Shift+Enter for a new line"}</p>
+              <div className="mt-1.5 flex justify-center gap-3 text-[11.5px] text-muted">
+                <span>{busy ? "Enter to queue it for when the reply finishes" : "Enter to send, Shift+Enter for a new line"}</span>
+                {usage && (
+                  <span className={cx("tabular-nums", usage.tokens > usage.context * 0.75 && "text-straw")} title={autoCompact ? "When it fills, older messages are summarised to make room." : "Auto-compaction is off: a full context stops the chat."}>
+                    {kTokens(usage.tokens)} of {kTokens(usage.context)} tokens
+                  </span>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -599,6 +695,10 @@ export function ChatPage() {
           <Field label="Max new tokens" hint={thinks ? "Thinking counts toward this." : undefined}>
             <Input type="number" min={16} value={settings.max_tokens} onChange={(e) => set("max_tokens")(Number(e.target.value))} />
           </Field>
+          <div>
+            <Toggle label="Auto-compact long chats" checked={autoCompact} onChange={changeAutoCompact} />
+            <p className="text-[12px] text-muted">When the model's context fills, summarise the oldest messages instead of stopping.</p>
+          </div>
           {reasoning && thinks && !comparing && (
             <div className="flex flex-col gap-3 border-t border-line pt-4">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
