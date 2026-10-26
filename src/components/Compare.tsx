@@ -4,7 +4,6 @@ import { api, stream } from "../lib/engine";
 import { quantLabel } from "../lib/format";
 import { useApp } from "../lib/store";
 import type { LocalModel, RuntimeStatus } from "../lib/types";
-import { CHAT_CONTEXT } from "./LoadButton";
 import { ReplyText, ThinkingBlock } from "./Reply";
 import { Button, CopyButton, EmptyState, Notice, Select, Toggle } from "./ui";
 
@@ -243,7 +242,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
     const models = columns.map((path) => ({ path, name: option(path)?.name ?? null }));
     const fail = (column: number, e: unknown) => !ctrl.signal.aborted && update(turn, column, { status: "failed", error: (e as Error).message });
     try {
-      const { together } = await api<{ together: boolean }>("/api/compare/load", { json: { models, context: CHAT_CONTEXT } });
+      const { together } = await api<{ together: boolean }>("/api/compare/load", { json: { models } });
       if (together) {
         // Each column starts as soon as its own model is ready; one that fails to load doesn't hold up the rest.
         await Promise.all(
@@ -265,7 +264,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
           if (columns[i] !== chatPath) {
             update(turn, i, { status: "loading" });
             try {
-              await api("/api/compare/load", { json: { models: [models[i]], context: CHAT_CONTEXT } });
+              await api("/api/compare/load", { json: { models: [models[i]] } });
               await waitReady([columns[i]], ctrl.signal);
             } catch (e) {
               fail(i, e);

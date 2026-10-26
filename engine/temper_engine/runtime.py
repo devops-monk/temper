@@ -31,9 +31,13 @@ class LoadRequest(BaseModel):
     path: str
     # What to call it; Ollama's blobs are named by their hash.
     name: str | None = None
-    context: int = 8192
-    gpu_layers: int = 999
-    flash_attention: bool = True
+    # Unset fields come from the model's saved settings (model_settings.py), then the defaults.
+    context: int | None = None
+    gpu_layers: int | None = None
+    flash_attention: bool | None = None
+    cache_type: str | None = None
+    speculation: str | None = None
+    draft: str | None = None
     # A vision or audio projector; by default an mmproj*.gguf beside the model, if there is one.
     mmproj: str | None = None
 
@@ -83,6 +87,7 @@ class RuntimeManager:
         # What the model takes besides text, from llama-server's /props: {"vision": bool, "audio": bool}.
         self.modalities: dict | None = None
         self.context: int | None = None  # tokens, as llama-server set it up
+        self.settings: dict | None = None  # what it was loaded with (model_settings.resolve)
         self.lock = threading.Lock()
 
     @property
@@ -101,6 +106,7 @@ class RuntimeManager:
             "projector": Path(self.projector).name if self.projector else None,
             "modalities": self.modalities,
             "context": self.context,
+            "settings": {**self.settings, "draft": Path(self.settings["draft"]).name if self.settings.get("draft") else None} if self.settings else None,
         }
 
     def load(self, req: LoadRequest) -> None:
@@ -111,20 +117,25 @@ class RuntimeManager:
             )
         if not Path(req.path).is_file():
             raise HTTPException(404, f"Model file not found: {req.path}")
+        from . import model_settings
+
+        settings = model_settings.resolve(req.path, req.model_dump())
+        model_settings.check(settings)
         self.unload()
         with self.lock:
             self.port = _free_port()
             self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
             self.reasoning, self.modalities, self.context = None, None, None
             self.projector = req.mmproj or find_projector(req.path)
+            self.settings = settings
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
-                "-c", str(req.context), "-ngl", str(req.gpu_layers), "--jinja",
+                "-c", str(settings["context"]), "-ngl", str(settings["gpu_layers"]), "--jinja",
+                "-fa", "on" if settings["flash_attention"] else "off",
+                *model_settings.flags(settings),
             ]
             if self.projector:
                 cmd += ["--mmproj", self.projector]
-            if req.flash_attention:
-                cmd += ["-fa", "on"]
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
         threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
 
@@ -163,7 +174,7 @@ class RuntimeManager:
         with self.lock:
             proc, self.proc = self.proc, None
             self.state, self.model, self.path, self.error, self.reasoning = "idle", None, None, None, None
-            self.projector, self.modalities, self.context = None, None, None
+            self.projector, self.modalities, self.context, self.settings = None, None, None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:

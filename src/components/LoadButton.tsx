@@ -6,7 +6,7 @@ import { useApp } from "../lib/store";
 import type { Budget, Verdict } from "./MemoryEstimate";
 import { Button } from "./ui";
 
-/** Temper loads chat models with this context (runtime.LoadRequest), so estimates use it too. */
+/** The context chat loads a model with unless its settings say otherwise (engine model_settings.DEFAULTS). */
 export const CHAT_CONTEXT = 8192;
 
 export interface ChatEstimate {
@@ -14,6 +14,8 @@ export interface ChatEstimate {
   kv_cache: number;
   overhead: number;
   total: number;
+  /** A draft model and its cache, for speculative decoding. */
+  draft?: number;
   context: number;
   budget: Budget;
   verdict: Verdict;
@@ -34,7 +36,8 @@ export function LoadButton({ path, name }: { path: string; name: string }) {
         onClick={async () => {
           if (loaded) return go("chat");
           setError(null);
-          const est = await api<ChatEstimate>("/api/memory/chat", { json: { path, context: CHAT_CONTEXT } }).catch(() => null);
+          // At the model's saved settings (context, KV cache, draft model).
+          const est = await api<ChatEstimate>("/api/memory/chat", { json: { path } }).catch(() => null);
           if (est?.verdict === "too_large") {
             const tips = est.advice.length ? `\n\n${est.advice.join("\n")}` : "";
             if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;

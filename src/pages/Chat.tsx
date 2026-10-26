@@ -4,6 +4,7 @@ import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
 import { CHAT_CONTEXT } from "../components/LoadButton";
+import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
 import { Compare } from "../components/Compare";
 import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
@@ -186,6 +187,8 @@ export function ChatPage() {
   };
   const [usage, setUsage] = useState<{ tokens: number; context: number } | null>(null);
   const [compacting, setCompacting] = useState(false);
+  const [stats, setStats] = useState<ReplyStats | null>(null);
+  const context = runtime?.context ?? CHAT_CONTEXT;
   const [autoCompact, setAutoCompact] = useState(() => loadFlag("temper.autoCompact", true));
   const changeAutoCompact = (on: boolean) => {
     setAutoCompact(on);
@@ -378,7 +381,11 @@ export function ChatPage() {
         (data) => {
           if (data === "[DONE]") return;
           const chunk = JSON.parse(data);
-          if (chunk.timings?.predicted_n) replyTokens = chunk.timings.predicted_n;
+          const t = chunk.timings;
+          if (t?.predicted_n) {
+            replyTokens = t.predicted_n;
+            setStats({ speed: t.predicted_per_second, drafted: t.draft_n, accepted: t.draft_n_accepted });
+          }
           const delta = chunk.choices?.[0]?.delta;
           const thinkingPiece = (delta?.reasoning_content ?? "") as string;
           const piece = (delta?.content ?? "") as string;
@@ -536,7 +543,7 @@ export function ChatPage() {
                             {m.attachments?.length ? (
                               <div className="flex flex-wrap items-start justify-end gap-2">
                                 {m.attachments.map((a) => (
-                                  <AttachmentChip key={a.id} attachment={a} context={CHAT_CONTEXT} />
+                                  <AttachmentChip key={a.id} attachment={a} context={context} />
                                 ))}
                               </div>
                             ) : null}
@@ -591,7 +598,7 @@ export function ChatPage() {
                 {(files.length > 0 || attaching) && (
                   <div className="flex flex-wrap items-start gap-2">
                     {files.map((a) => (
-                      <AttachmentChip key={a.id} attachment={a} context={CHAT_CONTEXT} onRemove={() => removeFile(a)} />
+                      <AttachmentChip key={a.id} attachment={a} context={context} onRemove={() => removeFile(a)} />
                     ))}
                     {attaching && <span className="animate-pulse-dot self-center px-1 text-[12px] text-muted">Reading…</span>}
                   </div>
@@ -723,6 +730,7 @@ export function ChatPage() {
               <p className="text-[12px] text-muted">Remembered for {runtime?.model}.</p>
             </div>
           )}
+          {!comparing && <ModelSettings stats={stats} />}
         </div>
       </aside>
     </div>

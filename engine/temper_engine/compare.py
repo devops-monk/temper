@@ -85,10 +85,10 @@ class Model(BaseModel):
 
 class CompareLoad(BaseModel):
     models: list[Model] = Field(min_length=1, max_length=MAX_MODELS)
-    context: int = 8192
+    context: int | None = None  # unset: each model's saved settings
 
 
-def _need(model: Model, context: int) -> int:
+def _need(model: Model, context: int | None) -> int:
     """Memory the model needs; 0 when its header can't be read, so llama.cpp tries it and says what's wrong."""
     try:
         return memory.local_chat_estimate(Path(model.path), context)["total"]

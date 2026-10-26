@@ -76,6 +76,10 @@ export interface RuntimeStatus {
   projector?: string | null;
   /** What the model takes besides text; null until it's ready. */
   modalities?: { vision?: boolean; audio?: boolean } | null;
+  /** Context length in tokens, as llama-server set it up. */
+  context?: number | null;
+  /** What it was loaded with (engine model_settings.py); the draft is a file name. */
+  settings?: { context: number; gpu_layers: number; flash_attention: boolean; cache_type: string; speculation: string; draft: string | null; draft_max: number } | null;
 }
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";

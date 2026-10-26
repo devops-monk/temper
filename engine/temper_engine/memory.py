@@ -284,8 +284,8 @@ def kv_cache_bytes(shape: Shape, context: int, bytes_per_value: float = 2.0) -> 
     return int(2 * shape.cached_layers * shape.kv_heads * shape.head_dim * context * bytes_per_value)
 
 
-def inference_estimate(shape: Shape, weights: int, context: int) -> dict:
-    kv = kv_cache_bytes(shape, context)
+def inference_estimate(shape: Shape, weights: int, context: int, cache_bytes: float = 2.0) -> dict:
+    kv = kv_cache_bytes(shape, context, cache_bytes)
     # llama.cpp's compute buffer: logits for a 512-token batch plus scratch space. Measured on an M1 Pro
     # with Qwen3-4B Q4_K_M and flash attention: about 100 MB at 8K and 32K context; this keeps a margin.
     compute = int(128 * MB + 512 * (shape.vocab or 150_000) * 2)
@@ -371,7 +371,11 @@ class ChatEstimate(BaseModel):
     path: str | None = None  # a local GGUF
     repo_id: str | None = None  # or a GGUF on Hugging Face
     filename: str | None = None
-    context: int = Field(default=8192, ge=256, le=1_048_576)
+    # Unset: the model's saved settings (model_settings.py) for a local GGUF, else 8192 and a 16-bit cache.
+    context: int | None = Field(default=None, ge=256, le=1_048_576)
+    cache_type: str | None = None
+    speculation: str | None = None
+    draft: str | None = None
 
 
 def local_gguf(path: Path) -> tuple[Shape, int]:
@@ -383,17 +387,29 @@ def local_gguf(path: Path) -> tuple[Shape, int]:
     return gguf_shape_local(path), sum(p.stat().st_size for p in parts) + (Path(projector).stat().st_size if projector else 0)
 
 
-def local_chat_estimate(path: Path, context: int) -> dict:
-    """inference_estimate for a local GGUF, at `context` or the model's own maximum if that's smaller."""
+def local_chat_estimate(path: Path, context: int | None = None, **overrides) -> dict:
+    """inference_estimate for a local GGUF as chat would load it: its saved settings with `overrides` on top,
+    at the context or the model's own maximum if that's smaller, plus a draft model and its cache."""
+    from .model_settings import CACHE_BYTES, resolve
+
+    s = resolve(str(path), {"context": context, **overrides})
     shape, weights = local_gguf(path)
-    return inference_estimate(shape, weights, min(context, shape.context_max or context))
+    context = min(s["context"], shape.context_max or s["context"])
+    est = inference_estimate(shape, weights, context, CACHE_BYTES[s["cache_type"]])
+    if s["speculation"] == "draft" and s["draft"] and Path(s["draft"]).is_file():
+        draft_shape, draft_weights = local_gguf(Path(s["draft"]))
+        est["draft"] = draft_weights + kv_cache_bytes(draft_shape, context, CACHE_BYTES[s["cache_type"]])
+        est["total"] += est["draft"]
+    return {**est, "context": context}
 
 
 @router.post("/chat")
 def estimate_chat(req: ChatEstimate):
     try:
         if req.path:
-            shape, weights = local_gguf(Path(req.path).expanduser())
+            path = Path(req.path).expanduser()
+            shape = gguf_shape_local(path)
+            est = local_chat_estimate(path, req.context, cache_type=req.cache_type, speculation=req.speculation, draft=req.draft)
         elif req.repo_id and req.filename:
             from .hub import list_files
 
@@ -404,15 +420,16 @@ def estimate_chat(req: ChatEstimate):
                 size = sum(v for k, v in sizes.items() if SPLIT_PART.sub("", k) == stem)
             if size is None:
                 raise HTTPException(404, f"{req.filename} isn't in {req.repo_id}")
-            shape, weights = gguf_shape_remote(req.repo_id, req.filename), size
+            shape = gguf_shape_remote(req.repo_id, req.filename)
+            context = min(req.context or 8192, shape.context_max or req.context or 8192)
+            est = {**inference_estimate(shape, size, context), "context": context}
         else:
             raise HTTPException(400, "Give a local GGUF path, or a repo_id and filename.")
     except (OSError, ValueError, httpx.HTTPError, LookupError, TypeError, ZeroDivisionError) as e:  # TypeError: not a language model's header
         raise HTTPException(422, f"Couldn't read the model's header: {e}") from e
-    context = min(req.context, shape.context_max or req.context)
-    est = inference_estimate(shape, weights, context)
+    context = est["context"]
     budget = memory_budget()
-    return {**est, "context": context, "budget": budget, "verdict": verdict(est["total"], budget), "advice": chat_advice(est, budget, context), "shape": asdict(shape)}
+    return {**est, "budget": budget, "verdict": verdict(est["total"], budget), "advice": chat_advice(est, budget, context), "shape": asdict(shape)}
 
 
 class TrainEstimate(BaseModel):
