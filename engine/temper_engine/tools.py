@@ -46,7 +46,10 @@ class Tool:
     label: str
     description: str
     parameters: dict
-    run: Callable[[dict], str]
+    run: Callable[[dict, dict], str]  # (arguments, context: {"chat": id}) -> result
+    # Whether a call runs straight away ("auto") or waits for the person to allow it ("ask"), until they choose.
+    mode: str = "auto"
+    available: Callable[[], bool] = lambda: True
 
 
 # --- Built-in tools -------------------------------------------------------------------------------
@@ -79,7 +82,7 @@ def _eval(node: ast.AST) -> float:
     raise ValueError(f"The calculator can't evaluate {ast.unparse(node)!r}; use numbers, + - * / // % **, and functions like sqrt or log.")
 
 
-def calculator(args: dict) -> str:
+def calculator(args: dict, ctx: dict | None = None) -> str:
     expression = str(args.get("expression", "")).replace("^", "**").replace("×", "*").replace("÷", "/").strip()
     if not expression:
         raise ValueError("Give an expression to work out, like 12 * (3 + 4).")
@@ -92,7 +95,7 @@ def calculator(args: dict) -> str:
     return f"{expression} = {value}"
 
 
-def current_time(args: dict) -> str:
+def current_time(args: dict, ctx: dict | None = None) -> str:
     zone = args.get("timezone")
     try:
         now = datetime.now(ZoneInfo(zone)) if zone else datetime.now().astimezone()
@@ -100,6 +103,29 @@ def current_time(args: dict) -> str:
         raise ValueError(f"{zone!r} isn't a time zone name; use one like Europe/London or Asia/Kolkata.") from None
     return now.strftime("%A %d %B %Y, %H:%M:%S ") + (zone or now.tzname() or "local time") + f" (UTC{now.strftime('%z')[:3]}:{now.strftime('%z')[3:]})"
 
+
+def _code(language: str) -> Callable[[dict, dict], str]:
+    def run(args: dict, ctx: dict) -> str:
+        from . import sandbox
+
+        code = args.get("code")
+        if not isinstance(code, str) or not code.strip():
+            raise ValueError("Give the code to run as a string in `code`.")
+        return sandbox.run(language, code, ctx.get("chat"))
+
+    return run
+
+
+def _node() -> bool:
+    from . import sandbox
+
+    return sandbox.node() is not None
+
+
+_CODE_NOTE = (
+    " It runs on this computer in a sandbox with no network, in a working folder kept for this chat (files you write there"
+    " are there next time). It returns what the code prints, so print the results you need. Runs stop after 30 seconds."
+)
 
 TOOLS: dict[str, Tool] = {
     t.name: t
@@ -118,12 +144,29 @@ TOOLS: dict[str, Tool] = {
             {"type": "object", "properties": {"timezone": {"type": "string", "description": "An IANA time zone such as America/New_York; leave out for local time"}}},
             current_time,
         ),
+        Tool(
+            "run_python",
+            "Python",
+            "Runs Python 3 code and returns its output. Use it for calculations, data work and checking code." + _CODE_NOTE,
+            {"type": "object", "properties": {"code": {"type": "string", "description": "The Python program to run"}}, "required": ["code"]},
+            _code("python"),
+            mode="ask",
+        ),
+        Tool(
+            "run_javascript",
+            "JavaScript",
+            "Runs JavaScript (Node.js, as an ES module) and returns its output." + _CODE_NOTE,
+            {"type": "object", "properties": {"code": {"type": "string", "description": "The JavaScript program to run"}}, "required": ["code"]},
+            _code("javascript"),
+            mode="ask",
+            available=_node,
+        ),
     )
 }
 
 
 def available() -> list[Tool]:
-    return list(TOOLS.values())
+    return [t for t in TOOLS.values() if t.available()]
 
 
 def schemas(names: list[str]) -> list[dict]:
@@ -269,7 +312,7 @@ def extract_calls(text: str, known: list[str]) -> tuple[list[Call], str]:
 # --- Running --------------------------------------------------------------------------------------
 
 
-def run(call: Call, known: list[str]) -> dict:
+def run(call: Call, known: list[str], ctx: dict | None = None) -> dict:
     """Runs a call; returns its step {id, name, arguments, result, error}. A call that can't run says why in `result`."""
     step = {"id": call.id or f"call_{uuid.uuid4().hex[:10]}", "name": call.name, "arguments": call.arguments, "result": None, "error": False}
     if not call.name:
@@ -282,7 +325,7 @@ def run(call: Call, known: list[str]) -> dict:
         return {**step, "name": name, "error": True, "result": f"The arguments weren't valid JSON: {str(call.arguments)[:300]}. Call {name} again with a JSON object."}
     step = {**step, "name": name, "arguments": args}
     try:
-        result = TOOLS[name].run(args)
+        result = TOOLS[name].run(args, ctx or {})
     except Exception as e:  # noqa: BLE001 — any failure goes back to the model as the result
         return {**step, "error": True, "result": f"{name} failed: {e}"}
     if len(result) > MAX_RESULT:
@@ -339,4 +382,6 @@ def flatten(messages: list[dict]) -> list[dict]:
 
 @router.get("")
 def list_tools():
-    return {"tools": [{"name": t.name, "label": t.label, "description": t.description} for t in available()]}
+    from . import sandbox
+
+    return {"tools": [{"name": t.name, "label": t.label, "description": t.description, "mode": t.mode} for t in available()], "sandbox": sandbox.kind()}

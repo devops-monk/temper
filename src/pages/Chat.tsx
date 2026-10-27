@@ -14,7 +14,7 @@ import { Compare } from "../components/Compare";
 import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
-import { ReplyWithTools, ToolsControl, withoutCallText, type ToolStep } from "../components/Tools";
+import { ReplyWithTools, ToolsControl, withoutCallText, type OnApprove, type ToolModes, type ToolStep } from "../components/Tools";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
 import { EngineError, api, inTauri, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
@@ -91,12 +91,15 @@ function loadFlag(key: string, fallback: boolean): boolean {
 /** A message as llama.cpp takes it; attachments become parts the engine expands, and failed replies are marked for it to leave out. */
 const toApi = ({ role, content, attachments, error, tools }: Message) => ({ role, content: attachments?.length ? [...attachments.map(attachmentPart), ...(content ? [{ type: "text", text: content }] : [])] : content, ...(error && { error }), ...(tools?.length && { tools }) });
 
+/** A saved choice of tools; a list (from before tools could ask first) means each runs straight away. */
+const toModes = (saved: unknown): ToolModes => (Array.isArray(saved) ? Object.fromEntries(saved.map((n: string) => [n, "auto"])) : saved && typeof saved === "object" ? (saved as ToolModes) : {});
+
 /** The tools turned on for new chats: the last chat's choice. */
-function loadTools(): string[] {
+function loadTools(): ToolModes {
   try {
-    return JSON.parse(localStorage.getItem("temper.tools") ?? "[]") as string[];
+    return toModes(JSON.parse(localStorage.getItem("temper.tools") ?? "{}"));
   } catch {
-    return [];
+    return {};
   }
 }
 
@@ -107,7 +110,7 @@ interface SavedChat {
   title: string;
   source: string | null;
   messages: Message[];
-  settings: (Partial<Settings> & { project?: string | null; tools?: string[] }) | null;
+  settings: (Partial<Settings> & { project?: string | null; tools?: ToolModes | string[] }) | null;
   compaction: Compaction | null;
   /** A reply the engine is still writing (engine generations.py). */
   generating: Generation | null;
@@ -209,11 +212,12 @@ export function ChatPage() {
   // The folder whose AGENTS.md files join the instructions (engine instructions.py); saved with the chat.
   const [project, setProject] = useState<string | null>(null);
   // The tools the model may call in this chat (engine tools.py); a new chat starts with the last choice.
-  const [chatTools, setChatTools] = useState<string[]>(loadTools);
-  const changeTools = (names: string[]) => {
-    setChatTools(names);
+  const [chatTools, setChatTools] = useState<ToolModes>(loadTools);
+  const toolNames = Object.keys(chatTools);
+  const changeTools = (modes: ToolModes) => {
+    setChatTools(modes);
     try {
-      localStorage.setItem("temper.tools", JSON.stringify(names));
+      localStorage.setItem("temper.tools", JSON.stringify(modes));
     } catch {
       /* private window */
     }
@@ -311,7 +315,7 @@ export function ChatPage() {
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
     setProject(saved.settings?.project ?? null);
-    if (saved.settings?.tools) setChatTools(saved.settings.tools);
+    if (saved.settings?.tools) setChatTools(toModes(saved.settings.tools));
     if (saved.generating) void rejoin(saved.generating, fromSaved(saved.messages));
   }
 
@@ -527,13 +531,13 @@ export function ChatPage() {
     const id = await persist(chatId.current, history);
     try {
       // Fits the thread into the model's context, summarising its oldest turns if it has to.
-      const ask = { messages: history.map(toApi), system, project, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact, tools: chatTools };
+      const ask = { messages: history.map(toApi), system, project, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact, tools: toolNames };
       const check = await api<{ fits: boolean }>("/api/chat/prepare", { json: { ...ask, check: true }, signal: ctrl.signal });
       if (!check.fits && autoCompact) setCompacting(true);
       const prepared = await api<Prepared>("/api/chat/prepare", { json: ask, signal: ctrl.signal }).finally(() => setCompacting(false));
       if (chatId.current === id) setCompaction(prepared.summary);
       const body = { messages: prepared.messages, ...sampling, ...thinkingFields() };
-      const gen = await api<Generation>("/api/chat/generations", { json: { chat_id: id, upto: history.length, model, body, tools: chatTools }, signal: ctrl.signal });
+      const gen = await api<Generation>("/api/chat/generations", { json: { chat_id: id, upto: history.length, model, body, tools: toolNames, approve: toolNames.filter((n) => chatTools[n] === "ask") }, signal: ctrl.signal });
       started = true;
       generation.current = gen.id;
       got = await follow(gen.id, id, model, ctrl.signal);
@@ -564,6 +568,12 @@ export function ChatPage() {
     if (!reply && chatId.current === id) setMessages(history);
     return reply && !failure && !stopped && chatId.current === id ? [...history, reply] : null;
   }
+
+  /** Answers a tool call waiting to be allowed; "always" also stops this chat asking for that tool. */
+  const approve: OnApprove = (step, allow, always) => {
+    if (always) changeTools({ ...chatTools, [step.name]: "auto" });
+    if (generation.current) void api(`/api/chat/generations/${generation.current}/approve`, { json: { id: step.id, allow } }).catch(() => {});
+  };
 
   // A fix from ContextFit changes a setting, then the effect below retries with it once the page has rendered with the change.
   const [retry, setRetry] = useState(false);
@@ -714,11 +724,11 @@ export function ChatPage() {
                             {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
                             {m.tools?.length ? (
                               <>
-                                <ReplyWithTools text={m.content} steps={m.tools} />
+                                <ReplyWithTools text={m.content} steps={m.tools} onApprove={busy && i === messages.length - 1 ? approve : undefined} />
                                 {!m.content.trim() && !(busy && i === messages.length - 1) && <p className="text-[13px] text-muted">{t("tools.no_answer")}</p>}
                               </>
                             ) : m.content ? (
-                              <ReplyText text={busy && i === messages.length - 1 && chatTools.length ? withoutCallText(m.content) : m.content} />
+                              <ReplyText text={busy && i === messages.length - 1 && toolNames.length ? withoutCallText(m.content) : m.content} />
                             ) : !m.reasoning ? (
                               <span className="animate-pulse-dot text-muted">{compacting && i === messages.length - 1 ? t("chat.summarising") : t("chat.thinking")}</span>
                             ) : !(busy && i === messages.length - 1) ? (

@@ -8,6 +8,8 @@ With tools on, a generation runs rounds: when the model calls tools, the engine 
 results back and streams the model's next round, until it answers without a call (tools.py).
 Besides the model's own events, the page gets {"temper_tool": step} as a call starts and again with
 its result, and {"temper_content": text} when a call written into the text was taken out of it.
+A tool set to ask first waits with its step's `approval` "pending" until the page answers through
+/approve; reopening the chat replays the request, so it can be answered later.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ class Generation:
         self.ended = 0.0
         self.task: asyncio.Task | None = None
         self.wake = asyncio.Event()
+        self.waiting: dict[str, asyncio.Future] = {}  # calls waiting for the person to allow them, by call id
 
     def push(self, data: str | dict) -> None:
         data = data if isinstance(data, str) else json.dumps(data)
@@ -137,7 +140,20 @@ async def _round(gen: Generation, client: httpx.AsyncClient, body: dict) -> list
     return None if gen.error else [tools.Call(c["name"], c["arguments"], c["id"]) for _, c in sorted(calls.items())]
 
 
-async def _run(gen: Generation, body: dict, names: list[str]) -> None:
+DECLINED = "The person chose not to run this. Don't call it again in this reply: answer without it, or say what you'd need it for."
+
+
+async def _allowed(gen: Generation, step: dict) -> bool:
+    """Waits for the person to allow or decline a call."""
+    future = asyncio.get_running_loop().create_future()
+    gen.waiting[step["id"]] = future
+    try:
+        return await future
+    finally:
+        gen.waiting.pop(step["id"], None)
+
+
+async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]) -> None:
     try:
         server, _, _ = route(dict(body))
         # llama-server takes the tools natively; other engines were offered them in the system prompt (compaction.py).
@@ -170,10 +186,21 @@ async def _run(gen: Generation, body: dict, names: list[str]) -> None:
                     if key in made:
                         steps.append({**made[key], "id": call.id, "result": f"{made[key]['result']}\n(The same call as before: answer from the results you have.)"})
                         continue
-                    step = {"id": call.id, "name": tools.resolve_name(call.name, names) or call.name or "?", "arguments": call.arguments if arguments is None else arguments, "result": None, "error": False, "at": len(gen.content)}
+                    name = tools.resolve_name(call.name, names)
+                    step = {"id": call.id, "name": name or call.name or "?", "arguments": call.arguments if arguments is None else arguments, "result": None, "error": False, "at": len(gen.content)}
+                    if name in approve and arguments is not None:
+                        step["approval"] = "pending"
                     gen.tools.append(step)
                     gen.push({"temper_tool": step})
-                    step.update(await asyncio.to_thread(tools.run, call, names))
+                    if step.get("approval"):
+                        allowed = await _allowed(gen, step)
+                        step["approval"] = "allowed" if allowed else "declined"
+                        if not allowed:
+                            step.update(result=DECLINED, error=True)
+                    if step["result"] is None:
+                        if step.get("approval"):
+                            gen.push({"temper_tool": step})  # allowed, and running
+                        step.update(await asyncio.to_thread(tools.run, call, names, {"chat": gen.chat_id}))
                     gen.push({"temper_tool": step})
                     steps.append(made.setdefault(key, step))
                     fresh += 1
@@ -200,6 +227,7 @@ class Start(BaseModel):
     model: str | None = None  # the name saved with the reply
     body: dict  # an OpenAI chat request
     tools: list[str] = []  # the tools the reply may call (tools.py)
+    approve: list[str] = []  # those of them that wait for the person to allow each call
 
 
 @router.post("")
@@ -210,7 +238,7 @@ async def start(req: Start):
         running.task.cancel()
     gen = Generation(req.chat_id, req.upto, req.model)
     live[gen.id] = gen
-    gen.task = asyncio.create_task(_run(gen, req.body, req.tools))
+    gen.task = asyncio.create_task(_run(gen, req.body, req.tools, req.approve))
     return gen.summary()
 
 
@@ -248,6 +276,21 @@ async def cancel(gen_id: str):
         except asyncio.CancelledError:
             pass
     return gen.summary() if gen else {"id": gen_id, "done": True}
+
+
+class Approval(BaseModel):
+    id: str  # the call's id, from its step
+    allow: bool
+
+
+@router.post("/{gen_id}/approve")
+def approve(gen_id: str, req: Approval):
+    gen = live.get(gen_id)
+    future = gen.waiting.get(req.id) if gen else None
+    if not future or future.done():
+        raise HTTPException(404, "That call isn't waiting any more.")
+    future.get_loop().call_soon_threadsafe(lambda: future.done() or future.set_result(req.allow))
+    return {"id": req.id, "allow": req.allow}
 
 
 def cancel_chat(chat_id: str) -> None:

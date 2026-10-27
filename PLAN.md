@@ -159,7 +159,7 @@ temper/
 ## Phase 4: Agents, tools and MCP
 
 - [x] **4.1 Tool calling**: native function calling for models that support it, with repair of malformed tool calls. *(Done: tools.py with a calculator and a clock to start; llama.cpp gets tools natively, other engines in the prompt; the engine runs the rounds of calls and results. Repairs near-JSON arguments, calls written as text in five model families' formats, near-miss names, and repeated-call loops; what can't be repaired goes back to the model. Steps are saved with the reply and shown as cards; per-chat tool switches in the Generation panel.)*
-- [ ] **4.2 Code execution sandbox**: run Python/JS in an isolated sandbox with per-tool approval (Ask / Auto / Off).
+- [x] **4.2 Code execution sandbox**: run Python/JS in an isolated sandbox with per-tool approval (Ask / Auto / Off). *(Done: sandbox.py runs code in a per-chat folder with a time limit, a file-size cap and a stripped environment, inside Seatbelt on macOS or bubblewrap on Linux (no network, writes only to its folder, credential folders unreadable); Windows has no OS sandbox yet and says so. Each tool is Off, Ask first or Run per chat; a call that asks waits in the engine until it's allowed, declined or allowed for the rest of the chat. Data libraries for Python install from Settings.)*
 - [ ] **4.3 MCP client**: add MCP servers (stdio, HTTP, SSE), browse tools, approve them; search over large tool catalogs (BM25) so they fit in context.
 - [ ] **4.4 Temper as an MCP server**: expose local models and jobs to other agents.
 - [ ] **4.5 Agent skills**: `SKILL.md` folders and `@skill` mentions in chat.

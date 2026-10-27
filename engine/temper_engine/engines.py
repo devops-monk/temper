@@ -204,14 +204,20 @@ def translate(engine: str, body: dict) -> dict:
 
 
 def _install(job: Job, engine: str) -> None:
+    if install_venv(job, venv(engine), ENGINES[engine]["packages"], ENGINES[engine]["name"]):
+        job.finish("done", engine=engine)
+
+
+def install_venv(job: Job, folder: Path, packages: list[str], name: str) -> bool:
+    """Makes a Python 3.12 venv at `folder` with `packages`, logging to `job`, and marks it with .installed.
+    False if the job was cancelled (and is finished as such)."""
     from .llamacpp import uv_binary
 
     uv = uv_binary()
-    folder = venv(engine)
     (folder / ".installed").unlink(missing_ok=True)
     steps = [
         [uv, "venv", "--python", "3.12", "--allow-existing", str(folder)],
-        [uv, "pip", "install", "--python", str(_venv_python(folder)), *ENGINES[engine]["packages"]],
+        [uv, "pip", "install", "--python", str(_venv_python(folder)), *packages],
     ]
     for i, cmd in enumerate(steps):
         job.log("$ " + " ".join(Path(c).name if j == 0 else c for j, c in enumerate(cmd)))
@@ -223,12 +229,13 @@ def _install(job: Job, engine: str) -> None:
                 job.log(line.rstrip())
         if proc.wait() != 0:
             if job.cancel_requested:
-                return job.finish("cancelled")
-            raise RuntimeError(f"Installing {ENGINES[engine]['name']} failed; the log says why.")
+                job.finish("cancelled")
+                return False
+            raise RuntimeError(f"Installing {name} failed; the log says why.")
         job.progress = (i + 1) / len(steps)
         job.emit("progress", value=job.progress)
-    (folder / ".installed").write_text(" ".join(ENGINES[engine]["packages"]))
-    job.finish("done", engine=engine)
+    (folder / ".installed").write_text(" ".join(packages))
+    return True
 
 
 @router.get("")

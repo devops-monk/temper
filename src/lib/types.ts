@@ -97,7 +97,7 @@ export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
-  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move" | "engine-install";
+  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move" | "engine-install" | "sandbox-install";
   title: string;
   status: JobStatus;
   progress: number | null;

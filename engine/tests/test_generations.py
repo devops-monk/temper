@@ -154,3 +154,36 @@ def test_a_repeated_call_gets_the_earlier_result_and_ends_the_loop(client, monke
     assert "same call as before" in asked[2]["messages"][-1]["content"]
     reply = client.get(f"/api/chats/{chat_id}", headers=AUTH).json()["messages"][-1]
     assert reply["content"] == "Four." and len(reply["tools"]) == 1
+
+
+def answer_approvals(client, gen_id, allow):
+    """Follows a generation, answering each call that waits to be allowed; returns the events."""
+    events = []
+    with client.stream("GET", f"/api/chat/generations/{gen_id}/stream", headers=AUTH) as r:
+        for line in r.iter_lines():
+            if line.startswith("data: "):
+                event = json.loads(line[6:])
+                events.append(event)
+                step = event.get("temper_tool") or {}
+                if step.get("approval") == "pending":
+                    assert client.post(f"/api/chat/generations/{gen_id}/approve", headers=AUTH, json={"id": step["id"], "allow": allow}).status_code == 200
+    return events
+
+
+@pytest.mark.parametrize("allow", [True, False])
+def test_a_tool_set_to_ask_waits_for_the_person(client, monkeypatch, allow):
+    chat_id = new_chat(client)
+    call = [{"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "calculator", "arguments": '{"expression": "6*7"}'}}]}]
+    asked = fake_model(monkeypatch, calls_then_answers(call, "Answered."))
+    gen = start(client, chat_id, tools=["calculator"], approve=["calculator"])
+    events = answer_approvals(client, gen["id"], allow)
+    approvals = [e["temper_tool"].get("approval") for e in events if "temper_tool" in e]
+    assert approvals[0] == "pending" and approvals[-1] == ("allowed" if allow else "declined")
+    result = asked[1]["messages"][-1]["content"]
+    assert result == "6*7 = 42" if allow else "chose not to run" in result
+    step = client.get(f"/api/chats/{chat_id}", headers=AUTH).json()["messages"][-1]["tools"][0]
+    assert step["approval"] == ("allowed" if allow else "declined") and step["error"] is not allow
+
+
+def test_answering_a_call_that_isnt_waiting_is_refused(client):
+    assert client.post("/api/chat/generations/nope/approve", headers=AUTH, json={"id": "x", "allow": True}).status_code == 404
