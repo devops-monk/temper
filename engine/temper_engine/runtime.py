@@ -317,12 +317,14 @@ def v1_models():
     return {"object": "list", "data": data}
 
 
-@router.post("/v1/chat/completions")
-async def v1_chat(request: Request):
+def route(body: dict) -> tuple[RuntimeManager, str, dict]:
+    """The server a chat request goes to, its URL, and the request as that server takes it.
+
+    Compare mode's and alongside models are asked for by path or name; anything else goes to chat's model.
+    Attachments are expanded into what the model reads, and refused if it can't see or hear them.
+    """
     from .compare import pool
 
-    body = await request.json()
-    # Compare mode's models are asked for by path or name; anything else goes to chat's model.
     server = pool.find(body.get("model"))
     if server is None:
         _require_ready()
@@ -342,8 +344,12 @@ async def v1_chat(request: Request):
         body["messages"] = attachments.expand(body["messages"])
     from .engines import translate
 
-    body = translate(server.engine, body)
-    url = f"{server.base}/v1/chat/completions"
+    return server, f"{server.base}/v1/chat/completions", translate(server.engine, body)
+
+
+@router.post("/v1/chat/completions")
+async def v1_chat(request: Request):
+    _, url, body = route(await request.json())
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
             r = await client.post(url, json=body)

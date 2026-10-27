@@ -227,8 +227,13 @@ def _with_messages(con: sqlite3.Connection, chat_id: str) -> dict:
 
 @router.get("/{chat_id}")
 def get_chat(chat_id: str):
+    from . import generations
+
     with db() as con:
-        return _with_messages(con, chat_id)
+        chat = _with_messages(con, chat_id)
+    # A reply still being written (generations.py): the page follows it from the start.
+    gen = generations.for_chat(chat_id)
+    return {**chat, "generating": gen.summary() if gen else None}
 
 
 class SaveMessages(BaseModel):
@@ -276,6 +281,9 @@ def update_chat(chat_id: str, req: ChatUpdate):
 
 @router.delete("/{chat_id}")
 def delete_chat(chat_id: str):
+    from . import generations
+
+    generations.cancel_chat(chat_id)
     with db() as con:
         con.execute("delete from messages_fts where chat_id = ?", (chat_id,))
         con.execute("delete from chats where id = ?", (chat_id,))

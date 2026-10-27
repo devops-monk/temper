@@ -92,7 +92,30 @@ interface SavedChat {
   messages: Message[];
   settings: Partial<Settings> | null;
   compaction: Compaction | null;
+  /** A reply the engine is still writing (engine generations.py). */
+  generating: Generation | null;
 }
+
+interface Generation {
+  id: string;
+  chat_id: string | null;
+  upto: number;
+}
+
+interface Followed {
+  text: string;
+  thoughts: string;
+  thought?: number;
+  tokens: number;
+  error: string | null;
+  cancelled: boolean;
+}
+
+const fromSaved = (messages: Message[]): Message[] =>
+  messages.map(({ role, content, error, model, reasoning, attachments }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning, attachments: attachments ?? undefined }));
+
+/** Leaving a chat stops following its reply without stopping it; the engine finishes and saves it. */
+const DETACH = "detach";
 
 interface Settings {
   system: string;
@@ -161,6 +184,7 @@ export function ChatPage() {
   const [settings, setSettings] = useState(DEFAULTS);
   const [recommended, setRecommended] = useState<Recommended | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const generation = useRef<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const [finding, setFinding] = useState(false);
@@ -239,7 +263,7 @@ export function ChatPage() {
     setComparing(false);
     if (id === chatId.current) return;
     setQueue([]);
-    abort.current?.abort();
+    abort.current?.abort(DETACH);
     const saved = await api<SavedChat>(`/api/chats/${id}`).catch((e: Error) => {
       setSaveError(e.message);
       return null;
@@ -249,18 +273,48 @@ export function ChatPage() {
     setChat({ id, title: saved.title, source: saved.source });
     setCompaction(saved.compaction);
     setUsage(null);
-    setMessages(saved.messages.map(({ role, content, error, model, reasoning, attachments }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning, attachments: attachments ?? undefined })));
+    setMessages(fromSaved(saved.messages));
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
+    if (saved.generating) void rejoin(saved.generating, fromSaved(saved.messages));
+  }
+
+  /** Follows a reply that was being written when the chat was left, from its first event, then shows it as saved. */
+  async function rejoin(gen: Generation, saved: Message[]) {
+    const id = gen.chat_id;
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    generation.current = gen.id;
+    setBusy(true);
+    setMessages([...saved.slice(0, gen.upto), { role: "assistant", content: "" }]);
+    try {
+      await follow(gen.id, id, null, ctrl.signal);
+    } catch {
+      // finished between opening the chat and following it: the saved chat has the reply
+    } finally {
+      setBusy(false);
+      generation.current = null;
+      abort.current = null;
+    }
+    if (ctrl.signal.reason === DETACH || !id) return;
+    const done = await api<SavedChat>(`/api/chats/${id}`).catch(() => null);
+    if (done && chatId.current === id) setMessages(fromSaved(done.messages));
+    setListVersion((v) => v + 1);
+  }
+
+  /** Stops the reply: the engine keeps what it wrote. */
+  function stop() {
+    if (generation.current) void api(`/api/chat/generations/${generation.current}/cancel`, { method: "POST" }).catch(() => abort.current?.abort());
+    else abort.current?.abort();
   }
 
   // Keyboard shortcuts (lib/shortcuts.ts); the ref keeps the handlers current without re-subscribing.
-  const keys = useRef({ newChat: () => {}, comparing: false, busy: false });
+  const keys = useRef({ newChat: () => {}, stop: () => {}, comparing: false, busy: false });
   useEffect(() => {
     const find = () => !keys.current.comparing && setFinding(true);
     const fresh = () => keys.current.newChat();
     const focus = () => input.current?.focus();
-    const stop = (e: KeyboardEvent) => e.key === "Escape" && keys.current.busy && abort.current?.abort();
+    const stop = (e: KeyboardEvent) => e.key === "Escape" && keys.current.busy && keys.current.stop();
     window.addEventListener("temper:find", find);
     window.addEventListener("temper:new-chat", fresh);
     window.addEventListener("temper:focus-input", focus);
@@ -278,7 +332,7 @@ export function ChatPage() {
     setQueue([]);
     setCompaction(null);
     setUsage(null);
-    abort.current?.abort();
+    abort.current?.abort(DETACH);
     chatId.current = null;
     setChat(null);
     setMessages([]);
@@ -373,7 +427,42 @@ export function ChatPage() {
     };
   }
 
-  /** Streams a reply to `history`; returns the thread with it, or null if it was stopped, failed or the chat changed. */
+  /** Follows a generation's events into the chat's last message; resolves with what it wrote and how it ended. */
+  async function follow(gen: string, id: string | null, model: string | null, signal: AbortSignal): Promise<Followed> {
+    const out: Followed = { text: "", thoughts: "", tokens: 0, error: null, cancelled: false };
+    const started = performance.now();
+    const current = (): Message => ({ role: "assistant", content: out.text, model, reasoning: out.thoughts || null, thought: out.thought });
+    await stream(
+      `/api/chat/generations/${gen}/stream`,
+      (data) => {
+        const chunk = JSON.parse(data);
+        if (chunk.temper_end) {
+          out.error = chunk.temper_end.error;
+          out.cancelled = chunk.temper_end.cancelled;
+          return;
+        }
+        const t = chunk.timings;
+        if (t?.predicted_n) {
+          out.tokens = t.predicted_n;
+          setStats({ speed: t.predicted_per_second, drafted: t.draft_n, accepted: t.draft_n_accepted });
+        }
+        const delta = chunk.choices?.[0]?.delta;
+        const thinkingPiece = (delta?.reasoning_content ?? delta?.reasoning ?? "") as string;
+        const piece = (delta?.content ?? "") as string;
+        if (!piece && !thinkingPiece) return;
+        out.thoughts += thinkingPiece;
+        if (piece && out.thoughts && out.thought === undefined) out.thought = (performance.now() - started) / 1000;
+        out.text += piece;
+        if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), current()]);
+      },
+      { signal },
+    );
+    if (out.thoughts && out.thought === undefined) out.thought = (performance.now() - started) / 1000;
+    return out;
+  }
+
+  /** Streams a reply to `history`; returns the thread with it, or null if it was stopped, failed or the chat changed.
+   * The engine writes the reply (engine generations.py) and saves it, so it survives the window closing or the chat changing. */
   async function send(history: Message[]): Promise<Message[] | null> {
     setMessages([...history, { role: "assistant", content: "" }]);
     setBusy(true);
@@ -381,13 +470,9 @@ export function ChatPage() {
     abort.current = ctrl;
     const { system, ...sampling } = settings;
     const model = runtime?.model ?? null;
-    let text = "";
-    let thoughts = "";
-    let thought: number | undefined;
-    let started = performance.now();
+    let got: Followed | null = null;
+    let started = false;
     let failure: string | null = null;
-    let replyTokens = 0;
-    const current = (): Message => ({ role: "assistant", content: text, model, reasoning: thoughts || null, thought });
     // A summary of turns that regenerating or editing removed no longer applies.
     if (compactionRef.current && compactionRef.current.upto > history.length) setCompaction(null);
     // Saved before the reply streams, so a long answer or a crash never loses the question.
@@ -399,56 +484,35 @@ export function ChatPage() {
       if (!check.fits && autoCompact) setCompacting(true);
       const prepared = await api<Prepared>("/api/chat/prepare", { json: ask, signal: ctrl.signal }).finally(() => setCompacting(false));
       if (chatId.current === id) setCompaction(prepared.summary);
-      started = performance.now();
-      await stream(
-        "/v1/chat/completions",
-        (data) => {
-          if (data === "[DONE]") return;
-          const chunk = JSON.parse(data);
-          const t = chunk.timings;
-          if (t?.predicted_n) {
-            replyTokens = t.predicted_n;
-            setStats({ speed: t.predicted_per_second, drafted: t.draft_n, accepted: t.draft_n_accepted });
-          }
-          const delta = chunk.choices?.[0]?.delta;
-          const thinkingPiece = (delta?.reasoning_content ?? delta?.reasoning ?? "") as string;
-          const piece = (delta?.content ?? "") as string;
-          if (!piece && !thinkingPiece) return;
-          thoughts += thinkingPiece;
-          if (piece && thoughts && thought === undefined) thought = (performance.now() - started) / 1000;
-          text += piece;
-          if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), current()]);
-        },
-        {
-          signal: ctrl.signal,
-          json: {
-            stream: true,
-            messages: prepared.messages,
-            ...sampling,
-            ...thinkingFields(),
-          },
-        },
-      );
-      if (chatId.current === id) setUsage({ tokens: prepared.prompt + replyTokens, context: prepared.context });
+      const body = { messages: prepared.messages, ...sampling, ...thinkingFields() };
+      const gen = await api<Generation>("/api/chat/generations", { json: { chat_id: id, upto: history.length, model, body }, signal: ctrl.signal });
+      started = true;
+      generation.current = gen.id;
+      got = await follow(gen.id, id, model, ctrl.signal);
+      if (got.error && !got.text && !got.thoughts) failure = got.error;
+      if (chatId.current === id) setUsage({ tokens: prepared.prompt + got.tokens, context: prepared.context });
     } catch (err) {
-      if (!ctrl.signal.aborted) {
-        failure = (err as Error).message;
-        if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), text || thoughts ? current() : { role: "assistant", content: failure!, error: true, model }]);
-      }
+      if (!ctrl.signal.aborted) failure = (err as Error).message;
     } finally {
       setBusy(false);
       abort.current = null;
+      generation.current = null;
     }
-    if (thoughts && thought === undefined) thought = (performance.now() - started) / 1000;
+    // Another chat was opened: the engine finishes this reply and saves it.
+    if (ctrl.signal.reason === DETACH) return null;
+    const stopped = ctrl.signal.aborted || !!got?.cancelled;
+    const text = got?.text ?? "";
+    const thoughts = got?.thoughts ?? "";
     // A stopped reply keeps what was written (thinking included); one stopped before it began isn't saved.
     // A model that ends without writing anything says so, rather than leaving the question unanswered.
-    const empty = !text && !thoughts && !failure && !ctrl.signal.aborted;
-    if (empty) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
-    const reply: Message | null = text || thoughts ? current() : failure ? { role: "assistant", content: failure, error: true, model } : null;
+    if (!text && !thoughts && !failure && !stopped) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
+    const reply: Message | null = text || thoughts ? { role: "assistant", content: text, model, reasoning: thoughts || null, thought: got?.thought } : failure ? { role: "assistant", content: failure, error: true, model } : null;
     if (reply && chatId.current === id) setMessages([...history, reply]);
-    if (id) await persist(id, reply ? [...history, reply] : history);
+    // The engine saved the reply if it got to write it; otherwise (it failed before starting) the page does.
+    if (id && !started) await persist(id, reply ? [...history, reply] : history);
+    else setListVersion((v) => v + 1);
     if (!reply && chatId.current === id) setMessages(history);
-    return reply && !failure && !ctrl.signal.aborted && chatId.current === id ? [...history, reply] : null;
+    return reply && !failure && !stopped && chatId.current === id ? [...history, reply] : null;
   }
 
   /** Sends, then the queued follow-ups one by one; a stopped or failed reply pauses the queue. */
@@ -505,7 +569,7 @@ export function ChatPage() {
       ? `${runtime?.model} can't ${lacking}. ${runtime?.projector ? "" : "Load a model that can; Temper loads its projector (an mmproj .gguf) from beside the model."}`.trim()
       : null;
 
-  keys.current = { newChat, comparing, busy };
+  keys.current = { newChat, stop, comparing, busy };
   const set = <K extends keyof Settings>(k: K) => (v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
 
   return (
@@ -658,7 +722,7 @@ export function ChatPage() {
                     aria-label="Message"
                   />
                   {busy && (
-                    <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label={t("chat.stop")} className="size-9 rounded-xl px-0">
+                    <Button variant="secondary" onClick={stop} aria-label={t("chat.stop")} className="size-9 rounded-xl px-0">
                       <Square className="size-3.5 fill-current" />
                     </Button>
                   )}
