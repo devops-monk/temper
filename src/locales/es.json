@@ -152,5 +152,17 @@
   "fit.shorten_instructions": "Acortar el prompt del sistema o AGENTS.md ({tokens} tokens)",
   "fit.longer_context": "Recargar el modelo con un contexto de {to} tokens (admite hasta {max})",
   "fit.apply_retry": "Aplicar y reintentar",
-  "fit.new_chat_button": "Chat nuevo"
+  "fit.new_chat_button": "Chat nuevo",
+  "tools.title": "Herramientas",
+  "tools.hint": "El modelo puede usarlas mientras responde. Los modelos pequeños pueden usarlas mal o no usarlas.",
+  "tools.running": "Ejecutando {name}…",
+  "tools.used": "Usó {name}",
+  "tools.failed": "{name} falló",
+  "tools.arguments": "Pedido",
+  "tools.result": "Resultado",
+  "tool.calculator": "Calculadora",
+  "tool.calculator.about": "Hace cuentas exactas en lugar de que el modelo las adivine.",
+  "tool.current_time": "Fecha y hora",
+  "tool.current_time.about": "Le dice al modelo la fecha y la hora de hoy, aquí o en otra zona horaria.",
+  "tools.no_answer": "El modelo se detuvo tras usar las herramientas sin responder. Regenera o prueba un modelo más grande."
 }

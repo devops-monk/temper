@@ -152,5 +152,17 @@
   "fit.shorten_instructions": "Shorten the system prompt or AGENTS.md ({tokens} tokens)",
   "fit.longer_context": "Reload the model with a context of {to} tokens (it supports up to {max})",
   "fit.apply_retry": "Apply and retry",
-  "fit.new_chat_button": "New chat"
+  "fit.new_chat_button": "New chat",
+  "tools.title": "Tools",
+  "tools.hint": "The model can call these while it answers. Small models may call them poorly or not at all.",
+  "tools.running": "Running {name}…",
+  "tools.used": "Used {name}",
+  "tools.failed": "{name} failed",
+  "tools.arguments": "Asked",
+  "tools.result": "Result",
+  "tool.calculator": "Calculator",
+  "tool.calculator.about": "Works out arithmetic exactly, instead of the model guessing.",
+  "tool.current_time": "Date and time",
+  "tool.current_time.about": "Tells the model today's date and the time, here or in another time zone.",
+  "tools.no_answer": "The model stopped after its tool calls without answering. Regenerate, or try a larger model."
 }

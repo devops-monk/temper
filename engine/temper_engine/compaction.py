@@ -15,9 +15,9 @@ import functools
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import attachments
+from . import attachments, tools
 from .engines import translate
 from .instructions import with_instructions
 from .runtime import RuntimeManager, manager
@@ -54,6 +54,8 @@ class Prepare(BaseModel):
     # The chat's project folder, whose AGENTS.md files join the global instructions (instructions.py).
     project: str | None = None
     instructions: bool = True
+    # The tools the reply may call (tools.py): their schemas or prompt count toward the context.
+    tools: list[str] = Field(default_factory=list)
 
 
 def _context(server: RuntimeManager) -> int:
@@ -69,13 +71,13 @@ def _post(server: RuntimeManager, path: str, body: dict, timeout: float = 60) ->
         raise HTTPException(502, f"The model's server didn't answer: {e}") from e
 
 
-def count(server: RuntimeManager, messages: list[dict]) -> int:
-    """Prompt tokens for `messages`, as the model will see them."""
+def count(server: RuntimeManager, messages: list[dict], specs: list[dict] | None = None) -> int:
+    """Prompt tokens for `messages` (and the `specs` of tools offered natively), as the model will see them."""
     if not messages:
         return 0
     media = 0
     plain = []
-    for m in attachments.expand(messages):
+    for m in attachments.expand(tools.flatten(messages)):
         content = m.get("content")
         if isinstance(content, list):
             media += sum(MEDIA_TOKENS.get(p.get("type"), 0) for p in content)
@@ -83,7 +85,7 @@ def count(server: RuntimeManager, messages: list[dict]) -> int:
         plain.append({"role": m["role"], "content": content or ""})
     if server.engine != "llama.cpp":
         return _count_local(server, plain) + media
-    prompt = _post(server, "/apply-template", {"messages": plain})["prompt"]
+    prompt = _post(server, "/apply-template", {"messages": plain, **({"tools": specs} if specs else {})})["prompt"]
     return len(_post(server, "/tokenize", {"content": prompt, "add_special": True, "parse_special": True})["tokens"]) + media
 
 
@@ -104,9 +106,10 @@ def _count_local(server: RuntimeManager, messages: list[dict]) -> int:
     return len(ids[0] if ids and isinstance(ids[0], list) else ids)
 
 
-def _sendable(messages: list[dict]) -> list[dict]:
-    """The turns the model sees: replies that failed (marked "error") are shown in the chat but never sent."""
-    return [{k: v for k, v in m.items() if k != "error"} for m in messages if not m.get("error")]
+def _sendable(messages: list[dict], native: bool = True) -> list[dict]:
+    """The turns the model sees: replies that failed (marked "error") are shown in the chat but never sent,
+    and the tools a reply called become the rounds of calls and results the model saw (tools.py)."""
+    return tools.expand([{k: v for k, v in m.items() if k != "error"} for m in messages if not m.get("error")], native)
 
 
 def _with_system(system: str, summary: str | None) -> list[dict]:
@@ -117,7 +120,7 @@ def _with_system(system: str, summary: str | None) -> list[dict]:
 def _transcript(messages: list[dict]) -> list[str]:
     """Each turn as plain text for summarising; attached documents are included, pictures and sounds named."""
     lines = []
-    for m in attachments.expand(messages):
+    for m in attachments.expand(tools.flatten(messages)):
         content = m.get("content")
         if isinstance(content, list):
             content = "\n".join(p["text"] if p.get("type") == "text" else "[a picture]" if p.get("type") == "image_url" else "[a sound]" for p in content)
@@ -235,12 +238,17 @@ def prepare(req: Prepare):
     upto = summary.upto if summary else 0
 
     system = with_instructions(req.system, req.project) if req.instructions else req.system
+    # llama-server takes tools natively; other engines are offered them in the system prompt.
+    native = server.engine == "llama.cpp"
+    specs = tools.schemas(req.tools) if native else None
+    if req.tools and not native:
+        system = "\n\n".join(t for t in (system, tools.prompt(req.tools)) if t)
 
     def build(upto: int, text: str | None) -> list[dict]:
-        return _with_system(system, text) + _sendable(req.messages[upto:])
+        return _with_system(system, text) + _sendable(req.messages[upto:], native)
 
     messages = build(upto, summary.text if summary else None)
-    prompt = count(server, messages)
+    prompt = count(server, messages, specs)
     if req.check:
         return {"fits": prompt + reserve <= context, "prompt": prompt, "context": context, "reserve": reserve}
     compacted = False
@@ -255,7 +263,7 @@ def prepare(req: Prepare):
             text = summarise(server, summary.text if summary else None, _sendable(req.messages[upto:keep]))
             summary, compacted = Summary(upto=keep, text=text), True
             messages = build(keep, text)
-            prompt = count(server, messages)
+            prompt = count(server, messages, specs)
     if prompt + reserve > context:
         fit = explain(server, req, system, summary, prompt, reserve, context)
         last = next(p["tokens"] for p in fit["parts"] if p["kind"] == "message") + sum(p["tokens"] for p in fit["parts"] if p["kind"] == "attachment")

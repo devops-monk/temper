@@ -14,6 +14,7 @@ import { Compare } from "../components/Compare";
 import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
+import { ReplyWithTools, ToolsControl, withoutCallText, type ToolStep } from "../components/Tools";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
 import { EngineError, api, inTauri, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
@@ -33,6 +34,8 @@ interface Message {
   attachments?: Attachment[];
   /** Why the message didn't fit the context, for this session only (it isn't saved). */
   fit?: Fit;
+  /** The tools a reply called, in order. */
+  tools?: ToolStep[];
 }
 
 /** Per-model thinking choices, remembered in this browser. */
@@ -86,7 +89,16 @@ function loadFlag(key: string, fallback: boolean): boolean {
 }
 
 /** A message as llama.cpp takes it; attachments become parts the engine expands, and failed replies are marked for it to leave out. */
-const toApi = ({ role, content, attachments, error }: Message) => ({ role, content: attachments?.length ? [...attachments.map(attachmentPart), ...(content ? [{ type: "text", text: content }] : [])] : content, ...(error && { error }) });
+const toApi = ({ role, content, attachments, error, tools }: Message) => ({ role, content: attachments?.length ? [...attachments.map(attachmentPart), ...(content ? [{ type: "text", text: content }] : [])] : content, ...(error && { error }), ...(tools?.length && { tools }) });
+
+/** The tools turned on for new chats: the last chat's choice. */
+function loadTools(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem("temper.tools") ?? "[]") as string[];
+  } catch {
+    return [];
+  }
+}
 
 const kTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 
@@ -95,7 +107,7 @@ interface SavedChat {
   title: string;
   source: string | null;
   messages: Message[];
-  settings: (Partial<Settings> & { project?: string | null }) | null;
+  settings: (Partial<Settings> & { project?: string | null; tools?: string[] }) | null;
   compaction: Compaction | null;
   /** A reply the engine is still writing (engine generations.py). */
   generating: Generation | null;
@@ -114,10 +126,11 @@ interface Followed {
   tokens: number;
   error: string | null;
   cancelled: boolean;
+  tools: ToolStep[];
 }
 
 const fromSaved = (messages: Message[]): Message[] =>
-  messages.map(({ role, content, error, model, reasoning, attachments }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning, attachments: attachments ?? undefined }));
+  messages.map(({ role, content, error, model, reasoning, attachments, tools }) => ({ role: role === "assistant" ? "assistant" : "user", content, error, model, reasoning, attachments: attachments ?? undefined, tools: tools ?? undefined }));
 
 /** Leaving a chat stops following its reply without stopping it; the engine finishes and saves it. */
 const DETACH = "detach";
@@ -195,6 +208,16 @@ export function ChatPage() {
   const [finding, setFinding] = useState(false);
   // The folder whose AGENTS.md files join the instructions (engine instructions.py); saved with the chat.
   const [project, setProject] = useState<string | null>(null);
+  // The tools the model may call in this chat (engine tools.py); a new chat starts with the last choice.
+  const [chatTools, setChatTools] = useState<string[]>(loadTools);
+  const changeTools = (names: string[]) => {
+    setChatTools(names);
+    try {
+      localStorage.setItem("temper.tools", JSON.stringify(names));
+    } catch {
+      /* private window */
+    }
+  };
   const [library, setLibrary] = useState(false);
   // Typing / and a few letters in an empty message searches the prompt library; Esc leaves it as typed.
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
@@ -251,7 +274,7 @@ export function ChatPage() {
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
-    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null })), model: runtime?.model ?? null, settings: { ...settings, project }, compaction: compactionRef.current && compactionRef.current.upto <= history.length ? compactionRef.current : null };
+    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments, tools }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null, tools: tools?.length ? tools : null })), model: runtime?.model ?? null, settings: { ...settings, project, tools: chatTools }, compaction: compactionRef.current && compactionRef.current.upto <= history.length ? compactionRef.current : null };
     try {
       if (id) await api(`/api/chats/${id}/messages`, { method: "PUT", json: body });
       else {
@@ -288,6 +311,7 @@ export function ChatPage() {
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
     setProject(saved.settings?.project ?? null);
+    if (saved.settings?.tools) setChatTools(saved.settings.tools);
     if (saved.generating) void rejoin(saved.generating, fromSaved(saved.messages));
   }
 
@@ -441,9 +465,10 @@ export function ChatPage() {
 
   /** Follows a generation's events into the chat's last message; resolves with what it wrote and how it ended. */
   async function follow(gen: string, id: string | null, model: string | null, signal: AbortSignal): Promise<Followed> {
-    const out: Followed = { text: "", thoughts: "", tokens: 0, error: null, cancelled: false };
+    const out: Followed = { text: "", thoughts: "", tokens: 0, error: null, cancelled: false, tools: [] };
     const started = performance.now();
-    const current = (): Message => ({ role: "assistant", content: out.text, model, reasoning: out.thoughts || null, thought: out.thought });
+    const current = (): Message => ({ role: "assistant", content: out.text, model, reasoning: out.thoughts || null, thought: out.thought, tools: out.tools.length ? out.tools : undefined });
+    const show = () => chatId.current === id && setMessages((m) => [...m.slice(0, -1), current()]);
     await stream(
       `/api/chat/generations/${gen}/stream`,
       (data) => {
@@ -452,6 +477,16 @@ export function ChatPage() {
           out.error = chunk.temper_end.error;
           out.cancelled = chunk.temper_end.cancelled;
           return;
+        }
+        // A tool call starting or finishing, and the text with calls it wrote into it taken out (engine generations.py).
+        if (chunk.temper_tool) {
+          const step = chunk.temper_tool as ToolStep;
+          out.tools = out.tools.some((s) => s.id === step.id) ? out.tools.map((s) => (s.id === step.id ? step : s)) : [...out.tools, step];
+          return show();
+        }
+        if (typeof chunk.temper_content === "string") {
+          out.text = chunk.temper_content;
+          return show();
         }
         const t = chunk.timings;
         if (t?.predicted_n) {
@@ -465,7 +500,7 @@ export function ChatPage() {
         out.thoughts += thinkingPiece;
         if (piece && out.thoughts && out.thought === undefined) out.thought = (performance.now() - started) / 1000;
         out.text += piece;
-        if (chatId.current === id) setMessages((m) => [...m.slice(0, -1), current()]);
+        show();
       },
       { signal },
     );
@@ -492,13 +527,13 @@ export function ChatPage() {
     const id = await persist(chatId.current, history);
     try {
       // Fits the thread into the model's context, summarising its oldest turns if it has to.
-      const ask = { messages: history.map(toApi), system, project, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact };
+      const ask = { messages: history.map(toApi), system, project, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact, tools: chatTools };
       const check = await api<{ fits: boolean }>("/api/chat/prepare", { json: { ...ask, check: true }, signal: ctrl.signal });
       if (!check.fits && autoCompact) setCompacting(true);
       const prepared = await api<Prepared>("/api/chat/prepare", { json: ask, signal: ctrl.signal }).finally(() => setCompacting(false));
       if (chatId.current === id) setCompaction(prepared.summary);
       const body = { messages: prepared.messages, ...sampling, ...thinkingFields() };
-      const gen = await api<Generation>("/api/chat/generations", { json: { chat_id: id, upto: history.length, model, body }, signal: ctrl.signal });
+      const gen = await api<Generation>("/api/chat/generations", { json: { chat_id: id, upto: history.length, model, body, tools: chatTools }, signal: ctrl.signal });
       started = true;
       generation.current = gen.id;
       got = await follow(gen.id, id, model, ctrl.signal);
@@ -519,8 +554,9 @@ export function ChatPage() {
     const thoughts = got?.thoughts ?? "";
     // A stopped reply keeps what was written (thinking included); one stopped before it began isn't saved.
     // A model that ends without writing anything says so, rather than leaving the question unanswered.
-    if (!text && !thoughts && !failure && !stopped) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
-    const reply: Message | null = text || thoughts ? { role: "assistant", content: text, model, reasoning: thoughts || null, thought: got?.thought } : failure ? { role: "assistant", content: failure, error: true, model, fit } : null;
+    if (!text && !thoughts && !got?.tools.length && !failure && !stopped) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
+    const steps = got?.tools.length ? got.tools : undefined;
+    const reply: Message | null = text || thoughts || steps ? { role: "assistant", content: text, model, reasoning: thoughts || null, thought: got?.thought, tools: steps } : failure ? { role: "assistant", content: failure, error: true, model, fit } : null;
     if (reply && chatId.current === id) setMessages([...history, reply]);
     // The engine saved the reply if it got to write it; otherwise (it failed before starting) the page does.
     if (id && !started) await persist(id, reply ? [...history, reply] : history);
@@ -676,8 +712,13 @@ export function ChatPage() {
                         ) : (
                           <div className="prose-chat leading-relaxed">
                             {m.reasoning && <ThinkingBlock text={m.reasoning} live={busy && i === messages.length - 1 && !m.content} seconds={m.thought} />}
-                            {m.content ? (
-                              <ReplyText text={m.content} />
+                            {m.tools?.length ? (
+                              <>
+                                <ReplyWithTools text={m.content} steps={m.tools} />
+                                {!m.content.trim() && !(busy && i === messages.length - 1) && <p className="text-[13px] text-muted">{t("tools.no_answer")}</p>}
+                              </>
+                            ) : m.content ? (
+                              <ReplyText text={busy && i === messages.length - 1 && chatTools.length ? withoutCallText(m.content) : m.content} />
                             ) : !m.reasoning ? (
                               <span className="animate-pulse-dot text-muted">{compacting && i === messages.length - 1 ? t("chat.summarising") : t("chat.thinking")}</span>
                             ) : !(busy && i === messages.length - 1) ? (
@@ -844,6 +885,7 @@ export function ChatPage() {
             <Toggle label="Auto-compact long chats" checked={autoCompact} onChange={changeAutoCompact} />
             <p className="text-[12px] text-muted">When the model's context fills, summarise the oldest messages instead of stopping.</p>
           </div>
+          {!comparing && <ToolsControl value={chatTools} onChange={changeTools} />}
           {reasoning && thinks && !comparing && (
             <div className="flex flex-col gap-3 border-t border-line pt-4">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">

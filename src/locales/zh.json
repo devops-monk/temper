@@ -152,5 +152,17 @@
   "fit.shorten_instructions": "缩短系统提示词或 AGENTS.md（{tokens} 个 token）",
   "fit.longer_context": "用 {to} 个 token 的上下文重新加载模型（最多支持 {max}）",
   "fit.apply_retry": "应用并重试",
-  "fit.new_chat_button": "新对话"
+  "fit.new_chat_button": "新对话",
+  "tools.title": "工具",
+  "tools.hint": "模型回答时可以调用这些工具。小模型可能用不好，或根本不用。",
+  "tools.running": "正在运行{name}…",
+  "tools.used": "使用了{name}",
+  "tools.failed": "{name}失败",
+  "tools.arguments": "请求",
+  "tools.result": "结果",
+  "tool.calculator": "计算器",
+  "tool.calculator.about": "精确计算算式，而不是让模型去猜。",
+  "tool.current_time": "日期和时间",
+  "tool.current_time.about": "告诉模型今天的日期和时间，本地或其他时区。",
+  "tools.no_answer": "模型调用工具后没有作答就停止了。请重新生成，或换一个更大的模型。"
 }

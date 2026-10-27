@@ -51,6 +51,7 @@ create table if not exists messages(
   created real,
   reasoning text,
   attachments text,
+  tools text,
   primary key(chat_id, seq)
 );
 create virtual table if not exists messages_fts using fts5(content, chat_id unindexed, tokenize='unicode61 remove_diacritics 2');
@@ -75,7 +76,7 @@ def db() -> Iterator[sqlite3.Connection]:
             con.execute("pragma journal_mode = wal")
             con.executescript(SCHEMA)
             columns = {r["name"] for r in con.execute("pragma table_info(messages)")}
-            for column in ("reasoning", "attachments"):  # added with the reasoning view and with attachments
+            for column in ("reasoning", "attachments", "tools"):  # added with the reasoning view, attachments and tool calls
                 if column not in columns:
                     con.execute(f"alter table messages add column {column} text")
             if "compaction" not in {r["name"] for r in con.execute("pragma table_info(chats)")}:  # added with auto-compaction
@@ -127,9 +128,9 @@ def write_messages(con: sqlite3.Connection, chat_id: str, messages: list[dict]) 
     con.execute("delete from messages_fts where chat_id = ?", (chat_id,))
     now = time.time()
     con.executemany(
-        "insert into messages(chat_id, seq, role, content, model, error, created, reasoning, attachments) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "insert into messages(chat_id, seq, role, content, model, error, created, reasoning, attachments, tools) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (chat_id, i, m["role"], m["content"], m.get("model"), int(bool(m.get("error"))), m.get("created") or now, m.get("reasoning") or None, json.dumps(m["attachments"]) if m.get("attachments") else None)
+            (chat_id, i, m["role"], m["content"], m.get("model"), int(bool(m.get("error"))), m.get("created") or now, m.get("reasoning") or None, json.dumps(m["attachments"]) if m.get("attachments") else None, json.dumps(m["tools"]) if m.get("tools") else None)
             for i, m in enumerate(messages)
         ],
     )
@@ -190,6 +191,8 @@ class Message(BaseModel):
     reasoning: str | None = None
     # Files sent with the message: [{id, name, kind}], kept in attachments/ in Temper's home.
     attachments: list[dict] | None = None
+    # The tools a reply called: [{id, name, arguments, result, error, at}] (tools.py).
+    tools: list[dict] | None = None
 
 
 class NewChat(BaseModel):
@@ -219,7 +222,7 @@ def create_chat(req: NewChat):
 def _with_messages(con: sqlite3.Connection, chat_id: str) -> dict:
     row = _get(con, chat_id)
     messages = [
-        {"role": m["role"], "content": m["content"], "model": m["model"], "error": bool(m["error"]), "created": m["created"], "reasoning": m["reasoning"], "attachments": json.loads(m["attachments"]) if m["attachments"] else None}
+        {"role": m["role"], "content": m["content"], "model": m["model"], "error": bool(m["error"]), "created": m["created"], "reasoning": m["reasoning"], "attachments": json.loads(m["attachments"]) if m["attachments"] else None, "tools": json.loads(m["tools"]) if m["tools"] else None}
         for m in con.execute("select * from messages where chat_id = ? order by seq", (chat_id,))
     ]
     return {**_summary(row), "messages": messages, "settings": json.loads(row["settings"]) if row["settings"] else None, "compaction": json.loads(row["compaction"]) if row["compaction"] else None}
@@ -305,13 +308,15 @@ def to_markdown(chat: dict) -> str:
             lines += ["<details><summary>Thinking</summary>", "", m["reasoning"].strip(), "", "</details>", ""]
         if m.get("attachments"):
             lines += ["Attached: " + ", ".join(a["name"] for a in m["attachments"]), ""]
+        for step in m.get("tools") or []:
+            lines += [f"> Used {step['name']}({json.dumps(step['arguments'], ensure_ascii=False)}): {(step.get('result') or '').strip()}", ""]
         lines += [m["content"].strip(), ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
 def to_json(chat: dict) -> str:
     keep = ("id", "title", "model", "created", "updated", "source", "project", "settings")
-    return json.dumps({**{k: chat.get(k) for k in keep}, "messages": [{k: m[k] for k in ("role", "content", "model", "created", "reasoning", "attachments") if m.get(k) is not None or k not in ("reasoning", "attachments")} for m in chat["messages"]]}, indent=2, ensure_ascii=False)
+    return json.dumps({**{k: chat.get(k) for k in keep}, "messages": [{k: m[k] for k in ("role", "content", "model", "created", "reasoning", "attachments", "tools") if m.get(k) is not None or k not in ("reasoning", "attachments", "tools")} for m in chat["messages"]]}, indent=2, ensure_ascii=False)
 
 
 def _export_text(chat_id: str, format: str) -> str:

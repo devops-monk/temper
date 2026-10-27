@@ -152,5 +152,17 @@
   "fit.shorten_instructions": "システムプロンプトか AGENTS.md を短くする（{tokens} トークン）",
   "fit.longer_context": "コンテキスト {to} トークンでモデルを読み込み直す（最大 {max}）",
   "fit.apply_retry": "適用して再試行",
-  "fit.new_chat_button": "新しいチャット"
+  "fit.new_chat_button": "新しいチャット",
+  "tools.title": "ツール",
+  "tools.hint": "モデルは回答中にこれらを呼び出せます。小さなモデルはうまく使えない、または使わないことがあります。",
+  "tools.running": "{name}を実行中…",
+  "tools.used": "{name}を使用",
+  "tools.failed": "{name}が失敗",
+  "tools.arguments": "依頼内容",
+  "tools.result": "結果",
+  "tool.calculator": "電卓",
+  "tool.calculator.about": "モデルに推測させず、計算を正確に行います。",
+  "tool.current_time": "日付と時刻",
+  "tool.current_time.about": "今日の日付と時刻を、ここや別のタイムゾーンでモデルに伝えます。",
+  "tools.no_answer": "モデルはツールを呼び出した後、回答せずに止まりました。再生成するか、より大きなモデルを試してください。"
 }

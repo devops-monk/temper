@@ -3,6 +3,11 @@
 The chat page starts a generation here rather than streaming from /v1 itself. The engine streams from
 the model, keeps every event, and saves the reply into the chat when it ends, so nothing is lost if
 the page goes away. The page follows a generation's events, from the start when it reopens the chat.
+
+With tools on, a generation runs rounds: when the model calls tools, the engine runs them, sends the
+results back and streams the model's next round, until it answers without a call (tools.py).
+Besides the model's own events, the page gets {"temper_tool": step} as a call starts and again with
+its result, and {"temper_content": text} when a call written into the text was taken out of it.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import chats
+from . import chats, tools
 from .runtime import route
 
 router = APIRouter(prefix="/api/chat/generations", tags=["chat"])
@@ -34,6 +39,7 @@ class Generation:
         self.events: list[str] = []  # the model server's SSE data, as it sent them
         self.content = ""
         self.reasoning = ""
+        self.tools: list[dict] = []  # the steps of the tools it called (tools.py)
         self.error: str | None = None
         self.cancelled = False
         self.done = False
@@ -41,7 +47,8 @@ class Generation:
         self.task: asyncio.Task | None = None
         self.wake = asyncio.Event()
 
-    def push(self, data: str) -> None:
+    def push(self, data: str | dict) -> None:
+        data = data if isinstance(data, str) else json.dumps(data)
         self.events.append(data)
         wake, self.wake = self.wake, asyncio.Event()
         wake.set()
@@ -51,8 +58,8 @@ class Generation:
 
     def reply(self) -> dict | None:
         """The assistant message to save; a reply stopped before it began is none."""
-        if self.content or self.reasoning:
-            return {"role": "assistant", "content": self.content, "model": self.model, "error": False, "reasoning": self.reasoning or None, "attachments": None}
+        if self.content or self.reasoning or self.tools:
+            return {"role": "assistant", "content": self.content, "model": self.model, "error": False, "reasoning": self.reasoning or None, "attachments": None, "tools": self.tools or None}
         if self.cancelled:
             return None
         return {"role": "assistant", "content": self.error or EMPTY, "model": self.model, "error": True, "reasoning": None, "attachments": None}
@@ -84,7 +91,8 @@ def _save(gen: Generation) -> None:
         pass
 
 
-def _absorb(gen: Generation, data: str) -> None:
+def _absorb(gen: Generation, data: str, calls: dict[int, dict]) -> None:
+    """Adds a streamed chunk to the reply; tool-call pieces are gathered into `calls` by index."""
     try:
         chunk = json.loads(data)
     except ValueError:
@@ -96,28 +104,84 @@ def _absorb(gen: Generation, data: str) -> None:
     delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
     gen.content += delta.get("content") or ""
     gen.reasoning += delta.get("reasoning_content") or delta.get("reasoning") or ""
+    for piece in delta.get("tool_calls") or []:
+        call = calls.setdefault(piece.get("index", len(calls)), {"id": "", "name": "", "arguments": ""})
+        fn = piece.get("function") or {}
+        call["id"] = piece.get("id") or call["id"]
+        call["name"] += fn.get("name") or ""
+        args = fn.get("arguments")
+        call["arguments"] += args if isinstance(args, str) else json.dumps(args) if args else ""
 
 
-async def _run(gen: Generation, body: dict) -> None:
+async def _round(gen: Generation, client: httpx.AsyncClient, body: dict) -> list[tools.Call] | None:
+    """Streams one round of the reply; returns the tool calls it made, or None if it failed."""
+    _, url, body = route(body)
+    calls: dict[int, dict] = {}
+    async with client.stream("POST", url, json={**body, "stream": True}) as r:
+        if r.status_code != 200:
+            text = (await r.aread()).decode(errors="replace")
+            try:
+                detail = json.loads(text)
+                gen.error = detail.get("detail") or (detail.get("error") or {}).get("message") or text
+            except ValueError:
+                gen.error = text or f"The model's server answered {r.status_code}."
+            return None
+        async for line in r.aiter_lines():
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                continue
+            _absorb(gen, data, calls)
+            gen.push(data)
+    return None if gen.error else [tools.Call(c["name"], c["arguments"], c["id"]) for _, c in sorted(calls.items())]
+
+
+async def _run(gen: Generation, body: dict, names: list[str]) -> None:
     try:
-        _, url, body = route(body)
-        async with httpx.AsyncClient(timeout=None) as client, client.stream("POST", url, json={**body, "stream": True}) as r:
-            if r.status_code != 200:
-                text = (await r.aread()).decode(errors="replace")
-                try:
-                    detail = json.loads(text)
-                    gen.error = detail.get("detail") or (detail.get("error") or {}).get("message") or text
-                except ValueError:
-                    gen.error = text or f"The model's server answered {r.status_code}."
-                return
-            async for line in r.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    continue
-                _absorb(gen, data)
-                gen.push(data)
+        server, _, _ = route(dict(body))
+        # llama-server takes the tools natively; other engines were offered them in the system prompt (compaction.py).
+        native = server.engine == "llama.cpp"
+        specs = tools.schemas(names)
+        messages = list(body["messages"])
+        made: dict[str, dict] = {}  # each distinct call's step, by tool and arguments
+        looping = False
+        async with httpx.AsyncClient(timeout=None) as client:
+            for turn in range(tools.MAX_ROUNDS + 1):
+                offer = bool(specs) and turn < tools.MAX_ROUNDS and not looping
+                start = len(gen.content)
+                calls = await _round(gen, client, {**body, "messages": messages, **({"tools": specs} if offer and native else {})})
+                if calls is None or not specs:
+                    return
+                # Calls the model wrote into its text, in its own format, are taken out of the text and made.
+                found, cleaned = tools.extract_calls(gen.content[start:], names)
+                if found or cleaned != gen.content[start:]:
+                    gen.content = gen.content[:start] + cleaned
+                    gen.push({"temper_content": gen.content})
+                calls = calls or found
+                if not calls or not offer:
+                    return
+                steps, fresh = [], 0
+                for call in calls:
+                    call.id = call.id or f"call_{uuid.uuid4().hex[:10]}"
+                    arguments = tools.parse_arguments(call.arguments)
+                    # Small models repeat calls they've made; the repeat gets the earlier result instead of running again.
+                    key = f"{tools.resolve_name(call.name, names)}:{json.dumps(arguments, sort_keys=True) if arguments is not None else call.arguments}"
+                    if key in made:
+                        steps.append({**made[key], "id": call.id, "result": f"{made[key]['result']}\n(The same call as before: answer from the results you have.)"})
+                        continue
+                    step = {"id": call.id, "name": tools.resolve_name(call.name, names) or call.name or "?", "arguments": call.arguments if arguments is None else arguments, "result": None, "error": False, "at": len(gen.content)}
+                    gen.tools.append(step)
+                    gen.push({"temper_tool": step})
+                    step.update(await asyncio.to_thread(tools.run, call, names))
+                    gen.push({"temper_tool": step})
+                    steps.append(made.setdefault(key, step))
+                    fresh += 1
+                # A round of nothing but repeats is a loop: the next round is offered no tools, so the model answers.
+                looping = not fresh
+                messages += tools.round_messages(gen.content[start:], steps, native)
+                if looping or turn + 1 >= tools.MAX_ROUNDS:  # the next round has no tools: say so with the last result
+                    messages[-1] = {**messages[-1], "content": messages[-1]["content"] + "\n\n(No more tool calls in this reply: answer now from these results.)"}
     except asyncio.CancelledError:
         gen.cancelled = True
     except HTTPException as e:
@@ -135,6 +199,7 @@ class Start(BaseModel):
     upto: int = 0  # the reply goes after the chat's first `upto` messages
     model: str | None = None  # the name saved with the reply
     body: dict  # an OpenAI chat request
+    tools: list[str] = []  # the tools the reply may call (tools.py)
 
 
 @router.post("")
@@ -145,7 +210,7 @@ async def start(req: Start):
         running.task.cancel()
     gen = Generation(req.chat_id, req.upto, req.model)
     live[gen.id] = gen
-    gen.task = asyncio.create_task(_run(gen, req.body))
+    gen.task = asyncio.create_task(_run(gen, req.body, req.tools))
     return gen.summary()
 
 
