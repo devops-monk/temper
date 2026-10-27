@@ -101,5 +101,22 @@
   "chat.regenerate": "再生成",
   "chat.stopped_thinking": "モデルが考えている途中で止まりました。「最大新規トークン数」を増やすか思考の上限を設定して、再生成してください。",
   "chat.reading": "読み込み中…",
-  "chat.queue_hint": "Enter で予約し、返答が終わったら送信"
+  "chat.queue_hint": "Enter で予約し、返答が終わったら送信",
+  "prompts.button": "プロンプト集",
+  "prompts.hint": "保存したプロンプト。空のメッセージで / と入力すると探せます。",
+  "prompts.search": "プロンプトを検索",
+  "prompts.empty": "まだプロンプトはありません。メッセージを書いてここに保存すると再利用できます。",
+  "prompts.none_match": "一致するプロンプトはありません。",
+  "prompts.save_current": "メッセージをプロンプトとして保存",
+  "prompts.name": "名前",
+  "prompts.text": "プロンプト",
+  "prompts.variables_hint": "毎回書き込む部分には {{name}} と書きます。",
+  "prompts.save": "保存",
+  "prompts.cancel": "キャンセル",
+  "prompts.edit": "編集",
+  "prompts.delete": "削除",
+  "prompts.delete_confirm": "プロンプト {name} を削除しますか？",
+  "prompts.fill": "{name} を入力",
+  "prompts.use": "プロンプトを使う",
+  "prompts.back": "戻る"
 }

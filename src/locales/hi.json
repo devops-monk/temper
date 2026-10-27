@@ -101,5 +101,22 @@
   "chat.regenerate": "दोबारा बनाएँ",
   "chat.stopped_thinking": "मॉडल सोचते-सोचते रुक गया। Max new tokens बढ़ाएँ या सोचने का बजट तय करें, फिर दोबारा बनाएँ।",
   "chat.reading": "पढ़ रहा है…",
-  "chat.queue_hint": "जवाब पूरा होने तक कतार में रखने के लिए Enter"
+  "chat.queue_hint": "जवाब पूरा होने तक कतार में रखने के लिए Enter",
+  "prompts.button": "प्रॉम्प्ट लाइब्रेरी",
+  "prompts.hint": "सहेजे गए प्रॉम्प्ट। खाली संदेश में / लिखकर कोई खोजें।",
+  "prompts.search": "प्रॉम्प्ट खोजें",
+  "prompts.empty": "अभी कोई प्रॉम्प्ट नहीं है। संदेश लिखें, फिर दोबारा उपयोग के लिए यहाँ सहेजें।",
+  "prompts.none_match": "कोई प्रॉम्प्ट मेल नहीं खाता।",
+  "prompts.save_current": "संदेश को प्रॉम्प्ट के रूप में सहेजें",
+  "prompts.name": "नाम",
+  "prompts.text": "प्रॉम्प्ट",
+  "prompts.variables_hint": "हर बार भरे जाने वाले हिस्से के लिए {{name}} लिखें।",
+  "prompts.save": "सहेजें",
+  "prompts.cancel": "रद्द करें",
+  "prompts.edit": "संपादित करें",
+  "prompts.delete": "हटाएँ",
+  "prompts.delete_confirm": "प्रॉम्प्ट {name} हटाएँ?",
+  "prompts.fill": "{name} भरें",
+  "prompts.use": "प्रॉम्प्ट इस्तेमाल करें",
+  "prompts.back": "वापस"
 }

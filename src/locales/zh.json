@@ -101,5 +101,22 @@
   "chat.regenerate": "重新生成",
   "chat.stopped_thinking": "模型在思考时停止了。请调高「最大新 token 数」或设置思考预算，然后重新生成。",
   "chat.reading": "读取中…",
-  "chat.queue_hint": "按 Enter 排队，回复结束后发送"
+  "chat.queue_hint": "按 Enter 排队，回复结束后发送",
+  "prompts.button": "提示词库",
+  "prompts.hint": "已保存的提示词。在空消息中输入 / 即可查找。",
+  "prompts.search": "搜索提示词",
+  "prompts.empty": "还没有提示词。写一条消息，然后保存到这里以便重复使用。",
+  "prompts.none_match": "没有匹配的提示词。",
+  "prompts.save_current": "将消息保存为提示词",
+  "prompts.name": "名称",
+  "prompts.text": "提示词",
+  "prompts.variables_hint": "用 {{name}} 表示每次需要填写的部分。",
+  "prompts.save": "保存",
+  "prompts.cancel": "取消",
+  "prompts.edit": "编辑",
+  "prompts.delete": "删除",
+  "prompts.delete_confirm": "删除提示词 {name}？",
+  "prompts.fill": "填写 {name}",
+  "prompts.use": "使用提示词",
+  "prompts.back": "返回"
 }

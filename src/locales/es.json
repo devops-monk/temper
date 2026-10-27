@@ -101,5 +101,22 @@
   "chat.regenerate": "Regenerar",
   "chat.stopped_thinking": "El modelo se detuvo mientras aún pensaba. Sube «Máx. de tokens nuevos» o fija un límite de razonamiento, y regenera.",
   "chat.reading": "Leyendo…",
-  "chat.queue_hint": "Intro para ponerlo en cola hasta que termine la respuesta"
+  "chat.queue_hint": "Intro para ponerlo en cola hasta que termine la respuesta",
+  "prompts.button": "Biblioteca de prompts",
+  "prompts.hint": "Prompts guardados. Escribe / en un mensaje vacío para buscar uno.",
+  "prompts.search": "Buscar prompts",
+  "prompts.empty": "Aún no hay prompts. Escribe un mensaje y guárdalo aquí para reutilizarlo.",
+  "prompts.none_match": "Ningún prompt coincide.",
+  "prompts.save_current": "Guardar el mensaje como prompt",
+  "prompts.name": "Nombre",
+  "prompts.text": "Prompt",
+  "prompts.variables_hint": "Escribe {{name}} para una parte que rellenarás cada vez.",
+  "prompts.save": "Guardar",
+  "prompts.cancel": "Cancelar",
+  "prompts.edit": "Editar",
+  "prompts.delete": "Eliminar",
+  "prompts.delete_confirm": "¿Eliminar el prompt {name}?",
+  "prompts.fill": "Rellena {name}",
+  "prompts.use": "Usar el prompt",
+  "prompts.back": "Volver"
 }

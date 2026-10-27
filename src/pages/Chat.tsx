@@ -4,6 +4,7 @@ import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
 import { FindBar } from "../components/FindBar";
+import { PromptLibrary } from "../components/PromptLibrary";
 import { useT } from "../lib/i18n";
 import { CHAT_CONTEXT } from "../components/LoadButton";
 import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
@@ -188,6 +189,10 @@ export function ChatPage() {
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const [finding, setFinding] = useState(false);
+  const [library, setLibrary] = useState(false);
+  // Typing / and a few letters in an empty message searches the prompt library; Esc leaves it as typed.
+  const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
+  const slash = /^\/([^\s/]*)$/.exec(draft) && draft !== slashDismissed ? draft.slice(1) : null;
   const ready = runtime?.state === "ready";
   // The saved thread on screen; null until the first message of a new chat is sent.
   const [chat, setChat] = useState<{ id: string; title: string; source: string | null } | null>(null);
@@ -699,6 +704,19 @@ export function ChatPage() {
                   <Button variant="ghost" onClick={() => void pickFiles().then(addFiles)} disabled={!ready} aria-label={t("chat.attach")} title={t("chat.attach_hint")} className="size-9 rounded-xl px-0 text-muted">
                     <Paperclip className="size-[18px]" />
                   </Button>
+                  <PromptLibrary
+                    open={library || slash !== null}
+                    onOpenChange={(open) => {
+                      setLibrary(open && slash === null);
+                      if (!open && slash !== null) setSlashDismissed(draft);
+                    }}
+                    query={slash}
+                    draft={draft}
+                    onUse={(text) => {
+                      setDraft((d) => (slash !== null || !d.trim() ? text : `${d.trimEnd()}\n\n${text}`));
+                      setTimeout(() => input.current?.focus());
+                    }}
+                  />
                   <textarea
                     ref={input}
                     value={draft}

@@ -101,5 +101,22 @@
   "chat.reading": "Reading…",
   "chat.placeholder_first": "Load a model first",
   "chat.placeholder_queue": "Queue a follow-up",
-  "chat.queue_hint": "Enter to queue it for when the reply finishes"
+  "chat.queue_hint": "Enter to queue it for when the reply finishes",
+  "prompts.button": "Prompt library",
+  "prompts.hint": "Saved prompts. Type / in an empty message to find one.",
+  "prompts.search": "Search prompts",
+  "prompts.empty": "No prompts yet. Write a message, then save it here to reuse it.",
+  "prompts.none_match": "No prompt matches.",
+  "prompts.save_current": "Save message as a prompt",
+  "prompts.name": "Name",
+  "prompts.text": "Prompt",
+  "prompts.variables_hint": "Write {{name}} for a part to fill in each time.",
+  "prompts.save": "Save",
+  "prompts.cancel": "Cancel",
+  "prompts.edit": "Edit",
+  "prompts.delete": "Delete",
+  "prompts.delete_confirm": "Delete the prompt {name}?",
+  "prompts.fill": "Fill in {name}",
+  "prompts.use": "Use prompt",
+  "prompts.back": "Back"
 }
