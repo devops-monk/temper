@@ -14,6 +14,7 @@ import functools
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import attachments
@@ -159,6 +160,65 @@ def summarise(server: RuntimeManager, earlier: str | None, messages: list[dict])
     return summary
 
 
+# Fixes worth suggesting only when they free at least this share of what's missing.
+SIGNIFICANT = 0.25
+
+
+def _model_max(server: RuntimeManager) -> int | None:
+    """The longest context the loaded model was trained for."""
+    from . import engines, model_settings
+
+    if server.folder:
+        return engines.context_max(server.folder)
+    meta = model_settings._meta(server.path) if server.path else {}
+    return meta.get(f"{meta.get('general.architecture')}.context_length")
+
+
+def explain(server: RuntimeManager, req: Prepare, system: str, summary: Summary | None, prompt: int, reserve: int, context: int) -> dict:
+    """Why a prompt doesn't fit, and what would make it: where the tokens go, and fixes with their numbers.
+
+    `parts`: [{kind, tokens, name?}] for the instructions (system prompt, AGENTS.md, summary), the earlier
+    turns, the new message and each file attached to it, and the room kept for the reply.
+    `fixes`: [{kind, ...}], biggest win first; the app words them.
+    """
+    upto = summary.upto if summary else 0
+    sendable = _sendable(req.messages[upto:])
+    instructions = count(server, _with_system(system, summary.text if summary else None)) if system or summary else 0
+    instruction_files = count(server, [{"role": "system", "content": t}]) if (t := with_instructions("", req.project)) else 0
+    last = sendable[-1:] or [{"role": "user", "content": ""}]
+    content = last[0].get("content")
+    files = []
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "attachment":
+                try:
+                    name = attachments.meta(str(part.get("id", "")))["name"]
+                except (OSError, ValueError, HTTPException):
+                    continue
+                files.append({"kind": "attachment", "name": name, "tokens": count(server, [{"role": "user", "content": [part]}])})
+    message = max(count(server, last) - sum(f["tokens"] for f in files), 0)
+    earlier = max(prompt - instructions - message - sum(f["tokens"] for f in files), 0)
+    parts = [{"kind": "instructions", "tokens": instructions}, {"kind": "earlier", "tokens": earlier}, {"kind": "message", "tokens": message}, *files, {"kind": "reply", "tokens": reserve}]
+
+    over = prompt + reserve - context
+    fixes: list[dict] = []
+    # Leaving less room for the reply fixes it outright when the prompt alone fits with a useful reply.
+    if (room := context - prompt) >= min(256, reserve // 4) and room < reserve:
+        fixes.append({"kind": "max_tokens", "to": room - room % 64 if room >= 128 else room})
+    for f in sorted(files, key=lambda f: -f["tokens"]):
+        if f["tokens"] >= over * SIGNIFICANT:
+            fixes.append({"kind": "remove_attachment", "name": f["name"], "tokens": f["tokens"]})
+    if earlier >= over * SIGNIFICANT and len(sendable) > 1:
+        fixes.append({"kind": "compact" if not req.compact else "new_chat", "tokens": earlier})
+    if instructions >= over * SIGNIFICANT:
+        fixes.append({"kind": "shorten_instructions", "tokens": instructions, "files": instruction_files})
+    model_max = _model_max(server)
+    need = prompt + reserve
+    if model_max and model_max > context:
+        fixes.append({"kind": "longer_context", "to": min(model_max, 1 << max(need - 1, 1).bit_length()), "max": model_max})
+    return {"context": context, "prompt": prompt, "reserve": reserve, "over": over, "parts": parts, "fixes": fixes}
+
+
 @router.post("/prepare")
 def prepare(req: Prepare):
     """The messages to send for the next reply, compacting the thread first if it won't fit.
@@ -197,8 +257,10 @@ def prepare(req: Prepare):
             messages = build(keep, text)
             prompt = count(server, messages)
     if prompt + reserve > context:
-        last = count(server, _sendable(req.messages[-1:]))
+        fit = explain(server, req, system, summary, prompt, reserve, context)
+        last = next(p["tokens"] for p in fit["parts"] if p["kind"] == "message") + sum(p["tokens"] for p in fit["parts"] if p["kind"] == "attachment")
         what = "This message" if last + reserve > context else "This conversation"
         hint = "Attach less, or load the model with a longer context." if what == "This message" else "Turn on auto-compaction in the Generation panel, or start a new chat."
-        raise HTTPException(413, f"{what} needs about {prompt:,} tokens plus {reserve:,} for the reply, more than the model's {context:,}-token context. {hint}")
+        detail = f"{what} needs about {prompt:,} tokens plus {reserve:,} for the reply, more than the model's {context:,}-token context. {hint}"
+        return JSONResponse({"detail": detail, "fit": fit}, status_code=413)
     return {"messages": messages, "summary": summary.model_dump() if summary else None, "compacted": compacted, "prompt": prompt, "context": context, "reserve": reserve}

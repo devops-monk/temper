@@ -57,6 +57,8 @@ export class EngineError extends Error {
   constructor(
     message: string,
     public status: number,
+    /** The error response's JSON, for errors that carry more than a message. */
+    public body?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -82,13 +84,14 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let body;
     try {
-      const body = await res.json();
+      body = await res.json();
       message = typeof body.detail === "string" ? body.detail : (body.error?.message ?? JSON.stringify(body.detail ?? body));
     } catch {
       /* keep the status text */
     }
-    throw new EngineError(message, res.status);
+    throw new EngineError(message, res.status, body);
   }
   return res.json() as Promise<T>;
 }

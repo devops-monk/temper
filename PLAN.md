@@ -154,7 +154,7 @@ temper/
 - [x] **3.18 Prompt library** *(audit)*: save, name and reuse prompts. From the composer or by typing `/` in an empty message; `{{variables}}` are asked for on use; most-used first.
 - [x] **3.19 AGENTS.md instructions** *(audit)*: a global instructions file plus each project folder's `AGENTS.md`, read the way Codex reads them. Global AGENTS.md in Settings; a chat's project folder adds AGENTS.md (or AGENTS.override.md) from the repo root down, capped at 32 KiB.
 - [x] **3.20 Keep chat context across GPU swaps** *(audit)*: save and restore the KV cache when image or video generation temporarily takes the GPU. `POST /api/runtime/suspend` saves llama-server's slots to disk and unloads; `resume` reloads and restores them (tested: 4,904 cached tokens back, 15 s of prompt processing saved). Image and video generation will call it when they land.
-- [ ] **3.21 Context-fit explanations** *(audit)*: when a prompt doesn't fit the context window, say why and what to change.
+- [x] **3.21 Context-fit explanations** *(audit)*: when a prompt doesn't fit the context window, say why and what to change. *(Done: a 413 from prepare carries `fit`, a token breakdown (instructions, earlier turns, the message, each attachment, the reply's room) and fixes with numbers; chat shows it as a bar with fixes, and a shorter reply or auto-compact applies and retries.)*
 
 ## Phase 4: Agents, tools and MCP
 

@@ -68,6 +68,18 @@ def test_turned_off_or_too_big_a_message_says_why(model):
     assert detail.startswith("This message needs about") and "Attach less" in detail
 
 
+def test_a_prompt_that_doesnt_fit_says_where_the_tokens_go(model):
+    out = call("POST", "/api/chat/prepare", 413, json={"messages": turns(10), "system": "Be brief.", "compact": False, "max_tokens": 40})
+    fit = out["fit"]
+    parts = {p["kind"]: p["tokens"] for p in fit["parts"]}
+    assert parts["reply"] == 40 and parts["instructions"] > 0 and parts["message"] >= 20 and parts["earlier"] > parts["message"]
+    assert sum(parts.values()) == fit["prompt"] + fit["reserve"] and fit["over"] == fit["prompt"] + 40 - 200
+    assert [f["kind"] for f in fit["fixes"]] == ["compact"]
+    # When the prompt fits on its own, a shorter reply limit is the first fix.
+    fit = call("POST", "/api/chat/prepare", 413, json={"messages": turns(8), "compact": False, "max_tokens": 40})["fit"]
+    assert fit["fixes"][0] == {"kind": "max_tokens", "to": 200 - fit["prompt"]}
+
+
 def test_turns_longer_than_the_context_are_summarised_a_chunk_at_a_time(model, monkeypatch):
     summary = compaction.summarise(manager, None, turns(6, words=300))  # six turns of about 900 characters: 4 a chunk
     assert len(model) == 2 and "Summary so far:" in model[1] and "Summary so far:" not in model[0]

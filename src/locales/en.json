@@ -136,5 +136,21 @@
   "instr.saved": "Saved",
   "loaded.paused": "{model} paused",
   "loaded.paused_hint": "Unloaded to free the GPU; its context is saved and comes back on resume.",
-  "loaded.resume": "Resume"
+  "loaded.resume": "Resume",
+  "fit.title": "This message doesn't fit in the model's context",
+  "fit.summary": "It needs about {need} tokens with the room kept for the reply; the context holds {context}, so it's {over} over.",
+  "fit.instructions": "Instructions",
+  "fit.earlier": "Earlier messages",
+  "fit.message": "Your message",
+  "fit.reply": "Room for the reply",
+  "fit.fixes": "Ways to make it fit",
+  "fit.none": "Nothing simple makes it fit. Send a shorter message.",
+  "fit.max_tokens": "Lower Max new tokens to {to}",
+  "fit.compact": "Turn on auto-compact, so earlier messages ({tokens} tokens) are summarised",
+  "fit.new_chat": "Start a new chat; earlier messages take {tokens} tokens",
+  "fit.remove_attachment": "Remove {name} ({tokens} tokens) and send again",
+  "fit.shorten_instructions": "Shorten the system prompt or AGENTS.md ({tokens} tokens)",
+  "fit.longer_context": "Reload the model with a context of {to} tokens (it supports up to {max})",
+  "fit.apply_retry": "Apply and retry",
+  "fit.new_chat_button": "New chat"
 }

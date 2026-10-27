@@ -136,5 +136,21 @@
   "instr.saved": "保存しました",
   "loaded.paused": "{model} 一時停止中",
   "loaded.paused_hint": "GPU を空けるために解放しました。コンテキストは保存され、再開すると戻ります。",
-  "loaded.resume": "再開"
+  "loaded.resume": "再開",
+  "fit.title": "このメッセージはモデルのコンテキストに収まりません",
+  "fit.summary": "返信用の余白を含めて約 {need} トークン必要ですが、コンテキストは {context} なので {over} 超えています。",
+  "fit.instructions": "指示",
+  "fit.earlier": "以前のメッセージ",
+  "fit.message": "あなたのメッセージ",
+  "fit.reply": "返信用の余白",
+  "fit.fixes": "収める方法",
+  "fit.none": "簡単な方法はありません。短いメッセージを送ってください。",
+  "fit.max_tokens": "最大新規トークン数を {to} に下げる",
+  "fit.compact": "自動圧縮をオンにして以前のメッセージ（{tokens} トークン）を要約する",
+  "fit.new_chat": "新しいチャットを始める（以前のメッセージは {tokens} トークン）",
+  "fit.remove_attachment": "{name}（{tokens} トークン）を外して送り直す",
+  "fit.shorten_instructions": "システムプロンプトか AGENTS.md を短くする（{tokens} トークン）",
+  "fit.longer_context": "コンテキスト {to} トークンでモデルを読み込み直す（最大 {max}）",
+  "fit.apply_retry": "適用して再試行",
+  "fit.new_chat_button": "新しいチャット"
 }

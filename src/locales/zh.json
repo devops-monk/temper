@@ -136,5 +136,21 @@
   "instr.saved": "已保存",
   "loaded.paused": "{model} 已暂停",
   "loaded.paused_hint": "已卸载以释放 GPU；其上下文已保存，恢复时会还原。",
-  "loaded.resume": "恢复"
+  "loaded.resume": "恢复",
+  "fit.title": "这条消息超出了模型的上下文",
+  "fit.summary": "连同为回复预留的空间，大约需要 {need} 个 token；上下文只能容纳 {context}，超出 {over}。",
+  "fit.instructions": "指令",
+  "fit.earlier": "之前的消息",
+  "fit.message": "你的消息",
+  "fit.reply": "为回复预留",
+  "fit.fixes": "让它放得下的办法",
+  "fit.none": "没有简单的办法。请发送更短的消息。",
+  "fit.max_tokens": "把最大新 token 数降到 {to}",
+  "fit.compact": "开启自动压缩，总结之前的消息（{tokens} 个 token）",
+  "fit.new_chat": "开始新对话；之前的消息占 {tokens} 个 token",
+  "fit.remove_attachment": "移除 {name}（{tokens} 个 token）后重新发送",
+  "fit.shorten_instructions": "缩短系统提示词或 AGENTS.md（{tokens} 个 token）",
+  "fit.longer_context": "用 {to} 个 token 的上下文重新加载模型（最多支持 {max}）",
+  "fit.apply_retry": "应用并重试",
+  "fit.new_chat_button": "新对话"
 }

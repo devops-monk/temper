@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
+import { ContextFit, type Fit, type FitFix } from "../components/ContextFit";
 import { FindBar } from "../components/FindBar";
 import { ProjectFolder } from "../components/Instructions";
 import { PromptLibrary } from "../components/PromptLibrary";
@@ -14,7 +15,7 @@ import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
 import { Button, CopyButton, EmptyState, Field, Input, Notice, Select, Toggle, cx } from "../components/ui";
-import { api, inTauri, stream } from "../lib/engine";
+import { EngineError, api, inTauri, stream } from "../lib/engine";
 import { useApp } from "../lib/store";
 import { useFileDrop } from "../lib/useFileDrop";
 
@@ -30,6 +31,8 @@ interface Message {
   thought?: number;
   /** Files sent with a user message. */
   attachments?: Attachment[];
+  /** Why the message didn't fit the context, for this session only (it isn't saved). */
+  fit?: Fit;
 }
 
 /** Per-model thinking choices, remembered in this browser. */
@@ -482,6 +485,7 @@ export function ChatPage() {
     let got: Followed | null = null;
     let started = false;
     let failure: string | null = null;
+    let fit: Fit | undefined;
     // A summary of turns that regenerating or editing removed no longer applies.
     if (compactionRef.current && compactionRef.current.upto > history.length) setCompaction(null);
     // Saved before the reply streams, so a long answer or a crash never loses the question.
@@ -502,6 +506,7 @@ export function ChatPage() {
       if (chatId.current === id) setUsage({ tokens: prepared.prompt + got.tokens, context: prepared.context });
     } catch (err) {
       if (!ctrl.signal.aborted) failure = (err as Error).message;
+      if (err instanceof EngineError && err.status === 413 && err.body?.fit) fit = err.body.fit as Fit;
     } finally {
       setBusy(false);
       abort.current = null;
@@ -515,7 +520,7 @@ export function ChatPage() {
     // A stopped reply keeps what was written (thinking included); one stopped before it began isn't saved.
     // A model that ends without writing anything says so, rather than leaving the question unanswered.
     if (!text && !thoughts && !failure && !stopped) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
-    const reply: Message | null = text || thoughts ? { role: "assistant", content: text, model, reasoning: thoughts || null, thought: got?.thought } : failure ? { role: "assistant", content: failure, error: true, model } : null;
+    const reply: Message | null = text || thoughts ? { role: "assistant", content: text, model, reasoning: thoughts || null, thought: got?.thought } : failure ? { role: "assistant", content: failure, error: true, model, fit } : null;
     if (reply && chatId.current === id) setMessages([...history, reply]);
     // The engine saved the reply if it got to write it; otherwise (it failed before starting) the page does.
     if (id && !started) await persist(id, reply ? [...history, reply] : history);
@@ -523,6 +528,21 @@ export function ChatPage() {
     if (!reply && chatId.current === id) setMessages(history);
     return reply && !failure && !stopped && chatId.current === id ? [...history, reply] : null;
   }
+
+  // A fix from ContextFit changes a setting, then the effect below retries with it once the page has rendered with the change.
+  const [retry, setRetry] = useState(false);
+  function fixFit(fix: FitFix) {
+    if (fix.kind === "new_chat") return keys.current.newChat();
+    if (fix.kind === "max_tokens") setSettings((s) => ({ ...s, max_tokens: fix.to }));
+    else if (fix.kind === "compact") changeAutoCompact(true);
+    else return;
+    setRetry(true);
+  }
+  useEffect(() => {
+    if (!retry || busy) return;
+    setRetry(false);
+    void run(messages.slice(0, -1));
+  });
 
   /** Sends, then the queued follow-ups one by one; a stopped or failed reply pauses the queue. */
   async function run(history: Message[]) {
@@ -649,6 +669,8 @@ export function ChatPage() {
                             ) : null}
                             {m.content && <div className="prose-chat rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{m.content}</div>}
                           </div>
+                        ) : m.error && m.fit ? (
+                          <ContextFit fit={m.fit} message={m.content} onFix={i === messages.length - 1 && !busy ? fixFit : undefined} />
                         ) : m.error ? (
                           <Notice tone="error">{m.content}</Notice>
                         ) : (

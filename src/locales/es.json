@@ -136,5 +136,21 @@
   "instr.saved": "Guardadas",
   "loaded.paused": "{model} en pausa",
   "loaded.paused_hint": "Descargado para liberar la GPU; su contexto está guardado y vuelve al reanudar.",
-  "loaded.resume": "Reanudar"
+  "loaded.resume": "Reanudar",
+  "fit.title": "Este mensaje no cabe en el contexto del modelo",
+  "fit.summary": "Necesita unos {need} tokens con el espacio reservado para la respuesta; el contexto admite {context}, así que sobran {over}.",
+  "fit.instructions": "Instrucciones",
+  "fit.earlier": "Mensajes anteriores",
+  "fit.message": "Tu mensaje",
+  "fit.reply": "Espacio para la respuesta",
+  "fit.fixes": "Formas de que quepa",
+  "fit.none": "No hay una solución sencilla. Envía un mensaje más corto.",
+  "fit.max_tokens": "Bajar el máximo de tokens nuevos a {to}",
+  "fit.compact": "Activar la compactación automática para resumir los mensajes anteriores ({tokens} tokens)",
+  "fit.new_chat": "Empezar un chat nuevo; los mensajes anteriores ocupan {tokens} tokens",
+  "fit.remove_attachment": "Quitar {name} ({tokens} tokens) y enviar de nuevo",
+  "fit.shorten_instructions": "Acortar el prompt del sistema o AGENTS.md ({tokens} tokens)",
+  "fit.longer_context": "Recargar el modelo con un contexto de {to} tokens (admite hasta {max})",
+  "fit.apply_retry": "Aplicar y reintentar",
+  "fit.new_chat_button": "Chat nuevo"
 }
