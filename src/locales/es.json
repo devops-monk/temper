@@ -133,5 +133,8 @@
   "instr.global_hint": "Se guardan como AGENTS.md en la carpeta de Temper y se envían antes del prompt de sistema de cada chat, seguidas de los AGENTS.md de la carpeta del proyecto del chat.",
   "instr.placeholder": "Por ejemplo: Responde en español de España. Prefiere respuestas cortas.",
   "instr.save": "Guardar instrucciones",
-  "instr.saved": "Guardadas"
+  "instr.saved": "Guardadas",
+  "loaded.paused": "{model} en pausa",
+  "loaded.paused_hint": "Descargado para liberar la GPU; su contexto está guardado y vuelve al reanudar.",
+  "loaded.resume": "Reanudar"
 }

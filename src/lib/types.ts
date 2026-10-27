@@ -85,6 +85,10 @@ export interface RuntimeStatus {
   adapter?: string | null;
   /** Seconds since its last request. */
   idle?: number | null;
+  /** Chat's model, unloaded to free the GPU with its KV cache saved; resuming loads it with its context. */
+  suspended?: { model: string; slots: number } | null;
+  /** Tokens of context the last resume brought back. */
+  restored?: number;
   /** Models loaded alongside chat's (engine loaded.py); each answers on /v1 by its name. */
   alongside?: { model: string | null; path: string; state: RuntimeStatus["state"]; engine: string; error: string | null; idle: number | null }[];
 }

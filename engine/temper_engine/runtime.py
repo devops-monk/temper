@@ -7,6 +7,7 @@ import socket
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import httpx
@@ -82,7 +83,16 @@ def reasoning_support(props: dict) -> dict:
 
 
 # What a manager knows about its loaded model, exchanged by swap().
-STATE = ("proc", "port", "model", "path", "state", "error", "log", "reasoning", "projector", "modalities", "context", "settings", "engine", "folder", "adapter", "used")
+STATE = ("proc", "port", "model", "path", "state", "error", "log", "reasoning", "projector", "modalities", "context", "settings", "engine", "folder", "adapter", "used", "request", "restore")
+
+
+def kv_dir() -> Path:
+    """Where llama-server saves KV caches while a model is suspended (RuntimeManager.suspend)."""
+    from . import home
+
+    folder = home() / "kv-cache"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 class RuntimeManager:
@@ -104,6 +114,12 @@ class RuntimeManager:
         self.folder: str | None = None  # a model folder's local copy, for its tokenizer and chat template
         self.adapter: str | None = None
         self.used = time.time()  # the last request, for unloading idle models
+        self.request: LoadRequest | None = None  # how it was loaded, to load it again after a suspend
+        # Saved KV caches to put back once the server is ready: [(slot id, file name in kv_dir())].
+        self.restore: list[tuple[int, str]] | None = None
+        self.restored = 0  # tokens of context the last resume brought back
+        # A model suspended to free the GPU: {"request", "slots"}; kept across unload until resumed or replaced.
+        self.suspended: dict | None = None
         self.lock = threading.Lock()
 
     @property
@@ -124,11 +140,16 @@ class RuntimeManager:
             "modalities": self.modalities,
             "context": self.context,
             "idle": round(time.time() - self.used) if self.state == "ready" else None,
+            "suspended": {"model": self.suspended["request"].get("name") or Path(self.suspended["request"]["path"]).name, "slots": len(self.suspended["slots"])} if self.suspended else None,
+            "restored": self.restored,
             "settings": {**self.settings, "draft": Path(self.settings["draft"]).name if self.settings.get("draft") else None} if self.settings else None,
         }
 
-    def load(self, req: LoadRequest) -> None:
+    def load(self, req: LoadRequest, restore: list[tuple[int, str]] | None = None) -> None:
         from . import engines, model_settings
+
+        if restore is None:
+            self.forget_suspended()  # loading something else replaces what was suspended
 
         folder = engines.local_folder(req.path)
         engine = req.engine or engines.default_engine(folder or req.path)
@@ -149,12 +170,14 @@ class RuntimeManager:
         self.unload()
         with self.lock:
             self._start(req, "llama.cpp", None)
+            self.restore = restore or None
             self.projector = req.mmproj or find_projector(req.path)
             self.settings = settings
             cmd = [
                 binary, "-m", req.path, "--host", "127.0.0.1", "--port", str(self.port),
                 "-c", str(settings["context"]), "-ngl", str(settings["gpu_layers"]), "--jinja",
                 "-fa", "on" if settings["flash_attention"] else "off",
+                "--slot-save-path", str(kv_dir()),
                 *model_settings.flags(settings),
             ]
             if self.projector:
@@ -167,7 +190,7 @@ class RuntimeManager:
         self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
         self.reasoning, self.modalities, self.context = None, None, None
         self.engine, self.folder, self.adapter, self.projector = engine, folder, None, None
-        self.used = time.time()
+        self.used, self.request, self.restore, self.restored = time.time(), req, None, 0
 
     def _load_other(self, req: LoadRequest, engine: str, folder: str | None) -> None:
         """Starts an engine other than llama.cpp on a model folder (engines.py)."""
@@ -227,6 +250,8 @@ class RuntimeManager:
                         self.context = (props.get("default_generation_settings") or {}).get("n_ctx")
                     except (httpx.HTTPError, ValueError):
                         self.reasoning, self.modalities, self.context = None, None, None
+                    if self.restore:
+                        self._restore_slots()
                     self.state = "ready"
                     return
             except httpx.HTTPError:
@@ -244,6 +269,63 @@ class RuntimeManager:
         self.context = self.settings["context"] if self.engine in ("vllm", "sglang") else native or self.settings["context"]
         self.state = "ready"
 
+    # --- Suspending: freeing the GPU without losing chat's context ------------------------------------
+
+    def suspend(self) -> dict:
+        """Unloads the model to free the GPU (for image or video generation), saving llama-server's KV cache
+        to disk first, so resume() loads it again with the context already processed."""
+        if self.state != "ready" or not self.request:
+            raise HTTPException(409, "No model is loaded.")
+        slots: list[tuple[int, str]] = []
+        if self.engine == "llama.cpp":
+            try:
+                info = httpx.get(f"{self.base}/slots", timeout=5).json()
+            except (httpx.HTTPError, ValueError):
+                info = []
+            if any(s.get("is_processing") for s in info):
+                raise HTTPException(409, f"{self.model} is writing a reply. Wait for it to finish, or stop it.")
+            key = uuid.uuid4().hex[:8]
+            for slot in info:
+                name = f"{key}-slot{slot['id']}.bin"
+                try:
+                    r = httpx.post(f"{self.base}/slots/{slot['id']}", params={"action": "save"}, json={"filename": name}, timeout=300)
+                    saved = r.status_code == 200 and r.json().get("n_saved", 0) > 0
+                except (httpx.HTTPError, ValueError):
+                    saved = False
+                if saved:
+                    slots.append((slot["id"], name))
+                else:  # an empty slot, or one that couldn't be saved
+                    (kv_dir() / name).unlink(missing_ok=True)
+        suspended = {"request": self.request.model_dump(), "slots": slots}
+        self.unload()
+        self.suspended = suspended
+        return self.status()
+
+    def resume(self) -> dict:
+        """Loads the suspended model again; its saved KV cache is restored once the server is ready."""
+        if not self.suspended:
+            raise HTTPException(409, "No model is suspended.")
+        suspended, self.suspended = self.suspended, None
+        self.load(LoadRequest(**suspended["request"]), restore=[tuple(s) for s in suspended["slots"]])
+        return self.status()
+
+    def _restore_slots(self) -> None:
+        total = 0
+        for slot, name in self.restore or []:
+            try:
+                r = httpx.post(f"{self.base}/slots/{slot}", params={"action": "restore"}, json={"filename": name}, timeout=300)
+                total += r.json().get("n_restored", 0) if r.status_code == 200 else 0
+            except (httpx.HTTPError, ValueError):
+                pass
+            (kv_dir() / name).unlink(missing_ok=True)
+        self.restore, self.restored = None, total
+
+    def forget_suspended(self) -> None:
+        if self.suspended:
+            for _, name in self.suspended["slots"]:
+                (kv_dir() / name).unlink(missing_ok=True)
+            self.suspended = None
+
     def swap(self, other: RuntimeManager) -> None:
         """Exchanges loaded models with `other`: how an alongside model becomes chat's without reloading."""
         with self.lock, other.lock:
@@ -260,7 +342,7 @@ class RuntimeManager:
             proc, self.proc = self.proc, None
             self.state, self.model, self.path, self.error, self.reasoning = "idle", None, None, None, None
             self.projector, self.modalities, self.context, self.settings = None, None, None, None
-            self.engine, self.folder, self.adapter = "llama.cpp", None, None
+            self.engine, self.folder, self.adapter, self.request, self.restore = "llama.cpp", None, None, None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:
@@ -297,8 +379,20 @@ def runtime_load(req: LoadRequest):
     return runtime_status()
 
 
+@router.post("/api/runtime/suspend")
+def runtime_suspend():
+    """Frees the GPU for a while, keeping chat's context (see RuntimeManager.suspend)."""
+    return manager.suspend()
+
+
+@router.post("/api/runtime/resume")
+def runtime_resume():
+    return manager.resume()
+
+
 @router.post("/api/runtime/unload")
 def runtime_unload():
+    manager.forget_suspended()
     manager.unload()
     return manager.status()
 

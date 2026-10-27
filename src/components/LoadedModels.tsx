@@ -1,4 +1,4 @@
-import { Layers, MessageSquare, X } from "lucide-react";
+import { Layers, MessageSquare, Play, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/engine";
 import { type Key, useT } from "../lib/i18n";
@@ -79,7 +79,7 @@ export function LoadedModels() {
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => (rows.length ? setOpen((o) => !o) : go("models"))}
+        onClick={() => (rows.length || runtime?.suspended ? setOpen((o) => !o) : go("models"))}
         className="flex items-center gap-1.5 hover:text-text"
         aria-expanded={open}
         title={rows.length ? t("loaded.title") : t("loaded.load")}
@@ -91,6 +91,10 @@ export function LoadedModels() {
         ) : chat?.state === "loading" ? (
           <>
             <span className="animate-pulse-dot size-2 rounded-full bg-straw" /> {t("loaded.loading", { model: chat.model ?? "" })}
+          </>
+        ) : runtime?.suspended && !chat ? (
+          <>
+            <span className="size-2 rounded-full bg-muted" /> {t("loaded.paused", { model: runtime.suspended.model })}
           </>
         ) : chat?.state === "failed" ? (
           <>
@@ -108,6 +112,28 @@ export function LoadedModels() {
       {open && (
         <div className="absolute right-0 bottom-8 z-30 w-80 rounded-lg border border-line bg-surface p-2 text-[13px] text-text shadow-lg">
           <p className="px-2 pt-1 pb-2 text-[12px] text-muted">{t("loaded.intro")}</p>
+          {runtime?.suspended && !chat && (
+            <div className="mb-1 flex items-center gap-2 rounded px-2 py-1.5">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{runtime.suspended.model}</span>
+                <span className="text-[11.5px] text-muted">{t("loaded.paused_hint")}</span>
+              </span>
+              <button
+                className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] hover:bg-surface-2"
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    await api("/api/runtime/resume", { method: "POST" });
+                    await refreshRuntime();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              >
+                <Play className="size-3" /> {t("loaded.resume")}
+              </button>
+            </div>
+          )}
           <ul className="flex flex-col">
             {rows.map((m) => (
               <li key={m.path} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2">

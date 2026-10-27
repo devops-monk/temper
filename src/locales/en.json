@@ -133,5 +133,8 @@
   "instr.global_hint": "Saved as AGENTS.md in Temper's folder and sent ahead of each chat's system prompt, followed by the AGENTS.md files of the chat's project folder.",
   "instr.placeholder": "For example: Answer in British English. Prefer short answers.",
   "instr.save": "Save instructions",
-  "instr.saved": "Saved"
+  "instr.saved": "Saved",
+  "loaded.paused": "{model} paused",
+  "loaded.paused_hint": "Unloaded to free the GPU; its context is saved and comes back on resume.",
+  "loaded.resume": "Resume"
 }

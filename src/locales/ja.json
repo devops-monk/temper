@@ -133,5 +133,8 @@
   "instr.global_hint": "Temper のフォルダに AGENTS.md として保存され、各チャットのシステムプロンプトの前に送られます。その後にチャットのプロジェクトフォルダの AGENTS.md が続きます。",
   "instr.placeholder": "例: 丁寧な日本語で答えてください。短めの回答を好みます。",
   "instr.save": "インストラクションを保存",
-  "instr.saved": "保存しました"
+  "instr.saved": "保存しました",
+  "loaded.paused": "{model} 一時停止中",
+  "loaded.paused_hint": "GPU を空けるために解放しました。コンテキストは保存され、再開すると戻ります。",
+  "loaded.resume": "再開"
 }

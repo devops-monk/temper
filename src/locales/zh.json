@@ -133,5 +133,8 @@
   "instr.global_hint": "保存为 Temper 文件夹中的 AGENTS.md，在每个聊天的系统提示词之前发送，其后是该聊天项目文件夹中的 AGENTS.md。",
   "instr.placeholder": "例如：用简体中文回答。尽量简短。",
   "instr.save": "保存指令",
-  "instr.saved": "已保存"
+  "instr.saved": "已保存",
+  "loaded.paused": "{model} 已暂停",
+  "loaded.paused_hint": "已卸载以释放 GPU；其上下文已保存，恢复时会还原。",
+  "loaded.resume": "恢复"
 }
