@@ -1,5 +1,6 @@
 import { ArrowDownCircle, Cpu, HardDrive } from "lucide-react";
 import { bytes } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { useUpdates } from "../lib/updates";
 import { LoadedModels } from "./LoadedModels";
@@ -9,6 +10,7 @@ const BACKEND_LABEL: Record<string, string> = { cuda: "CUDA", rocm: "ROCm", meta
 
 export function StatusBar() {
   const { engine, system, go } = useApp();
+  const t = useT();
   const update = useUpdates((u) => (u.status === "available" || u.status === "downloading" ? u.update : null));
   const status = engine?.status ?? "starting";
   const gpu = system?.gpus[0];
@@ -30,14 +32,14 @@ export function StatusBar() {
         />
         {
           {
-            running: "Engine ready",
-            starting: "Starting engine",
-            installing: "Installing engine",
-            needs_setup: "Setup needed",
-            missing_uv: "Setup needed",
-            setup_failed: "Setup failed",
-            crashed: "Engine offline",
-            stopped: "Engine offline",
+            running: t("engine.running"),
+            starting: t("engine.starting"),
+            installing: t("engine.installing"),
+            needs_setup: t("engine.needs_setup"),
+            missing_uv: t("engine.needs_setup"),
+            setup_failed: t("engine.setup_failed"),
+            crashed: t("engine.offline"),
+            stopped: t("engine.offline"),
           }[status]
         }
       </button>
@@ -49,7 +51,7 @@ export function StatusBar() {
             {gpu ? gpu.name : system.cpu.name}
             <span className="text-muted/70">{BACKEND_LABEL[system.backend]}</span>
           </span>
-          <span className="flex items-center gap-1.5" title={gpu?.unified_memory ? "Unified memory" : "GPU memory"}>
+          <span className="flex items-center gap-1.5" title={gpu?.unified_memory ? t("status.unified") : t("status.gpu_memory")}>
             <HardDrive className="size-3.5" />
             <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-surface-2">
               <span
@@ -57,14 +59,14 @@ export function StatusBar() {
                 style={{ width: `${memShare * 100}%` }}
               />
             </span>
-            {bytes(memUsed)} of {bytes(memTotal)}
+            {t("status.of", { used: bytes(memUsed), total: bytes(memTotal) })}
           </span>
         </>
       )}
 
       {update && (
         <button onClick={() => go("settings")} className="ml-auto flex items-center gap-1.5 text-accent hover:underline">
-          <ArrowDownCircle className="size-3.5" /> Temper {update.version} is available
+          <ArrowDownCircle className="size-3.5" /> {t("status.update", { version: update.version })}
         </button>
       )}
 

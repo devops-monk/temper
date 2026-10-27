@@ -4,6 +4,7 @@ import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
 import { FindBar } from "../components/FindBar";
+import { useT } from "../lib/i18n";
 import { CHAT_CONTEXT } from "../components/LoadButton";
 import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
 import { Compare } from "../components/Compare";
@@ -153,6 +154,7 @@ function CompactionDivider({ text }: { text: string }) {
 
 export function ChatPage() {
   const { runtime, go } = useApp();
+  const t = useT();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -511,8 +513,8 @@ export function ChatPage() {
       <ChatList activeId={chat?.id ?? null} version={listVersion} onOpen={(id) => void openChat(id)} onNew={newChat} onDeleted={(id) => id === chatId.current && newChat()} />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-3 border-b border-line px-6 py-2">
-          <div className="flex rounded-lg bg-surface-2 p-0.5 text-[12.5px]" role="tablist" aria-label="Chat mode">
-            {([["Chat", MessageSquare, false], ["Compare", Columns2, true]] as const).map(([label, Icon, value]) => (
+          <div className="flex rounded-lg bg-surface-2 p-0.5 text-[12.5px]" role="tablist" aria-label={t("chat.mode")}>
+            {([[t("chat.tab_chat"), MessageSquare, false], [t("chat.tab_compare"), Columns2, true]] as const).map(([label, Icon, value]) => (
               <button
                 key={label}
                 role="tab"
@@ -540,18 +542,18 @@ export function ChatPage() {
             <div ref={scroller} className={cx("min-h-0 flex-1 overflow-y-auto", finding && "pt-10")}>
               {messages.length === 0 ? (
                 ready ? (
-                  <EmptyState icon={<MessageSquare className="size-8" />} title={`Chat with ${runtime?.model}`}>
-                    Everything runs on this computer. Nothing you type leaves it.
+                  <EmptyState icon={<MessageSquare className="size-8" />} title={t("chat.with", { model: runtime?.model ?? "" })}>
+                    {t("chat.private")}
                   </EmptyState>
                 ) : (
-                  <EmptyState icon={<Boxes className="size-8" />} title={runtime?.state === "loading" ? `Loading ${runtime.model}…` : "Load a model to start chatting"}>
+                  <EmptyState icon={<Boxes className="size-8" />} title={runtime?.state === "loading" ? t("chat.loading_model", { model: runtime.model ?? "" }) : t("chat.load_first")}>
                     {runtime?.state === "loading" ? (
-                      "Large models can take a minute to load into memory."
+                      t("chat.loading_hint")
                     ) : (
                       <>
-                        <p>Pick a GGUF model you've downloaded, or find one on Hugging Face.</p>
+                        <p>{t("chat.load_hint")}</p>
                         <Button variant="primary" className="mt-4" onClick={() => go("models")}>
-                          Open models
+                          {t("chat.open_models")}
                         </Button>
                       </>
                     )}
@@ -582,9 +584,9 @@ export function ChatPage() {
                             {m.content ? (
                               <ReplyText text={m.content} />
                             ) : !m.reasoning ? (
-                              <span className="animate-pulse-dot text-muted">{compacting && i === messages.length - 1 ? "Summarising earlier messages to fit the context…" : "Thinking…"}</span>
+                              <span className="animate-pulse-dot text-muted">{compacting && i === messages.length - 1 ? t("chat.summarising") : t("chat.thinking")}</span>
                             ) : !(busy && i === messages.length - 1) ? (
-                              <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens, or set a thinking budget, and regenerate.</p>
+                              <p className="text-[13px] text-muted">{t("chat.stopped_thinking")}</p>
                             ) : null}
                           </div>
                         )}
@@ -593,7 +595,7 @@ export function ChatPage() {
                             <CopyButton text={m.content} />
                             {i === messages.length - 1 && (
                               <Button size="sm" variant="ghost" onClick={() => void run(messages.slice(0, -1))}>
-                                <RotateCcw className="size-3.5" /> Regenerate
+                                <RotateCcw className="size-3.5" /> {t("chat.regenerate")}
                               </Button>
                             )}
                           </div>
@@ -626,11 +628,11 @@ export function ChatPage() {
                     {files.map((a) => (
                       <AttachmentChip key={a.id} attachment={a} context={context} onRemove={() => removeFile(a)} />
                     ))}
-                    {attaching && <span className="animate-pulse-dot self-center px-1 text-[12px] text-muted">Reading…</span>}
+                    {attaching && <span className="animate-pulse-dot self-center px-1 text-[12px] text-muted">{t("chat.reading")}</span>}
                   </div>
                 )}
                 <div className="flex items-end gap-2">
-                  <Button variant="ghost" onClick={() => void pickFiles().then(addFiles)} disabled={!ready} aria-label="Attach files" title="Attach images, audio or documents" className="size-9 rounded-xl px-0 text-muted">
+                  <Button variant="ghost" onClick={() => void pickFiles().then(addFiles)} disabled={!ready} aria-label={t("chat.attach")} title={t("chat.attach_hint")} className="size-9 rounded-xl px-0 text-muted">
                     <Paperclip className="size-[18px]" />
                   </Button>
                   <textarea
@@ -650,13 +652,13 @@ export function ChatPage() {
                       void addFiles(pasted);
                     }}
                     rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-                    placeholder={!ready ? "Load a model first" : busy ? "Queue a follow-up" : "Message the model"}
+                    placeholder={!ready ? t("chat.placeholder_first") : busy ? t("chat.placeholder_queue") : t("chat.placeholder")}
                     disabled={!ready}
                     className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
                     aria-label="Message"
                   />
                   {busy && (
-                    <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
+                    <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label={t("chat.stop")} className="size-9 rounded-xl px-0">
                       <Square className="size-3.5 fill-current" />
                     </Button>
                   )}
@@ -667,17 +669,17 @@ export function ChatPage() {
                       </Button>
                     )
                   ) : (
-                    <Button variant="primary" onClick={submit} disabled={(!draft.trim() && !files.length) || !ready || attaching || !!cantTake} aria-label="Send" className="size-9 rounded-xl px-0">
+                    <Button variant="primary" onClick={submit} disabled={(!draft.trim() && !files.length) || !ready || attaching || !!cantTake} aria-label={t("chat.send")} className="size-9 rounded-xl px-0">
                       <ArrowUp className="size-4" />
                     </Button>
                   )}
                 </div>
               </div>
               <div className="mt-1.5 flex justify-center gap-3 text-[11.5px] text-muted">
-                <span>{busy ? "Enter to queue it for when the reply finishes" : "Enter to send, Shift+Enter for a new line"}</span>
+                <span>{busy ? t("chat.queue_hint") : t("chat.send_hint")}</span>
                 {usage && (
                   <span className={cx("tabular-nums", usage.tokens > usage.context * 0.75 && "text-straw")} title={autoCompact ? "When it fills, older messages are summarised to make room." : "Auto-compaction is off: a full context stops the chat."}>
-                    {kTokens(usage.tokens)} of {kTokens(usage.context)} tokens
+                    {t("chat.tokens", { used: kTokens(usage.tokens), total: kTokens(usage.context) })}
                   </span>
                 )}
               </div>

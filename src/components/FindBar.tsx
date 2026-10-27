@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "../lib/i18n";
 import { Input } from "./ui";
 
 const highlights = typeof CSS !== "undefined" && "highlights" in CSS ? CSS.highlights : null;
@@ -26,6 +27,7 @@ export function FindBar({ root, onClose }: { root: RefObject<HTMLElement | null>
   const [ranges, setRanges] = useState<Range[]>([]);
   const [current, setCurrent] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const t = useT();
 
   const search = useCallback(() => {
     const found = root.current && query ? matches(root.current, query) : [];
@@ -93,20 +95,20 @@ export function FindBar({ root, onClose }: { root: RefObject<HTMLElement | null>
             onClose();
           }
         }}
-        placeholder="Find in chat"
-        aria-label="Find in chat"
+        placeholder={t("find.placeholder")}
+        aria-label={t("find.placeholder")}
         className="h-7 w-52 text-[13px]"
       />
       <span className="w-16 text-center text-[12px] text-muted tabular-nums" aria-live="polite">
-        {query ? (ranges.length ? `${current + 1} of ${ranges.length}` : "None") : ""}
+        {query ? (ranges.length ? t("find.count", { n: current + 1, total: ranges.length }) : t("find.none")) : ""}
       </span>
-      <button onClick={() => step(-1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label="Previous match" title="Previous (Shift+Enter)">
+      <button onClick={() => step(-1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label="Previous match" title={t("find.previous")}>
         <ChevronUp className="size-4" />
       </button>
-      <button onClick={() => step(1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label="Next match" title="Next (Enter)">
+      <button onClick={() => step(1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label="Next match" title={t("find.next")}>
         <ChevronDown className="size-4" />
       </button>
-      <button onClick={onClose} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label="Close find" title="Close (Esc)">
+      <button onClick={onClose} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label="Close find" title={t("find.close")}>
         <X className="size-4" />
       </button>
     </div>

@@ -1,21 +1,23 @@
 import { Layers, MessageSquare, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/engine";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { cx, Select } from "./ui";
 
-export const IDLE_CHOICES: [number, string][] = [
-  [5, "5 minutes"],
-  [15, "15 minutes"],
-  [30, "30 minutes"],
-  [60, "1 hour"],
-  [240, "4 hours"],
-  [0, "Never"],
+export const IDLE_CHOICES: [number, Key, number?][] = [
+  [5, "idle.minutes", 5],
+  [15, "idle.minutes", 15],
+  [30, "idle.minutes", 30],
+  [60, "idle.hour"],
+  [240, "idle.hours", 4],
+  [0, "idle.never"],
 ];
 
 /** Unloads models nobody has used for a while (engine loaded.py); shared by the status bar and Settings. */
 export function IdleSelect({ className }: { className?: string }) {
   const [minutes, setMinutes] = useState<number | null>(null);
+  const t = useT();
   useEffect(() => {
     api<{ idle_minutes: number }>("/api/runtime/loaded").then((r) => setMinutes(r.idle_minutes), () => {});
   }, []);
@@ -29,11 +31,11 @@ export function IdleSelect({ className }: { className?: string }) {
         void api("/api/runtime/loaded/idle", { method: "PUT", json: { minutes: value } });
       }}
       className={cx("h-7 w-auto text-[12.5px]", className)}
-      aria-label="Unload idle models after"
+      aria-label={t("loaded.idle")}
     >
-      {IDLE_CHOICES.map(([value, label]) => (
+      {IDLE_CHOICES.map(([value, label, n]) => (
         <option key={value} value={value}>
-          {label}
+          {t(label, { n: n ?? "" })}
         </option>
       ))}
     </Select>
@@ -43,6 +45,7 @@ export function IdleSelect({ className }: { className?: string }) {
 /** The status bar's model: chat's, plus a list of every loaded model to switch chat to or unload. */
 export function LoadedModels() {
   const { runtime, refreshRuntime, go } = useApp();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -79,7 +82,7 @@ export function LoadedModels() {
         onClick={() => (rows.length ? setOpen((o) => !o) : go("models"))}
         className="flex items-center gap-1.5 hover:text-text"
         aria-expanded={open}
-        title={rows.length ? "Loaded models" : "Load a model"}
+        title={rows.length ? t("loaded.title") : t("loaded.load")}
       >
         {chat?.state === "ready" ? (
           <>
@@ -87,14 +90,14 @@ export function LoadedModels() {
           </>
         ) : chat?.state === "loading" ? (
           <>
-            <span className="animate-pulse-dot size-2 rounded-full bg-straw" /> Loading {chat.model}
+            <span className="animate-pulse-dot size-2 rounded-full bg-straw" /> {t("loaded.loading", { model: chat.model ?? "" })}
           </>
         ) : chat?.state === "failed" ? (
           <>
-            <span className="size-2 rounded-full bg-danger" /> {chat.model} failed
+            <span className="size-2 rounded-full bg-danger" /> {t("loaded.failed", { model: chat.model ?? "" })}
           </>
         ) : (
-          "No model loaded"
+          t("loaded.none")
         )}
         {alongside.length > 0 && (
           <span className="flex items-center gap-0.5 rounded bg-surface-2 px-1 text-[11px]">
@@ -104,7 +107,7 @@ export function LoadedModels() {
       </button>
       {open && (
         <div className="absolute right-0 bottom-8 z-30 w-80 rounded-lg border border-line bg-surface p-2 text-[13px] text-text shadow-lg">
-          <p className="px-2 pt-1 pb-2 text-[12px] text-muted">Loaded models. Each answers on Temper's API by its name; chat uses the first.</p>
+          <p className="px-2 pt-1 pb-2 text-[12px] text-muted">{t("loaded.intro")}</p>
           <ul className="flex flex-col">
             {rows.map((m) => (
               <li key={m.path} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2">
@@ -114,16 +117,16 @@ export function LoadedModels() {
                     {m.model}
                   </span>
                   <span className="text-[11.5px] text-muted">
-                    {m.chat ? "In chat" : m.state === "loading" ? "Loading" : m.state === "failed" ? "Failed to load" : "Alongside"}
+                    {t(m.chat ? "loaded.in_chat" : m.state === "loading" ? "loaded.state_loading" : m.state === "failed" ? "loaded.state_failed" : "loaded.alongside")}
                     {m.engine && m.engine !== "llama.cpp" ? ` · ${m.engine}` : ""}
                   </span>
                 </span>
                 {!m.chat && m.state === "ready" && (
-                  <button className="text-muted hover:text-text" onClick={() => void act(m.path, "switch")} title="Use in chat">
+                  <button className="text-muted hover:text-text" onClick={() => void act(m.path, "switch")} title={t("loaded.use")}>
                     <MessageSquare className="size-3.5" aria-label={`Use ${m.model} in chat`} />
                   </button>
                 )}
-                <button className="text-muted hover:text-danger" onClick={() => void act(m.path, "unload")} title="Unload">
+                <button className="text-muted hover:text-danger" onClick={() => void act(m.path, "unload")} title={t("loaded.unload")}>
                   <X className="size-3.5" aria-label={`Unload ${m.model}`} />
                 </button>
               </li>
@@ -131,7 +134,7 @@ export function LoadedModels() {
           </ul>
           {error && <p className="px-2 pt-1 text-[12px] text-danger">{error}</p>}
           <div className="mt-1 flex items-center justify-between gap-2 border-t border-line px-2 pt-2">
-            <span className="text-[12px] text-muted">Unload when unused for</span>
+            <span className="text-[12px] text-muted">{t("loaded.idle")}</span>
             <IdleSelect />
           </div>
         </div>

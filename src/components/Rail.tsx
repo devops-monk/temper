@@ -1,23 +1,25 @@
 import { Boxes, Cable, ChefHat, Database, FlaskConical, Library, MessageSquare, PackageOpen, Settings } from "lucide-react";
 import type { ComponentType } from "react";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Page } from "../lib/types";
 import { LogoMark } from "./Logo";
 import { cx } from "./ui";
 
-const ITEMS: { page: Page; label: string; icon: ComponentType<{ className?: string }> }[] = [
-  { page: "chat", label: "Chat", icon: MessageSquare },
-  { page: "models", label: "Models", icon: Boxes },
-  { page: "library", label: "Library", icon: Library },
-  { page: "train", label: "Train", icon: FlaskConical },
-  { page: "datasets", label: "Datasets", icon: Database },
-  { page: "recipes", label: "Recipes", icon: ChefHat },
-  { page: "export", label: "Export", icon: PackageOpen },
-  { page: "connect", label: "Connect", icon: Cable },
+const ITEMS: { page: Page; label: Key; icon: ComponentType<{ className?: string }> }[] = [
+  { page: "chat", label: "nav.chat", icon: MessageSquare },
+  { page: "models", label: "nav.models", icon: Boxes },
+  { page: "library", label: "nav.library", icon: Library },
+  { page: "train", label: "nav.train", icon: FlaskConical },
+  { page: "datasets", label: "nav.datasets", icon: Database },
+  { page: "recipes", label: "nav.recipes", icon: ChefHat },
+  { page: "export", label: "nav.export", icon: PackageOpen },
+  { page: "connect", label: "nav.connect", icon: Cable },
 ];
 
 export function Rail() {
   const { page, go, jobs } = useApp();
+  const t = useT();
   const running = (kind: string) => jobs.some((j) => j.kind === kind && j.status === "running");
   const busy: Partial<Record<Page, boolean>> = { models: running("download") || running("convert"), train: running("train"), export: running("export"), recipes: running("recipe"), datasets: running("prepare") };
 
@@ -33,7 +35,7 @@ export function Rail() {
     >
       <Icon className="size-[17px] shrink-0" />
       <span className="font-medium">{label}</span>
-      {busy[p] && <span className="bg-temper animate-pulse-dot ml-auto size-2 rounded-full" title="Running" />}
+      {busy[p] && <span className="bg-temper animate-pulse-dot ml-auto size-2 rounded-full" title={t("nav.running")} />}
     </button>
   );
 
@@ -43,8 +45,8 @@ export function Rail() {
         <LogoMark className="size-[22px]" />
         <span className="text-[17px] font-semibold tracking-[-0.01em]">Temper</span>
       </div>
-      <div className="flex flex-col gap-0.5">{ITEMS.map((i) => item(i.page, i.label, i.icon))}</div>
-      <div className="mt-auto">{item("settings", "Settings", Settings)}</div>
+      <div className="flex flex-col gap-0.5">{ITEMS.map((i) => item(i.page, t(i.label), i.icon))}</div>
+      <div className="mt-auto">{item("settings", t("nav.settings"), Settings)}</div>
     </nav>
   );
 }

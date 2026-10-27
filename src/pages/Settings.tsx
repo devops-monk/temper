@@ -6,10 +6,11 @@ import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
 import { Storage } from "../components/Storage";
 import { LicensesDialog } from "../components/Licenses";
-import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui";
+import { Badge, Button, Notice, PageHeader, Section, Select, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
+import { LANGUAGES, type Language, useLanguage, useT } from "../lib/i18n";
 import { MOD } from "../lib/shortcuts";
 import { useUpdates } from "../lib/updates";
 import { ZOOMS, savedZoom, setZoom, stepZoom } from "../lib/zoom";
@@ -26,8 +27,31 @@ const STATUS_LABEL = {
 };
 const PROFILE_LABEL = { chat: "Chat only", train: "Chat and training" };
 
+function LanguageControl() {
+  const { language, setLanguage } = useLanguage();
+  const t = useT();
+  return (
+    <div className="mt-4 flex items-center justify-between gap-4 text-[13px]">
+      <span>
+        <span className="font-medium">{t("settings.language")}</span>
+        {language !== "en" && <span className="block text-[12px] text-muted">{t("settings.language_hint")}</span>}
+      </span>
+      <span className="w-40 shrink-0">
+        <Select value={language} onChange={(e) => setLanguage(e.target.value as Language)} className="h-8 text-[13px]" aria-label={t("settings.language")}>
+          {LANGUAGES.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </Select>
+      </span>
+    </div>
+  );
+}
+
 function ZoomControl() {
   const [zoom, setZoomState] = useState(savedZoom);
+  const t = useT();
   useEffect(() => {
     const on = (e: Event) => setZoomState((e as CustomEvent<number>).detail);
     window.addEventListener("temper:zoom", on);
@@ -36,19 +60,17 @@ function ZoomControl() {
   return (
     <div className="mt-4 flex items-center justify-between gap-4 text-[13px]">
       <span>
-        <span className="font-medium">Zoom</span>
-        <span className="block text-[12px] text-muted">
-          {MOD} + and {MOD} − change it anywhere; {MOD} 0 resets. {MOD} / lists every shortcut.
-        </span>
+        <span className="font-medium">{t("settings.zoom")}</span>
+        <span className="block text-[12px] text-muted">{t("settings.zoom_hint", { mod: MOD })}</span>
       </span>
       <span className="flex items-center gap-1">
-        <Button size="sm" variant="ghost" onClick={() => void stepZoom(-1)} disabled={zoom <= ZOOMS[0]} aria-label="Zoom out" className="w-8 px-0">
+        <Button size="sm" variant="ghost" onClick={() => void stepZoom(-1)} disabled={zoom <= ZOOMS[0]} aria-label={t("settings.zoom_out")} className="w-8 px-0">
           <Minus className="size-3.5" />
         </Button>
         <button onClick={() => void setZoom(1)} className="w-12 text-center tabular-nums hover:text-accent" title="Actual size">
           {Math.round(zoom * 100)}%
         </button>
-        <Button size="sm" variant="ghost" onClick={() => void stepZoom(1)} disabled={zoom >= ZOOMS[ZOOMS.length - 1]} aria-label="Zoom in" className="w-8 px-0">
+        <Button size="sm" variant="ghost" onClick={() => void stepZoom(1)} disabled={zoom >= ZOOMS[ZOOMS.length - 1]} aria-label={t("settings.zoom_in")} className="w-8 px-0">
           <Plus className="size-3.5" />
         </Button>
       </span>
@@ -126,6 +148,7 @@ function Updates() {
 
 export function SettingsPage() {
   const { theme, setTheme, engine, system, refreshEngine, go } = useApp();
+  const t = useT();
   const setup = engine?.setup;
   const [licenses, setLicenses] = useState(false);
 
@@ -138,16 +161,16 @@ export function SettingsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Settings" />
+      <PageHeader title={t("settings.title")} />
       <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-10">
         <div className="max-w-[640px]">
-          <Section title="Appearance">
-            <div className="inline-flex rounded-lg border border-line bg-surface p-1" role="radiogroup" aria-label="Theme">
+          <Section title={t("settings.appearance")}>
+            <div className="inline-flex rounded-lg border border-line bg-surface p-1" role="radiogroup" aria-label={t("settings.theme")}>
               {(
                 [
-                  ["system", "Match system", Monitor],
-                  ["light", "Light", Sun],
-                  ["dark", "Dark", Moon],
+                  ["system", t("settings.system"), Monitor],
+                  ["light", t("settings.light"), Sun],
+                  ["dark", t("settings.dark"), Moon],
                 ] as const
               ).map(([value, label, Icon]) => (
                 <button
@@ -162,6 +185,7 @@ export function SettingsPage() {
               ))}
             </div>
             <ZoomControl />
+            <LanguageControl />
           </Section>
 
           <Section

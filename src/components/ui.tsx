@@ -1,5 +1,6 @@
 import { Check, Copy, TriangleAlert } from "lucide-react";
 import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes } from "react";
+import { useT } from "../lib/i18n";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -146,8 +147,9 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
   );
 }
 
-export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+export function CopyButton({ text, label }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
+  const t = useT();
   return (
     <Button
       size="sm"
@@ -159,7 +161,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
       }}
     >
       {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      {done ? "Copied" : label}
+      {done ? t("common.copied") : (label ?? t("common.copy"))}
     </Button>
   );
 }

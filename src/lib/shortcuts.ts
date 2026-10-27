@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { t } from "./i18n";
 import { useApp } from "./store";
 import type { Page } from "./types";
 import { savedZoom, setZoom, stepZoom } from "./zoom";
@@ -9,17 +10,17 @@ export const MOD = MAC ? "⌘" : "Ctrl";
 /** Pages in the order the rail shows them, for Mod+1…8. */
 const PAGES: Page[] = ["chat", "models", "library", "train", "datasets", "recipes", "export", "connect"];
 
-/** Every shortcut, for the list that Mod+/ opens. */
-export const SHORTCUTS: { keys: string; what: string }[] = [
-  { keys: `${MOD} N`, what: "New chat" },
-  { keys: `${MOD} F`, what: "Find in the chat" },
-  { keys: `${MOD} L`, what: "Go to the message box" },
-  { keys: "Esc", what: "Stop the reply, or close find" },
-  { keys: `${MOD} 1 … ${MOD} 8`, what: "Chat, Models, Library, Train, Datasets, Recipes, Export, Connect" },
-  { keys: `${MOD} ,`, what: "Settings" },
-  { keys: `${MOD} +  /  ${MOD} −`, what: "Zoom in or out" },
-  { keys: `${MOD} 0`, what: "Actual size" },
-  { keys: `${MOD} /`, what: "Show these shortcuts" },
+/** Every shortcut, for the list that Mod+/ opens, in the current language. */
+export const shortcuts = (): { keys: string; what: string }[] => [
+  { keys: `${MOD} N`, what: t("keys.new_chat") },
+  { keys: `${MOD} F`, what: t("keys.find") },
+  { keys: `${MOD} L`, what: t("keys.focus") },
+  { keys: "Esc", what: t("keys.stop") },
+  { keys: `${MOD} 1 … ${MOD} 8`, what: t("keys.pages") },
+  { keys: `${MOD} ,`, what: t("keys.settings") },
+  { keys: `${MOD} +  /  ${MOD} −`, what: t("keys.zoom") },
+  { keys: `${MOD} 0`, what: t("keys.actual") },
+  { keys: `${MOD} /`, what: t("keys.list") },
 ];
 
 /** Events for the page that handles a shortcut (the chat page listens for these). */

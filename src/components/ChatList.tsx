@@ -1,5 +1,6 @@
 import { ChevronRight, Download, Folder, FolderPlus, History, MoreHorizontal, Pencil, Pin, PinOff, Search, SquarePen, Trash2, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "../lib/i18n";
 import { api, inTauri } from "../lib/engine";
 import { relativeDate } from "../lib/format";
 import { useJob } from "../lib/useJob";
@@ -57,6 +58,7 @@ function Snippet({ text }: { text: string }) {
 /** The chat page's list of saved threads: search, pinned, folders, recent, and chats imported from other tools. */
 export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { activeId: string | null; version: number; onOpen: (id: string) => void; onNew: () => void; onDeleted: (id: string) => void }) {
   const [data, setData] = useState<ChatListData | null>(null);
+  const t = useT();
   const [query, setQuery] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState(false);
@@ -134,16 +136,16 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
   const imported = [...new Set(chats.filter((c) => c.source).map((c) => c.source!))].sort();
 
   return (
-    <aside className="flex w-[248px] shrink-0 flex-col border-r border-line bg-surface/40" aria-label="Chats">
+    <aside className="flex w-[248px] shrink-0 flex-col border-r border-line bg-surface/40" aria-label={t("chat.list")}>
       <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
         <Button variant="secondary" className="justify-start" onClick={onNew}>
-          <SquarePen className="size-4" /> New chat
+          <SquarePen className="size-4" /> {t("chat.new")}
         </Button>
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search chats" className="h-8 pr-7 pl-8 text-[13px]" aria-label="Search chats" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("chat.search")} className="h-8 pr-7 pl-8 text-[13px]" aria-label={t("chat.search")} />
           {query && (
-            <button className="absolute top-1/2 right-2 -translate-y-1/2 text-muted hover:text-text" onClick={() => setQuery("")} aria-label="Clear search">
+            <button className="absolute top-1/2 right-2 -translate-y-1/2 text-muted hover:text-text" onClick={() => setQuery("")} aria-label={t("chat.clear_search")}>
               <X className="size-3.5" />
             </button>
           )}
@@ -159,7 +161,7 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
           )
         ) : (
           <>
-            {chats.some((c) => c.pinned) && group("pinned", "Pinned", chats.filter((c) => c.pinned), <Pin className="size-3" />)}
+            {chats.some((c) => c.pinned) && group("pinned", t("chat.pinned"), chats.filter((c) => c.pinned), <Pin className="size-3" />)}
             {data.folders.map((f) =>
               renaming === `folder:${f}` ? (
                 <InlineName
@@ -195,7 +197,7 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
             {newFolder && (
               <InlineName
                 initial=""
-                placeholder="Folder name"
+                placeholder={t("chat.folder_name")}
                 onDone={(name) => {
                   setNewFolder(false);
                   if (name) void run(api("/api/chats/folders/add", { json: { name } }));
@@ -204,21 +206,21 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
             )}
             {group(
               "recent",
-              "Chats",
+              t("chat.list"),
               chats.filter((c) => !c.pinned && !c.folder && !c.source),
               null,
-              <button className="hover:text-text" onClick={() => setNewFolder(true)} title="New folder">
-                <FolderPlus className="size-3.5" aria-label="New folder" />
+              <button className="hover:text-text" onClick={() => setNewFolder(true)} title={t("chat.new_folder")}>
+                <FolderPlus className="size-3.5" aria-label={t("chat.new_folder")} />
               </button>,
             )}
-            {imported.map((source) => group(`source:${source}`, `From ${source}`, chats.filter((c) => c.source === source && !c.pinned && !c.folder), <History className="size-3" />, undefined, false))}
-            {chats.length === 0 && <p className="px-2 py-3 text-[12.5px] text-muted">Chats you start are saved here.</p>}
+            {imported.map((source) => group(`source:${source}`, t("chat.from", { source }), chats.filter((c) => c.source === source && !c.pinned && !c.folder), <History className="size-3" />, undefined, false))}
+            {chats.length === 0 && <p className="px-2 py-3 text-[12.5px] text-muted">{t("chat.empty_list")}</p>}
           </>
         )}
       </div>
       <div className="border-t border-line px-3 py-2">
         <button className="flex items-center gap-1.5 text-[12.5px] text-muted hover:text-text" onClick={() => setImporting(true)}>
-          <Download className="size-3.5" /> Import chats from other apps
+          <Download className="size-3.5" /> {t("chat.import")}
         </button>
       </div>
       {importing && <ImportPanel onClose={() => setImporting(false)} onImported={load} />}
