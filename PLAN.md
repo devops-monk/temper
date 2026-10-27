@@ -152,7 +152,7 @@ temper/
 - [~] **3.16 Localisation (i18n)**: string catalog with parity checks; start with English, Hindi, Spanish, Chinese and Japanese. Catalogs in `src/locales`, typed `t()` keys, a language setting, and `npm run check:locales` in CI. Translated so far: navigation, status bar, chat, chat list, find, shortcuts and Settings → Appearance; the other pages still show English.
 - [x] **3.17 Resumable generations** *(audit)*: replies keep generating in the engine if the window closes; reopening the chat shows the finished answer. The engine writes and saves each reply; reopening a chat mid-reply replays it and follows it live.
 - [x] **3.18 Prompt library** *(audit)*: save, name and reuse prompts. From the composer or by typing `/` in an empty message; `{{variables}}` are asked for on use; most-used first.
-- [ ] **3.19 AGENTS.md instructions** *(audit)*: a global instructions file plus each project folder's `AGENTS.md`, read the way Codex reads them.
+- [x] **3.19 AGENTS.md instructions** *(audit)*: a global instructions file plus each project folder's `AGENTS.md`, read the way Codex reads them. Global AGENTS.md in Settings; a chat's project folder adds AGENTS.md (or AGENTS.override.md) from the repo root down, capped at 32 KiB.
 - [ ] **3.20 Keep chat context across GPU swaps** *(audit)*: save and restore the KV cache when image or video generation temporarily takes the GPU.
 - [ ] **3.21 Context-fit explanations** *(audit)*: when a prompt doesn't fit the context window, say why and what to change.
 

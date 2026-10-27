@@ -47,7 +47,8 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   return (
     <select
       {...props}
-      className={cx("h-9 w-full rounded-md border border-line bg-surface px-2.5 text-text focus:border-accent focus:outline-none", className)}
+      // A width in className replaces the full width rather than competing with it.
+      className={cx("h-9 rounded-md border border-line bg-surface px-2.5 text-text focus:border-accent focus:outline-none", !/(^|\s)w-/.test(className ?? "") && "w-full", className)}
     >
       {children}
     </select>

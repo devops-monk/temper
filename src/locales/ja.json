@@ -118,5 +118,20 @@
   "prompts.delete_confirm": "プロンプト {name} を削除しますか？",
   "prompts.fill": "{name} を入力",
   "prompts.use": "プロンプトを使う",
-  "prompts.back": "戻る"
+  "prompts.back": "戻る",
+  "instr.project": "プロジェクトフォルダ",
+  "instr.project_hint": "リポジトリのルートから下にある AGENTS.md がインストラクションに加わります。",
+  "instr.choose": "フォルダを選ぶ",
+  "instr.clear": "プロジェクトフォルダなし",
+  "instr.none": "なし",
+  "instr.using": "インストラクション: {list}",
+  "instr.global_short": "共通",
+  "instr.files": "AGENTS.md {n} 件",
+  "instr.truncated": "{kb} KB に切り詰めました。",
+  "instr.folder_prompt": "プロジェクトフォルダのパス",
+  "instr.title": "すべてのチャットへのインストラクション",
+  "instr.global_hint": "Temper のフォルダに AGENTS.md として保存され、各チャットのシステムプロンプトの前に送られます。その後にチャットのプロジェクトフォルダの AGENTS.md が続きます。",
+  "instr.placeholder": "例: 丁寧な日本語で答えてください。短めの回答を好みます。",
+  "instr.save": "インストラクションを保存",
+  "instr.saved": "保存しました"
 }

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from . import attachments
 from .engines import translate
+from .instructions import with_instructions
 from .runtime import RuntimeManager, manager
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -49,6 +50,9 @@ class Prepare(BaseModel):
     compact: bool = True
     # Only count: says whether it fits, without summarising or refusing, so the app can say it's compacting.
     check: bool = False
+    # The chat's project folder, whose AGENTS.md files join the global instructions (instructions.py).
+    project: str | None = None
+    instructions: bool = True
 
 
 def _context(server: RuntimeManager) -> int:
@@ -170,8 +174,10 @@ def prepare(req: Prepare):
     summary = req.summary if req.summary and 0 < req.summary.upto <= len(req.messages) else None
     upto = summary.upto if summary else 0
 
+    system = with_instructions(req.system, req.project) if req.instructions else req.system
+
     def build(upto: int, text: str | None) -> list[dict]:
-        return _with_system(req.system, text) + _sendable(req.messages[upto:])
+        return _with_system(system, text) + _sendable(req.messages[upto:])
 
     messages = build(upto, summary.text if summary else None)
     prompt = count(server, messages)

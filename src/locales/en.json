@@ -118,5 +118,20 @@
   "prompts.delete_confirm": "Delete the prompt {name}?",
   "prompts.fill": "Fill in {name}",
   "prompts.use": "Use prompt",
-  "prompts.back": "Back"
+  "prompts.back": "Back",
+  "instr.project": "Project folder",
+  "instr.project_hint": "Its AGENTS.md files, from the repository root down, are added to the instructions.",
+  "instr.choose": "Choose folder",
+  "instr.clear": "No project folder",
+  "instr.none": "None",
+  "instr.using": "Instructions: {list}",
+  "instr.global_short": "global",
+  "instr.files": "{n} AGENTS.md",
+  "instr.truncated": "Cut to {kb} KB.",
+  "instr.folder_prompt": "Path to the project folder",
+  "instr.title": "Instructions for every chat",
+  "instr.global_hint": "Saved as AGENTS.md in Temper's folder and sent ahead of each chat's system prompt, followed by the AGENTS.md files of the chat's project folder.",
+  "instr.placeholder": "For example: Answer in British English. Prefer short answers.",
+  "instr.save": "Save instructions",
+  "instr.saved": "Saved"
 }

@@ -2,6 +2,7 @@ import { Minus, Monitor, Moon, Plus, RotateCw, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
+import { GlobalInstructions } from "../components/Instructions";
 import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
 import { Storage } from "../components/Storage";
@@ -225,6 +226,8 @@ export function SettingsPage() {
               </div>
             )}
           </Section>
+
+          {engine?.status === "running" && <GlobalInstructions />}
 
           {engine?.status === "running" && <Engines />}
 

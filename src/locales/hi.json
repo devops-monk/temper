@@ -118,5 +118,20 @@
   "prompts.delete_confirm": "प्रॉम्प्ट {name} हटाएँ?",
   "prompts.fill": "{name} भरें",
   "prompts.use": "प्रॉम्प्ट इस्तेमाल करें",
-  "prompts.back": "वापस"
+  "prompts.back": "वापस",
+  "instr.project": "प्रोजेक्ट फ़ोल्डर",
+  "instr.project_hint": "इसकी AGENTS.md फ़ाइलें, रिपॉज़िटरी की जड़ से नीचे तक, निर्देशों में जुड़ जाती हैं।",
+  "instr.choose": "फ़ोल्डर चुनें",
+  "instr.clear": "कोई प्रोजेक्ट फ़ोल्डर नहीं",
+  "instr.none": "कोई नहीं",
+  "instr.using": "निर्देश: {list}",
+  "instr.global_short": "ग्लोबल",
+  "instr.files": "{n} AGENTS.md",
+  "instr.truncated": "{kb} KB तक काटा गया।",
+  "instr.folder_prompt": "प्रोजेक्ट फ़ोल्डर का पाथ",
+  "instr.title": "हर चैट के लिए निर्देश",
+  "instr.global_hint": "Temper के फ़ोल्डर में AGENTS.md के रूप में सहेजे जाते हैं और हर चैट के सिस्टम प्रॉम्प्ट से पहले भेजे जाते हैं, उसके बाद चैट के प्रोजेक्ट फ़ोल्डर की AGENTS.md फ़ाइलें।",
+  "instr.placeholder": "उदाहरण: सरल हिंदी में जवाब दें। छोटे जवाब पसंद करें।",
+  "instr.save": "निर्देश सहेजें",
+  "instr.saved": "सहेजा गया"
 }

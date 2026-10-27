@@ -118,5 +118,20 @@
   "prompts.delete_confirm": "删除提示词 {name}？",
   "prompts.fill": "填写 {name}",
   "prompts.use": "使用提示词",
-  "prompts.back": "返回"
+  "prompts.back": "返回",
+  "instr.project": "项目文件夹",
+  "instr.project_hint": "从仓库根目录往下的 AGENTS.md 文件会加入指令中。",
+  "instr.choose": "选择文件夹",
+  "instr.clear": "不使用项目文件夹",
+  "instr.none": "无",
+  "instr.using": "指令：{list}",
+  "instr.global_short": "全局",
+  "instr.files": "{n} 个 AGENTS.md",
+  "instr.truncated": "已截断为 {kb} KB。",
+  "instr.folder_prompt": "项目文件夹的路径",
+  "instr.title": "适用于所有聊天的指令",
+  "instr.global_hint": "保存为 Temper 文件夹中的 AGENTS.md，在每个聊天的系统提示词之前发送，其后是该聊天项目文件夹中的 AGENTS.md。",
+  "instr.placeholder": "例如：用简体中文回答。尽量简短。",
+  "instr.save": "保存指令",
+  "instr.saved": "已保存"
 }

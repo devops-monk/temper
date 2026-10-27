@@ -4,6 +4,7 @@ import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
 import { FindBar } from "../components/FindBar";
+import { ProjectFolder } from "../components/Instructions";
 import { PromptLibrary } from "../components/PromptLibrary";
 import { useT } from "../lib/i18n";
 import { CHAT_CONTEXT } from "../components/LoadButton";
@@ -91,7 +92,7 @@ interface SavedChat {
   title: string;
   source: string | null;
   messages: Message[];
-  settings: Partial<Settings> | null;
+  settings: (Partial<Settings> & { project?: string | null }) | null;
   compaction: Compaction | null;
   /** A reply the engine is still writing (engine generations.py). */
   generating: Generation | null;
@@ -189,6 +190,8 @@ export function ChatPage() {
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const [finding, setFinding] = useState(false);
+  // The folder whose AGENTS.md files join the instructions (engine instructions.py); saved with the chat.
+  const [project, setProject] = useState<string | null>(null);
   const [library, setLibrary] = useState(false);
   // Typing / and a few letters in an empty message searches the prompt library; Esc leaves it as typed.
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
@@ -245,7 +248,7 @@ export function ChatPage() {
 
   /** Saves the whole thread to the chat it belongs to, creating the chat on its first message. */
   async function persist(id: string | null, history: Message[]): Promise<string | null> {
-    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null })), model: runtime?.model ?? null, settings, compaction: compactionRef.current && compactionRef.current.upto <= history.length ? compactionRef.current : null };
+    const body = { messages: history.map(({ role, content, error, model, reasoning, attachments }) => ({ role, content, error: !!error, model: model ?? null, reasoning: reasoning || null, attachments: attachments?.length ? attachments.map(stored) : null })), model: runtime?.model ?? null, settings: { ...settings, project }, compaction: compactionRef.current && compactionRef.current.upto <= history.length ? compactionRef.current : null };
     try {
       if (id) await api(`/api/chats/${id}/messages`, { method: "PUT", json: body });
       else {
@@ -281,6 +284,7 @@ export function ChatPage() {
     setMessages(fromSaved(saved.messages));
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
+    setProject(saved.settings?.project ?? null);
     if (saved.generating) void rejoin(saved.generating, fromSaved(saved.messages));
   }
 
@@ -484,7 +488,7 @@ export function ChatPage() {
     const id = await persist(chatId.current, history);
     try {
       // Fits the thread into the model's context, summarising its oldest turns if it has to.
-      const ask = { messages: history.map(toApi), system, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact };
+      const ask = { messages: history.map(toApi), system, project, summary: compactionRef.current, max_tokens: settings.max_tokens, compact: autoCompact };
       const check = await api<{ fits: boolean }>("/api/chat/prepare", { json: { ...ask, check: true }, signal: ctrl.signal });
       if (!check.fits && autoCompact) setCompacting(true);
       const prepared = await api<Prepared>("/api/chat/prepare", { json: ask, signal: ctrl.signal }).finally(() => setCompacting(false));
@@ -804,6 +808,7 @@ export function ChatPage() {
               className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 placeholder:text-muted/70 focus:border-accent focus:outline-none"
             />
           </Field>
+          <ProjectFolder project={project} onChange={setProject} />
           <Slider label="Temperature" value={settings.temperature} min={0} max={2} step={0.05} onChange={set("temperature")} />
           <Slider label="Top P" value={settings.top_p} min={0} max={1} step={0.01} onChange={set("top_p")} />
           <Slider label="Top K" value={settings.top_k} min={0} max={200} step={1} onChange={set("top_k")} />

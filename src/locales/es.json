@@ -118,5 +118,20 @@
   "prompts.delete_confirm": "¿Eliminar el prompt {name}?",
   "prompts.fill": "Rellena {name}",
   "prompts.use": "Usar el prompt",
-  "prompts.back": "Volver"
+  "prompts.back": "Volver",
+  "instr.project": "Carpeta del proyecto",
+  "instr.project_hint": "Sus archivos AGENTS.md, desde la raíz del repositorio hacia abajo, se añaden a las instrucciones.",
+  "instr.choose": "Elegir carpeta",
+  "instr.clear": "Sin carpeta de proyecto",
+  "instr.none": "Ninguna",
+  "instr.using": "Instrucciones: {list}",
+  "instr.global_short": "globales",
+  "instr.files": "{n} AGENTS.md",
+  "instr.truncated": "Recortadas a {kb} KB.",
+  "instr.folder_prompt": "Ruta de la carpeta del proyecto",
+  "instr.title": "Instrucciones para todos los chats",
+  "instr.global_hint": "Se guardan como AGENTS.md en la carpeta de Temper y se envían antes del prompt de sistema de cada chat, seguidas de los AGENTS.md de la carpeta del proyecto del chat.",
+  "instr.placeholder": "Por ejemplo: Responde en español de España. Prefiere respuestas cortas.",
+  "instr.save": "Guardar instrucciones",
+  "instr.saved": "Guardadas"
 }
