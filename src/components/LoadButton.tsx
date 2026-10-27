@@ -1,4 +1,4 @@
-import { Play } from "lucide-react";
+import { Layers, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { bytes } from "../lib/format";
@@ -67,31 +67,37 @@ export function LoadButton({ path, name, engine, adapter, label = "Load" }: { pa
   const { refreshRuntime, go, runtime } = useApp();
   const [error, setError] = useState<string | null>(null);
   const loaded = runtime?.state === "ready" && runtime.model === name;
+  const beside = runtime?.alongside?.some((m) => m.path === path);
+  // Another model is in chat: this one can load next to it rather than replacing it.
+  const canAdd = !loaded && !beside && (runtime?.state === "ready" || runtime?.state === "loading");
+
+  async function load(alongside: boolean) {
+    setError(null);
+    // At the model's saved settings (context, KV cache, draft model).
+    const est = await api<ChatEstimate>("/api/memory/chat", { json: { path } }).catch(() => null);
+    if (est?.verdict === "too_large") {
+      const tips = est.advice.length ? `\n\n${est.advice.join("\n")}` : "";
+      if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
+    }
+    try {
+      await api("/api/runtime/load", { json: { path, name, engine, adapter, alongside } });
+      await refreshRuntime();
+      if (!alongside) go("chat");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <span className="flex items-center gap-2">
       {error && <span className="max-w-[260px] truncate text-[12px] text-danger" title={error}>{error}</span>}
-      <Button
-        size="sm"
-        variant={loaded ? "secondary" : "primary"}
-        onClick={async () => {
-          if (loaded) return go("chat");
-          setError(null);
-          // At the model's saved settings (context, KV cache, draft model).
-          const est = await api<ChatEstimate>("/api/memory/chat", { json: { path } }).catch(() => null);
-          if (est?.verdict === "too_large") {
-            const tips = est.advice.length ? `\n\n${est.advice.join("\n")}` : "";
-            if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
-          }
-          try {
-            await api("/api/runtime/load", { json: { path, name, engine, adapter } });
-            await refreshRuntime();
-            go("chat");
-          } catch (e) {
-            setError((e as Error).message);
-          }
-        }}
-      >
-        <Play className="size-3.5" /> {loaded ? "Open chat" : label}
+      {canAdd && (
+        <Button size="sm" variant="ghost" onClick={() => void load(true)} title={`Load next to ${runtime?.model}; both answer on Temper's API, and you can switch chat between them`}>
+          <Layers className="size-3.5" /> Alongside
+        </Button>
+      )}
+      <Button size="sm" variant={loaded ? "secondary" : "primary"} onClick={() => (loaded ? go("chat") : void load(false))}>
+        <Play className="size-3.5" /> {loaded ? "Open chat" : beside ? "Use in chat" : label}
       </Button>
     </span>
   );

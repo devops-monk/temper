@@ -78,7 +78,7 @@ def test_loading_a_folder_starts_its_engine(tmp_path, monkeypatch):
     monkeypatch.setattr(engines, "supported", lambda e: None if e == "mlx" else "no")
     monkeypatch.setattr("subprocess.Popen", lambda cmd, **kw: started.append(cmd) or Proc())
     server = RuntimeManager()
-    monkeypatch.setattr(RuntimeManager, "_watch", lambda self, proc: None)
+    monkeypatch.setattr(RuntimeManager, "_supervise", lambda self, proc: None)
     server.load(LoadRequest(path=str(mlx), name="run", adapter=str(adapter)))
     assert server.engine == "mlx" and server.adapter == str(adapter) and "--adapter-path" in started[-1]
     server.settings = SETTINGS

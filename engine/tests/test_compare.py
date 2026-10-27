@@ -95,6 +95,7 @@ def test_an_unsupported_architecture_is_named():
     server.model, server.state, server.port = "parakeet.gguf", "loading", 1
     line = "llama_model_load: error loading model: unknown model architecture: 'parakeet'"
     server.proc = subprocess.Popen(["sh", "-c", f'echo "{line}"; exit 1'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    server.proc.owner = server
     server._watch(server.proc)
     assert server.state == "failed"
     assert server.error.startswith("llama.cpp can't run parakeet.gguf: it doesn't support the parakeet architecture.\n")

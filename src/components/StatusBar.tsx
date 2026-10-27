@@ -2,12 +2,13 @@ import { ArrowDownCircle, Cpu, HardDrive } from "lucide-react";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
 import { useUpdates } from "../lib/updates";
+import { LoadedModels } from "./LoadedModels";
 import { cx } from "./ui";
 
 const BACKEND_LABEL: Record<string, string> = { cuda: "CUDA", rocm: "ROCm", metal: "Metal", xpu: "Intel XPU", cpu: "CPU only" };
 
 export function StatusBar() {
-  const { engine, system, runtime, go } = useApp();
+  const { engine, system, go } = useApp();
   const update = useUpdates((u) => (u.status === "available" || u.status === "downloading" ? u.update : null));
   const status = engine?.status ?? "starting";
   const gpu = system?.gpus[0];
@@ -67,19 +68,9 @@ export function StatusBar() {
         </button>
       )}
 
-      <button onClick={() => go(runtime?.state === "ready" ? "chat" : "models")} className={cx(!update && "ml-auto", "flex items-center gap-1.5 hover:text-text")}>
-        {runtime?.state === "ready" ? (
-          <>
-            <span className="size-2 rounded-full bg-accent" /> {runtime.model}
-          </>
-        ) : runtime?.state === "loading" ? (
-          <>
-            <span className="animate-pulse-dot size-2 rounded-full bg-straw" /> Loading {runtime.model}
-          </>
-        ) : (
-          "No model loaded"
-        )}
-      </button>
+      <div className={cx(!update && "ml-auto")}>
+        <LoadedModels />
+      </div>
     </footer>
   );
 }

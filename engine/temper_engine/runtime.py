@@ -46,6 +46,8 @@ class LoadRequest(BaseModel):
     engine: str | None = None
     # A LoRA adapter folder from a fine-tuning run, applied on top (MLX, vLLM, SGLang).
     adapter: str | None = None
+    # Load it next to chat's model rather than in its place (loaded.py).
+    alongside: bool = False
 
 
 PROJECTOR_PREFERENCE = ("f16", "bf16", "f32", "q8")
@@ -79,6 +81,10 @@ def reasoning_support(props: dict) -> dict:
     return {"thinks": thinks, "toggle": toggle, "effort": effort}
 
 
+# What a manager knows about its loaded model, exchanged by swap().
+STATE = ("proc", "port", "model", "path", "state", "error", "log", "reasoning", "projector", "modalities", "context", "settings", "engine", "folder", "adapter", "used")
+
+
 class RuntimeManager:
     def __init__(self) -> None:
         self.proc: subprocess.Popen | None = None
@@ -97,6 +103,7 @@ class RuntimeManager:
         self.engine = "llama.cpp"
         self.folder: str | None = None  # a model folder's local copy, for its tokenizer and chat template
         self.adapter: str | None = None
+        self.used = time.time()  # the last request, for unloading idle models
         self.lock = threading.Lock()
 
     @property
@@ -116,6 +123,7 @@ class RuntimeManager:
             "projector": Path(self.projector).name if self.projector else None,
             "modalities": self.modalities,
             "context": self.context,
+            "idle": round(time.time() - self.used) if self.state == "ready" else None,
             "settings": {**self.settings, "draft": Path(self.settings["draft"]).name if self.settings.get("draft") else None} if self.settings else None,
         }
 
@@ -152,13 +160,14 @@ class RuntimeManager:
             if self.projector:
                 cmd += ["--mmproj", self.projector]
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
-        threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
+        self._supervise(self.proc)
 
     def _start(self, req: LoadRequest, engine: str, folder: str | None) -> None:
         self.port = _free_port()
         self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
         self.reasoning, self.modalities, self.context = None, None, None
         self.engine, self.folder, self.adapter, self.projector = engine, folder, None, None
+        self.used = time.time()
 
     def _load_other(self, req: LoadRequest, engine: str, folder: str | None) -> None:
         """Starts an engine other than llama.cpp on a model folder (engines.py)."""
@@ -178,14 +187,21 @@ class RuntimeManager:
             self.settings, self.adapter = settings, req.adapter
             cmd = engines.command(engine, folder, settings, self.port, req.adapter)
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
-        threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
+        self._supervise(self.proc)
 
-    def _watch(self, proc: subprocess.Popen) -> None:
+    def _supervise(self, proc: subprocess.Popen) -> None:
+        proc.owner = self  # type: ignore[attr-defined]  # swap() hands the server to another manager
+        threading.Thread(target=RuntimeManager._watch, args=(proc,), daemon=True).start()
+
+    @staticmethod
+    def _watch(proc: subprocess.Popen) -> None:
         assert proc.stdout
-        threading.Thread(target=self._wait_ready, args=(proc,), daemon=True).start()
+        threading.Thread(target=RuntimeManager._wait_ready, args=(proc,), daemon=True).start()
         for line in proc.stdout:
-            self.log = (self.log + [line.rstrip()])[-200:]
+            owner = proc.owner  # type: ignore[attr-defined]
+            owner.log = (owner.log + [line.rstrip()])[-200:]
         code = proc.wait()
+        self = proc.owner  # type: ignore[attr-defined]
         if proc is self.proc and self.state != "idle":
             self.state = "failed"
             tail = "\n".join(self.log[-8:])
@@ -194,9 +210,11 @@ class RuntimeManager:
             reason = f"{self.engine} can't run {self.model}: it doesn't support the {arch} architecture." if arch else f"{name} exited with code {code}"
             self.error = f"{reason}\n{tail}"
 
-    def _wait_ready(self, proc: subprocess.Popen) -> None:
+    @staticmethod
+    def _wait_ready(proc: subprocess.Popen) -> None:
         deadline = time.time() + 600
-        while time.time() < deadline and proc.poll() is None and proc is self.proc:
+        while time.time() < deadline and proc.poll() is None and proc is proc.owner.proc:  # type: ignore[attr-defined]
+            self = proc.owner  # type: ignore[attr-defined]
             try:
                 if httpx.get(f"{self.base}/health", timeout=1).status_code == 200:
                     if self.engine != "llama.cpp":
@@ -226,6 +244,17 @@ class RuntimeManager:
         self.context = self.settings["context"] if self.engine in ("vllm", "sglang") else native or self.settings["context"]
         self.state = "ready"
 
+    def swap(self, other: RuntimeManager) -> None:
+        """Exchanges loaded models with `other`: how an alongside model becomes chat's without reloading."""
+        with self.lock, other.lock:
+            for key in STATE:
+                mine, theirs = getattr(self, key), getattr(other, key)
+                setattr(self, key, theirs)
+                setattr(other, key, mine)
+            for server in (self, other):
+                if server.proc:
+                    server.proc.owner = server  # type: ignore[attr-defined]
+
     def unload(self) -> None:
         with self.lock:
             proc, self.proc = self.proc, None
@@ -245,16 +274,27 @@ manager = RuntimeManager()
 
 @router.get("/api/runtime")
 def runtime_status():
-    return manager.status()
+    from .compare import pool
+
+    alongside = [{k: s[k] for k in ("model", "path", "state", "engine", "error", "idle")} for s in pool.status(kept=True)]
+    return {**manager.status(), "alongside": alongside}
 
 
 @router.post("/api/runtime/load")
 def runtime_load(req: LoadRequest):
+    from . import loaded
     from .compare import pool
 
+    if req.alongside and manager.state != "idle":
+        loaded.load_alongside(req)
+        return runtime_status()
+    if req.path in pool.kept:  # already loaded alongside: make it chat's, keeping the current one
+        loaded.switch(req.path)
+        return runtime_status()
     pool.unload_all()  # compare mode's models would compete with it for memory
     manager.load(req)
-    return manager.status()
+    pool._start_reaper()  # unloads chat's model too once it's idle
+    return runtime_status()
 
 
 @router.post("/api/runtime/unload")
@@ -270,7 +310,10 @@ def _require_ready() -> None:
 
 @router.get("/v1/models")
 def v1_models():
-    data = [{"id": manager.model, "object": "model", "owned_by": "temper"}] if manager.state == "ready" else []
+    from .compare import pool
+
+    servers = [manager, *pool.servers.values()]
+    data = [{"id": s.model, "object": "model", "owned_by": "temper"} for s in servers if s.state == "ready"]
     return {"object": "list", "data": data}
 
 
@@ -286,6 +329,7 @@ async def v1_chat(request: Request):
         server = manager
     elif server.state != "ready":
         raise HTTPException(409, f"{server.model} is still loading." if server.state == "loading" else server.error or f"{server.model} isn't loaded.")
+    server.used = time.time()
     if isinstance(body.get("messages"), list):
         from . import attachments
 

@@ -83,6 +83,10 @@ export interface RuntimeStatus {
   settings?: { context: number; gpu_layers: number; flash_attention: boolean; cache_type: string; speculation: string; draft: string | null; draft_max: number } | null;
   /** The fine-tuning adapter loaded on top, for a run chatted with before exporting. */
   adapter?: string | null;
+  /** Seconds since its last request. */
+  idle?: number | null;
+  /** Models loaded alongside chat's (engine loaded.py); each answers on /v1 by its name. */
+  alongside?: { model: string | null; path: string; state: RuntimeStatus["state"]; engine: string; error: string | null; idle: number | null }[];
 }
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";

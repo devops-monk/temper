@@ -4,6 +4,7 @@ import { api } from "../lib/engine";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
+import { IdleSelect } from "./LoadedModels";
 import { useEngines } from "./LoadButton";
 import { Badge, Button, ProgressBar, Section } from "./ui";
 
@@ -100,6 +101,13 @@ export function Engines() {
       )}
       {(error || (status === "failed" && failure)) && <p className="mt-2 text-[12px] text-danger">{error ?? failure}</p>}
       <p className="mt-2 text-[12px] text-muted">Hugging Face and MLX model folders get a Load button on the Models page once an engine that runs them is ready.</p>
+      <div className="mt-4 flex items-center justify-between gap-3 text-[13px]">
+        <span>
+          <span className="font-medium">Unload models when unused for</span>
+          <span className="block text-[12px] text-muted">Frees their memory. Several models can be loaded at once with Alongside on the Models page.</span>
+        </span>
+        <IdleSelect />
+      </div>
     </Section>
   );
 }
