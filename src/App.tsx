@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { EngineGate } from "./components/EngineGate";
+import { ShortcutsDialog } from "./components/Shortcuts";
+import { useShortcuts } from "./lib/shortcuts";
 import { useApp } from "./lib/store";
 import { useUpdates } from "./lib/updates";
 import { ChatPage } from "./pages/Chat";
@@ -29,6 +31,7 @@ export function App() {
   const initUpdates = useUpdates((u) => u.init);
 
   useEffect(initUpdates, [initUpdates]);
+  useShortcuts();
 
   usePoll(refreshEngine, ready ? 10_000 : 1_000);
   useEffect(() => {
@@ -67,6 +70,7 @@ export function App() {
         </main>
       </div>
       <StatusBar />
+      <ShortcutsDialog />
     </div>
   );
 }

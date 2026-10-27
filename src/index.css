@@ -213,3 +213,12 @@ td {
     transition: none !important;
   }
 }
+
+/* Find in chat (FindBar.tsx): every match, and the current one. */
+::highlight(temper-find) {
+  background-color: color-mix(in srgb, var(--straw) 35%, transparent);
+}
+::highlight(temper-find-current) {
+  background-color: var(--straw);
+  color: #1a1408;
+}

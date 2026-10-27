@@ -1,5 +1,5 @@
-import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Minus, Monitor, Moon, Plus, RotateCw, Sun } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
 import { HfAccount } from "../components/HfAccount";
@@ -10,7 +10,9 @@ import { Badge, Button, Notice, PageHeader, Section, cx } from "../components/ui
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
+import { MOD } from "../lib/shortcuts";
 import { useUpdates } from "../lib/updates";
+import { ZOOMS, savedZoom, setZoom, stepZoom } from "../lib/zoom";
 
 const STATUS_LABEL = {
   running: "Running",
@@ -23,6 +25,36 @@ const STATUS_LABEL = {
   setup_failed: "Setup failed",
 };
 const PROFILE_LABEL = { chat: "Chat only", train: "Chat and training" };
+
+function ZoomControl() {
+  const [zoom, setZoomState] = useState(savedZoom);
+  useEffect(() => {
+    const on = (e: Event) => setZoomState((e as CustomEvent<number>).detail);
+    window.addEventListener("temper:zoom", on);
+    return () => window.removeEventListener("temper:zoom", on);
+  }, []);
+  return (
+    <div className="mt-4 flex items-center justify-between gap-4 text-[13px]">
+      <span>
+        <span className="font-medium">Zoom</span>
+        <span className="block text-[12px] text-muted">
+          {MOD} + and {MOD} − change it anywhere; {MOD} 0 resets. {MOD} / lists every shortcut.
+        </span>
+      </span>
+      <span className="flex items-center gap-1">
+        <Button size="sm" variant="ghost" onClick={() => void stepZoom(-1)} disabled={zoom <= ZOOMS[0]} aria-label="Zoom out" className="w-8 px-0">
+          <Minus className="size-3.5" />
+        </Button>
+        <button onClick={() => void setZoom(1)} className="w-12 text-center tabular-nums hover:text-accent" title="Actual size">
+          {Math.round(zoom * 100)}%
+        </button>
+        <Button size="sm" variant="ghost" onClick={() => void stepZoom(1)} disabled={zoom >= ZOOMS[ZOOMS.length - 1]} aria-label="Zoom in" className="w-8 px-0">
+          <Plus className="size-3.5" />
+        </Button>
+      </span>
+    </div>
+  );
+}
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -129,6 +161,7 @@ export function SettingsPage() {
                 </button>
               ))}
             </div>
+            <ZoomControl />
           </Section>
 
           <Section

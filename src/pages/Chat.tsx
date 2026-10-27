@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { samplingText, type CatalogModel } from "../components/Catalog";
 import { AttachmentChip, attach, attachmentPart, pickFiles, stored, type Attachment } from "../components/Attachments";
 import { ChatList } from "../components/ChatList";
+import { FindBar } from "../components/FindBar";
 import { CHAT_CONTEXT } from "../components/LoadButton";
 import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
 import { Compare } from "../components/Compare";
@@ -159,6 +160,8 @@ export function ChatPage() {
   const [recommended, setRecommended] = useState<Recommended | null>(null);
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const [finding, setFinding] = useState(false);
   const ready = runtime?.state === "ready";
   // The saved thread on screen; null until the first message of a new chat is sent.
   const [chat, setChat] = useState<{ id: string; title: string; source: string | null } | null>(null);
@@ -248,6 +251,25 @@ export function ChatPage() {
     // The thread's own system prompt comes back with it; sampling stays with the loaded model.
     setSettings((s) => ({ ...s, system: saved.settings?.system ?? "" }));
   }
+
+  // Keyboard shortcuts (lib/shortcuts.ts); the ref keeps the handlers current without re-subscribing.
+  const keys = useRef({ newChat: () => {}, comparing: false, busy: false });
+  useEffect(() => {
+    const find = () => !keys.current.comparing && setFinding(true);
+    const fresh = () => keys.current.newChat();
+    const focus = () => input.current?.focus();
+    const stop = (e: KeyboardEvent) => e.key === "Escape" && keys.current.busy && abort.current?.abort();
+    window.addEventListener("temper:find", find);
+    window.addEventListener("temper:new-chat", fresh);
+    window.addEventListener("temper:focus-input", focus);
+    window.addEventListener("keydown", stop);
+    return () => {
+      window.removeEventListener("temper:find", find);
+      window.removeEventListener("temper:new-chat", fresh);
+      window.removeEventListener("temper:focus-input", focus);
+      window.removeEventListener("keydown", stop);
+    };
+  }, []);
 
   function newChat() {
     setComparing(false);
@@ -481,6 +503,7 @@ export function ChatPage() {
       ? `${runtime?.model} can't ${lacking}. ${runtime?.projector ? "" : "Load a model that can; Temper loads its projector (an mmproj .gguf) from beside the model."}`.trim()
       : null;
 
+  keys.current = { newChat, comparing, busy };
   const set = <K extends keyof Settings>(k: K) => (v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
 
   return (
@@ -512,7 +535,9 @@ export function ChatPage() {
           <Compare settings={settings} />
         ) : (
           <>
-            <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+            <div className="relative flex min-h-0 flex-1 flex-col">
+            {finding && <FindBar root={scroller} onClose={() => setFinding(false)} />}
+            <div ref={scroller} className={cx("min-h-0 flex-1 overflow-y-auto", finding && "pt-10")}>
               {messages.length === 0 ? (
                 ready ? (
                   <EmptyState icon={<MessageSquare className="size-8" />} title={`Chat with ${runtime?.model}`}>
@@ -579,6 +604,7 @@ export function ChatPage() {
                 </div>
               )}
             </div>
+            </div>
 
             <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
               {saveError && <p className="mb-2 text-center text-[12px] text-danger">{saveError}</p>}
@@ -608,6 +634,7 @@ export function ChatPage() {
                     <Paperclip className="size-[18px]" />
                   </Button>
                   <textarea
+                    ref={input}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {

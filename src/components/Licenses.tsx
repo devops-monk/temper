@@ -30,6 +30,8 @@ const DOWNLOADED = [
   ["Hugging Face Hub", "Apache-2.0", "https://github.com/huggingface/huggingface_hub"],
   ["FastAPI and Uvicorn", "MIT and BSD-3-Clause", "https://github.com/fastapi/fastapi"],
   ["NVIDIA DataDesigner", "Apache-2.0", "https://github.com/NVIDIA-NeMo/DataDesigner"],
+  ["vLLM (if installed)", "Apache-2.0", "https://github.com/vllm-project/vllm"],
+  ["SGLang (if installed)", "Apache-2.0", "https://github.com/sgl-project/sglang"],
   ["pypdf", "BSD-3-Clause", "https://github.com/py-pdf/pypdf"],
   ["python-docx", "MIT", "https://github.com/python-openxml/python-docx"],
 ] as const;

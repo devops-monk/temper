@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,7 +31,7 @@ def models(tmp_path, monkeypatch):
     monkeypatch.setattr(memory, "memory_budget", lambda: {"kind": "ram", "total": 16 * GB, "free": 8 * GB})
 
     def fake_load(self, req):
-        self.model, self.path, self.state, self.port, self.used = req.name or req.path.rsplit("/", 1)[-1], req.path, "ready", 1, time.time()
+        self.model, self.path, self.state, self.port, self.used = req.name or Path(req.path).name, req.path, "ready", 1, time.time()
 
     def fake_unload(self):
         self.model, self.path, self.state = None, None, "idle"
