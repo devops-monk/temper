@@ -387,7 +387,7 @@ export function ChatPage() {
             setStats({ speed: t.predicted_per_second, drafted: t.draft_n, accepted: t.draft_n_accepted });
           }
           const delta = chunk.choices?.[0]?.delta;
-          const thinkingPiece = (delta?.reasoning_content ?? "") as string;
+          const thinkingPiece = (delta?.reasoning_content ?? delta?.reasoning ?? "") as string;
           const piece = (delta?.content ?? "") as string;
           if (!piece && !thinkingPiece) return;
           thoughts += thinkingPiece;

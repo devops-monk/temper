@@ -95,6 +95,7 @@ def _runs() -> Iterator[tuple[Path, dict]]:
             "base_model": cfg.get("source_id") or cfg.get("base_model"),
             "trained_on": cfg.get("dataset"),
             "adapter": (d / "adapter").is_dir(),
+            "backend": cfg.get("backend"),
         }
 
 

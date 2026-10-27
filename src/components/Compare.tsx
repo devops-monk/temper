@@ -205,7 +205,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
           const t = chunk.timings;
           if (t) update(turn, column, { speed: t.predicted_per_second, tokens: t.predicted_n, firstToken: t.prompt_ms });
           const delta = chunk.choices?.[0]?.delta;
-          const thinking = (delta?.reasoning_content ?? "") as string;
+          const thinking = (delta?.reasoning_content ?? delta?.reasoning ?? "") as string;
           const piece = (delta?.content ?? "") as string;
           if (!piece && !thinking) return;
           reasoning += thinking;

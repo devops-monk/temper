@@ -12,7 +12,7 @@ from huggingface_hub import HfApi, scan_cache_dir
 from huggingface_hub.utils import HfHubHTTPError
 from pydantic import BaseModel
 
-from . import downloads, sources, storage
+from . import downloads, engines, sources, storage
 from .runtime import PROJECTOR_PREFERENCE
 from .jobs import Job, registry
 
@@ -126,6 +126,7 @@ def local_models():
             "files": len(files),
             "safetensors": safetensors,
             **(library.checkpoint(revision.snapshot_path) if revision and safetensors else {"quantization": None, "convertible": False}),
+            "chat": bool(revision and safetensors and engines.chat_model(str(revision.snapshot_path))),
         })
     return library.entries() + sorted(models, key=lambda m: m["last_used"] or 0, reverse=True)
 

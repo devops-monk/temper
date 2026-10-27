@@ -26,7 +26,7 @@ CacheType = Literal["f16", "q8_0", "q4_0"]
 Speculation = Literal["none", "draft", "ngram", "mtp"]
 # Bytes per cached value, against f16's 2: llama.cpp's q8_0 and q4_0 blocks carry a scale per 32 values.
 CACHE_BYTES = {"f16": 2.0, "q8_0": 34 / 32, "q4_0": 18 / 32}
-DEFAULTS = {"context": 8192, "gpu_layers": 999, "flash_attention": True, "cache_type": "f16", "speculation": "none", "draft": None, "draft_max": 8}
+DEFAULTS = {"context": 8192, "gpu_layers": 999, "flash_attention": True, "cache_type": "f16", "speculation": "none", "draft": None, "draft_max": 8, "tensor_parallel": 1, "pipeline_parallel": 1}
 
 
 class Settings(BaseModel):
@@ -37,6 +37,9 @@ class Settings(BaseModel):
     speculation: Speculation | None = None
     draft: str | None = None
     draft_max: int | None = Field(default=None, ge=1, le=64)
+    # GPUs to split the model across, for vLLM and SGLang.
+    tensor_parallel: int | None = Field(default=None, ge=1, le=64)
+    pipeline_parallel: int | None = Field(default=None, ge=1, le=64)
 
 
 def saved(path: str) -> dict:
@@ -126,6 +129,10 @@ def drafts_for(path: str) -> list[dict]:
 
 @router.get("")
 def get_settings(path: str):
+    from . import engines
+
+    if folder := engines.local_folder(path):
+        return {"settings": saved(path), "context_max": engines.context_max(folder), "layers": None, "mtp": False, "drafts": []}
     if not Path(path).is_file():
         raise HTTPException(404, "That model isn't on this computer any more.")
     meta = _meta(path)
@@ -158,5 +165,5 @@ def put_settings(req: SaveSettings):
     stored[req.path] = {k: v for k, v in merged.items() if v != DEFAULTS[k]}
     prefs.update("model_settings", {p: s for p, s in stored.items() if s})
     if req.reload and manager.path == req.path and manager.state in ("ready", "loading", "failed"):
-        manager.load(LoadRequest(path=req.path, name=manager.model))
+        manager.load(LoadRequest(path=req.path, name=manager.model, engine=manager.engine, adapter=manager.adapter))
     return {"settings": saved(req.path), "status": manager.status()}

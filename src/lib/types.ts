@@ -68,6 +68,7 @@ export interface RuntimeStatus {
   model: string | null;
   path?: string | null;
   error: string | null;
+  /** What runs it: llama.cpp, mlx, transformers, vllm or sglang. */
   engine: string;
   available: boolean;
   /** What the loaded model's chat template allows; null until it's ready. */
@@ -80,13 +81,15 @@ export interface RuntimeStatus {
   context?: number | null;
   /** What it was loaded with (engine model_settings.py); the draft is a file name. */
   settings?: { context: number; gpu_layers: number; flash_attention: boolean; cache_type: string; speculation: string; draft: string | null; draft_max: number } | null;
+  /** The fine-tuning adapter loaded on top, for a run chatted with before exporting. */
+  adapter?: string | null;
 }
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
-  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move";
+  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move" | "engine-install";
   title: string;
   status: JobStatus;
   progress: number | null;
@@ -142,6 +145,8 @@ export interface LocalModel {
   quantization?: { label: string; convertible: boolean; note?: string } | null;
   /** llama.cpp's converter can turn it into a GGUF for chat. */
   convertible?: boolean;
+  /** A model folder that generates text and has a chat template, so MLX or another engine can chat with it. */
+  chat?: boolean;
 }
 
 export interface Run {

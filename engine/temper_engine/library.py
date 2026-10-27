@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from . import home
+from . import engines, home
 from .hub import SPLIT, group_gguf
 from .memory import read_gguf_metadata
 
@@ -201,6 +201,7 @@ def inspect(raw: str) -> dict:
         return {
             "kind": kind, "name": _name(path), "path": str(path), "size": _folder_size(path), "model_type": config.get("model_type"),
             "quantization": quant, "convertible": kind == "safetensors" and (quant is None or quant["convertible"]), "warnings": warnings,
+            "chat": engines.chat_model(str(path)),
         }
 
     gguf = _ggufs(path)

@@ -15,6 +15,9 @@ export interface LoadSettings {
   speculation: "none" | "draft" | "ngram" | "mtp";
   draft: string | null;
   draft_max: number;
+  /** GPUs to split the model across (vLLM and SGLang). */
+  tensor_parallel: number;
+  pipeline_parallel: number;
 }
 
 interface Offer {
@@ -74,6 +77,9 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
   }, [path, form, changed]);
 
   if (!path || !offer || !form) return null;
+  const engine = runtime?.engine ?? "llama.cpp";
+  const llama = engine === "llama.cpp";
+  const parallel = engine === "vllm" || engine === "sglang";
   const set = (change: Partial<LoadSettings>) => setForm((f) => (f ? { ...f, ...change } : f));
   const contexts = [...new Set([...CONTEXTS.filter((c) => !offer.context_max || c <= offer.context_max), ...(offer.context_max ? [offer.context_max] : [])])].sort((a, b) => a - b);
   const layers = offer.layers ?? 0;
@@ -99,6 +105,13 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
       <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
         <Cpu className="size-3.5" /> Model
       </h3>
+      {!llama && (
+        <p className="text-[12px] text-muted">
+          Running on {engine === "mlx" ? "MLX" : engine === "transformers" ? "Transformers" : engine === "vllm" ? "vLLM" : "SGLang"}
+          {runtime?.adapter ? ", with the fine-tuned adapter on top" : ""}.
+        </p>
+      )}
+      {(llama || parallel) && (
       <Field label="Context length" hint="How much of the chat the model can see at once. Longer needs more memory.">
         <Select value={form.context} onChange={(e) => set({ context: Number(e.target.value) })}>
           {contexts.map((c) => (
@@ -108,13 +121,27 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
           ))}
         </Select>
       </Field>
+      )}
+      {engine !== "transformers" && (
       <Field label="KV cache" hint={form.cache_type !== "f16" && !form.flash_attention ? "A quantized cache needs flash attention." : "The memory that holds the context."}>
         <Select value={form.cache_type} onChange={(e) => set({ cache_type: e.target.value as LoadSettings["cache_type"] })}>
           <option value="f16">16-bit (best quality)</option>
           <option value="q8_0">8-bit (about half the memory)</option>
-          <option value="q4_0">4-bit (about a quarter; may cost quality)</option>
+          {!parallel && <option value="q4_0">4-bit (about a quarter; may cost quality)</option>}
         </Select>
       </Field>
+      )}
+      {parallel && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Tensor parallel" hint="GPUs each layer is split across.">
+            <Input type="number" min={1} max={64} value={form.tensor_parallel} onChange={(e) => set({ tensor_parallel: Math.max(1, Number(e.target.value) || 1) })} />
+          </Field>
+          <Field label="Pipeline parallel" hint="Groups of layers on separate GPUs.">
+            <Input type="number" min={1} max={64} value={form.pipeline_parallel} onChange={(e) => set({ pipeline_parallel: Math.max(1, Number(e.target.value) || 1) })} />
+          </Field>
+        </div>
+      )}
+      {llama && <>
       <Toggle label="Flash attention" checked={form.flash_attention} onChange={(flash_attention) => set({ flash_attention, ...(!flash_attention && { cache_type: "f16" }) })} />
       {layers > 0 && (
         <label className="block">
@@ -162,6 +189,7 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
           <Input type="number" min={1} max={64} value={form.draft_max} onChange={(e) => set({ draft_max: Math.max(1, Math.min(64, Number(e.target.value) || 1)) })} />
         </Field>
       )}
+      </>}
       {stats && runtime?.settings?.speculation !== "none" && stats.drafted ? (
         <p className={cx("text-[12px]", (stats.accepted ?? 0) / stats.drafted < 0.4 ? "text-straw" : "text-muted")}>
           Last reply: {stats.speed.toFixed(1)} tokens/s, {Math.round(((stats.accepted ?? 0) / stats.drafted) * 100)}% of {stats.drafted} drafted tokens accepted.
@@ -172,7 +200,7 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
       ) : null}
       {changed && (
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-2.5">
-          {estimate && (
+          {estimate && llama && (
             <p className={cx("text-[12px]", estimate.verdict === "too_large" ? "text-danger" : estimate.verdict === "tight" ? "text-straw" : "text-muted")}>
               Needs about {bytes(estimate.total)} of the {bytes(estimate.budget.total)} this computer can give it.
             </p>

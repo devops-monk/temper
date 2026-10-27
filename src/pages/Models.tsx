@@ -1,7 +1,7 @@
 import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pause, Play, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CatalogView } from "../components/Catalog";
-import { CHAT_CONTEXT, type ChatEstimate, LoadButton } from "../components/LoadButton";
+import { CHAT_CONTEXT, type ChatEstimate, LoadButton, folderEngine, useEngines } from "../components/LoadButton";
 import { RepoAccess } from "../components/HfAccount";
 import { SOURCE_NAME, useHubSource } from "../components/HubSource";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Select, Toggle, cx } from "../components/ui";
@@ -335,6 +335,14 @@ const CONVERT_QUANTS = [
 ] as const;
 
 /** What a weights folder is for, in one line: training, export, or converting to chat with it. */
+/** Chat with a model folder on MLX (Apple Silicon) or an installed Transformers, vLLM or SGLang, without converting it. */
+function FolderLoad({ model }: { model: LocalModel }) {
+  const { engines } = useEngines();
+  const engine = folderEngine(engines, model.kind === "mlx" ? "mlx" : "hf");
+  if (!engine) return null;
+  return <LoadButton path={model.imported ? model.path! : model.id} name={model.id.split("/").pop()!} engine={engine.id} label={`Load with ${engine.name}`} />;
+}
+
 function weightsSummary(m: LocalModel) {
   const kind = KIND_LABEL[m.kind ?? "safetensors"] + (m.quantization ? `, pre-quantized as ${m.quantization.label}` : "");
   const uses = m.kind === "mlx" ? "for fine-tuning and export" : m.kind === "mistral" || m.quantization ? "convert to a GGUF to chat with it" : "for fine-tuning and export, or convert to a GGUF to chat with it";
@@ -500,6 +508,7 @@ function LocalModels({ version, onImported }: { version: number; onImported: (er
                   </p>
                   <span className="flex shrink-0 items-center gap-2">
                     {m.convertible && m.path && <ConvertButton model={m} onDone={load} />}
+                    {m.chat && (m.kind === "mlx" || !m.quantization) && m.path && <FolderLoad model={m} />}
                     {m.safetensors && !m.quantization && (
                       <Button size="sm" onClick={() => fineTune(m.imported ? m.path! : m.id)}>
                         <FlaskConical className="size-3.5" /> Fine-tune

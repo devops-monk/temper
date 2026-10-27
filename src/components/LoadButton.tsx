@@ -1,5 +1,5 @@
 import { Play } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
@@ -22,8 +22,48 @@ export interface ChatEstimate {
   advice: string[];
 }
 
-/** Loads a GGUF in chat, asking first when the memory estimate says it won't fit. */
-export function LoadButton({ path, name }: { path: string; name: string }) {
+/** An inference engine (engine engines.py): llama.cpp for GGUFs; MLX, Transformers, vLLM or SGLang for model folders. */
+export interface Engine {
+  id: "llama.cpp" | "mlx" | "transformers" | "vllm" | "sglang";
+  name: string;
+  available: boolean;
+  /** Why it can't run on this computer. */
+  unsupported: string | null;
+  installable: boolean;
+  formats: ("gguf" | "mlx" | "hf")[];
+}
+
+let enginesCache: Promise<Engine[]> | null = null;
+
+/** The engines, fetched once per page load; `refresh` after installing or removing one. */
+export function useEngines(): { engines: Engine[] | null; refresh: () => void } {
+  const [engines, setEngines] = useState<Engine[] | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    enginesCache ??= api<{ engines: Engine[] }>("/api/runtime/engines").then((r) => r.engines, () => []);
+    let stale = false;
+    enginesCache.then((e) => !stale && setEngines(e));
+    return () => {
+      stale = true;
+    };
+  }, [tick]);
+  return {
+    engines,
+    refresh: () => {
+      enginesCache = null;
+      setTick((t) => t + 1);
+    },
+  };
+}
+
+/** The engine that would run a model folder of this format, if one is installed. */
+export function folderEngine(engines: Engine[] | null, format: "mlx" | "hf"): Engine | null {
+  return engines?.find((e) => e.id !== "llama.cpp" && e.available && e.formats.includes(format)) ?? null;
+}
+
+/** Loads a model in chat, asking first when the memory estimate says it won't fit. A GGUF runs on llama.cpp; a folder (or a
+ * cached Hugging Face id) on `engine`, with a fine-tuning run's `adapter` on top. */
+export function LoadButton({ path, name, engine, adapter, label = "Load" }: { path: string; name: string; engine?: string; adapter?: string; label?: string }) {
   const { refreshRuntime, go, runtime } = useApp();
   const [error, setError] = useState<string | null>(null);
   const loaded = runtime?.state === "ready" && runtime.model === name;
@@ -43,7 +83,7 @@ export function LoadButton({ path, name }: { path: string; name: string }) {
             if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
           }
           try {
-            await api("/api/runtime/load", { json: { path, name } });
+            await api("/api/runtime/load", { json: { path, name, engine, adapter } });
             await refreshRuntime();
             go("chat");
           } catch (e) {
@@ -51,7 +91,7 @@ export function LoadButton({ path, name }: { path: string; name: string }) {
           }
         }}
       >
-        <Play className="size-3.5" /> {loaded ? "Open chat" : "Load"}
+        <Play className="size-3.5" /> {loaded ? "Open chat" : label}
       </Button>
     </span>
   );

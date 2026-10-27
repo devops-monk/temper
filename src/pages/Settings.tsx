@@ -1,6 +1,7 @@
 import { Monitor, Moon, RotateCw, Sun } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
+import { Engines } from "../components/Engines";
 import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
 import { Storage } from "../components/Storage";
@@ -167,6 +168,8 @@ export function SettingsPage() {
               </div>
             )}
           </Section>
+
+          {engine?.status === "running" && <Engines />}
 
           {system && (
             <Section title="This computer">

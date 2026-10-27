@@ -1,7 +1,8 @@
 """Auto-compaction: keeps a long chat inside the loaded model's context by summarising its oldest turns.
 
 Before each reply the chat page sends the whole thread here. The prompt is counted with the model's
-own chat template and tokenizer (llama-server's /apply-template and /tokenize). If it leaves too
+own chat template and tokenizer (llama-server's /apply-template and /tokenize, or the model folder's
+tokenizer for other engines). If it leaves too
 little room for the reply, the oldest turns are summarised by the same model, a chunk at a time when
 they're longer than its context ("rolling"), and the summary goes into the system prompt in their
 place. The chat keeps every message on screen; it stores the summary and how many messages it covers.
@@ -9,11 +10,14 @@ place. The chat keeps every message on screen; it stores the summary and how man
 
 from __future__ import annotations
 
+import functools
+
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import attachments
+from .engines import translate
 from .runtime import RuntimeManager, manager
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -72,8 +76,27 @@ def count(server: RuntimeManager, messages: list[dict]) -> int:
             media += sum(MEDIA_TOKENS.get(p.get("type"), 0) for p in content)
             content = "\n".join(p.get("text", "") for p in content if p.get("type") == "text")
         plain.append({"role": m["role"], "content": content or ""})
+    if server.engine != "llama.cpp":
+        return _count_local(server, plain) + media
     prompt = _post(server, "/apply-template", {"messages": plain})["prompt"]
     return len(_post(server, "/tokenize", {"content": prompt, "add_special": True, "parse_special": True})["tokens"]) + media
+
+
+@functools.lru_cache(maxsize=4)
+def _tokenizer(folder: str):
+    from transformers import AutoTokenizer
+
+    return AutoTokenizer.from_pretrained(folder)
+
+
+def _count_local(server: RuntimeManager, messages: list[dict]) -> int:
+    """Other engines have no tokenize endpoint, so the model folder's own tokenizer counts (no PyTorch needed)."""
+    try:
+        ids = _tokenizer(server.folder).apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
+    except Exception:  # no transformers, or a template that wants something else: roughly, so compaction still kicks in
+        return int(sum(len(str(m["content"])) for m in messages) / CHARS_PER_TOKEN) + 8 * len(messages)
+    ids = ids.get("input_ids", ids) if hasattr(ids, "get") else ids
+    return len(ids[0] if ids and isinstance(ids[0], list) else ids)
 
 
 def _sendable(messages: list[dict]) -> list[dict]:
@@ -125,7 +148,7 @@ def summarise(server: RuntimeManager, earlier: str | None, messages: list[dict])
             "temperature": 0.2,
             "chat_template_kwargs": {"enable_thinking": False},  # templates without the switch ignore it
         }
-        reply = _post(server, "/v1/chat/completions", body, timeout=600)
+        reply = _post(server, "/v1/chat/completions", translate(server.engine, body), timeout=600)
         summary = (reply["choices"][0]["message"].get("content") or "").strip() or summary
     if not summary:
         raise HTTPException(502, "The model returned an empty summary.")

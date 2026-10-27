@@ -1,4 +1,4 @@
-"""Inference runtime: supervises a llama.cpp server and exposes an OpenAI-compatible /v1 API."""
+"""Inference runtime: supervises a model server (llama.cpp, or another engine in engines.py) and exposes an OpenAI-compatible /v1 API."""
 
 from __future__ import annotations
 
@@ -38,8 +38,14 @@ class LoadRequest(BaseModel):
     cache_type: str | None = None
     speculation: str | None = None
     draft: str | None = None
+    tensor_parallel: int | None = None
+    pipeline_parallel: int | None = None
     # A vision or audio projector; by default an mmproj*.gguf beside the model, if there is one.
     mmproj: str | None = None
+    # llama.cpp for a GGUF; for a model folder (or a Hugging Face id in the local cache), the best installed engine.
+    engine: str | None = None
+    # A LoRA adapter folder from a fine-tuning run, applied on top (MLX, vLLM, SGLang).
+    adapter: str | None = None
 
 
 PROJECTOR_PREFERENCE = ("f16", "bf16", "f32", "q8")
@@ -88,6 +94,9 @@ class RuntimeManager:
         self.modalities: dict | None = None
         self.context: int | None = None  # tokens, as llama-server set it up
         self.settings: dict | None = None  # what it was loaded with (model_settings.resolve)
+        self.engine = "llama.cpp"
+        self.folder: str | None = None  # a model folder's local copy, for its tokenizer and chat template
+        self.adapter: str | None = None
         self.lock = threading.Lock()
 
     @property
@@ -100,7 +109,8 @@ class RuntimeManager:
             "model": self.model,
             "path": self.path,
             "error": self.error,
-            "engine": "llama.cpp",
+            "engine": self.engine,
+            "adapter": self.adapter,
             "available": llama_server_path() is not None,
             "reasoning": self.reasoning,
             "projector": Path(self.projector).name if self.projector else None,
@@ -110,6 +120,14 @@ class RuntimeManager:
         }
 
     def load(self, req: LoadRequest) -> None:
+        from . import engines, model_settings
+
+        folder = engines.local_folder(req.path)
+        engine = req.engine or engines.default_engine(folder or req.path)
+        if engine not in engines.ENGINES:
+            raise HTTPException(400, f"Unknown engine {engine}.")
+        if engine != "llama.cpp":
+            return self._load_other(req, engine, folder)
         binary = llama_server_path()
         if not binary:
             raise HTTPException(
@@ -117,15 +135,12 @@ class RuntimeManager:
             )
         if not Path(req.path).is_file():
             raise HTTPException(404, f"Model file not found: {req.path}")
-        from . import model_settings
 
         settings = model_settings.resolve(req.path, req.model_dump())
         model_settings.check(settings)
         self.unload()
         with self.lock:
-            self.port = _free_port()
-            self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
-            self.reasoning, self.modalities, self.context = None, None, None
+            self._start(req, "llama.cpp", None)
             self.projector = req.mmproj or find_projector(req.path)
             self.settings = settings
             cmd = [
@@ -139,6 +154,32 @@ class RuntimeManager:
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
         threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
 
+    def _start(self, req: LoadRequest, engine: str, folder: str | None) -> None:
+        self.port = _free_port()
+        self.model, self.path, self.state, self.error, self.log = req.name or Path(req.path).name, req.path, "loading", None, []
+        self.reasoning, self.modalities, self.context = None, None, None
+        self.engine, self.folder, self.adapter, self.projector = engine, folder, None, None
+
+    def _load_other(self, req: LoadRequest, engine: str, folder: str | None) -> None:
+        """Starts an engine other than llama.cpp on a model folder (engines.py)."""
+        from . import engines, model_settings
+
+        if not folder:
+            raise HTTPException(404, f"Model not found on this computer: {req.path}. Download it first.")
+        if engines.model_format(folder) not in engines.ENGINES[engine]["formats"]:
+            raise HTTPException(400, f"{engines.ENGINES[engine]['name']} can't load this model's format.")
+        if req.adapter and not (Path(req.adapter) / "adapter_config.json").is_file():
+            raise HTTPException(404, "The fine-tuned adapter isn't in that run's folder any more.")
+        settings = model_settings.resolve(req.path, req.model_dump())
+        cmd = engines.command(engine, folder, settings, 0, req.adapter)  # checks the engine is installed
+        self.unload()
+        with self.lock:
+            self._start(req, engine, folder)
+            self.settings, self.adapter = settings, req.adapter
+            cmd = engines.command(engine, folder, settings, self.port, req.adapter)
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+        threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
+
     def _watch(self, proc: subprocess.Popen) -> None:
         assert proc.stdout
         threading.Thread(target=self._wait_ready, args=(proc,), daemon=True).start()
@@ -149,7 +190,8 @@ class RuntimeManager:
             self.state = "failed"
             tail = "\n".join(self.log[-8:])
             arch = next((m.group(1) for line in self.log if (m := UNKNOWN_ARCH.search(line))), None)
-            reason = f"llama.cpp can't run {self.model}: it doesn't support the {arch} architecture." if arch else f"llama-server exited with code {code}"
+            name = "llama-server" if self.engine == "llama.cpp" else f"The {self.engine} server"
+            reason = f"{self.engine} can't run {self.model}: it doesn't support the {arch} architecture." if arch else f"{name} exited with code {code}"
             self.error = f"{reason}\n{tail}"
 
     def _wait_ready(self, proc: subprocess.Popen) -> None:
@@ -157,6 +199,9 @@ class RuntimeManager:
         while time.time() < deadline and proc.poll() is None and proc is self.proc:
             try:
                 if httpx.get(f"{self.base}/health", timeout=1).status_code == 200:
+                    if self.engine != "llama.cpp":
+                        self._ready_other()
+                        return
                     try:
                         props = httpx.get(f"{self.base}/props", timeout=5).json()
                         self.reasoning = reasoning_support(props)
@@ -170,11 +215,23 @@ class RuntimeManager:
                 pass
             time.sleep(0.5)
 
+    def _ready_other(self) -> None:
+        from . import engines
+
+        assert self.folder and self.settings
+        self.reasoning = reasoning_support({"chat_template": engines.chat_template(self.folder)})
+        self.modalities = {"vision": False, "audio": False}
+        native = engines.context_max(self.folder)
+        # vLLM and SGLang are started with the context; MLX and Transformers grow theirs up to the model's maximum.
+        self.context = self.settings["context"] if self.engine in ("vllm", "sglang") else native or self.settings["context"]
+        self.state = "ready"
+
     def unload(self) -> None:
         with self.lock:
             proc, self.proc = self.proc, None
             self.state, self.model, self.path, self.error, self.reasoning = "idle", None, None, None, None
             self.projector, self.modalities, self.context, self.settings = None, None, None, None
+            self.engine, self.folder, self.adapter = "llama.cpp", None, None
         if proc and proc.poll() is None:
             proc.terminate()
             try:
@@ -236,9 +293,12 @@ async def v1_chat(request: Request):
         takes = server.modalities or {}
         for kind, modality, what in (("image", "vision", "see images"), ("audio", "audio", "hear audio")):
             if kind in kinds and not takes.get(modality):
-                hint = " Its projector (an mmproj .gguf) wasn't found beside it." if not server.projector else ""
+                hint = " Its projector (an mmproj .gguf) wasn't found beside it." if server.engine == "llama.cpp" and not server.projector else ""
                 raise HTTPException(400, f"{server.model} can't {what}.{hint} Load a model that can, or remove the attachment.")
         body["messages"] = attachments.expand(body["messages"])
+    from .engines import translate
+
+    body = translate(server.engine, body)
     url = f"{server.base}/v1/chat/completions"
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:

@@ -1,6 +1,6 @@
 import { Check, Folder, FolderOpen, FolderPlus, Pencil, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LoadButton } from "../components/LoadButton";
+import { LoadButton, useEngines } from "../components/LoadButton";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, Select, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
@@ -27,6 +27,8 @@ interface Item {
   /** The dataset a fine-tune was trained on. */
   trained_on?: string;
   adapter?: boolean;
+  /** How a fine-tune was trained: "mlx" on Apple Silicon, else on a GPU. */
+  backend?: string;
   formats?: string[];
 }
 
@@ -41,6 +43,15 @@ const KINDS: { kind: Kind; label: string; plural: string }[] = [
 const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<Kind, string>;
 
 type View = { type: "all" } | { type: "favourites" } | { type: "kind"; kind: Kind } | { type: "folder"; name: string };
+
+/** Chat with a fine-tune before exporting it: its base model with the adapter on top. MLX runs MLX adapters; vLLM and SGLang
+ * run the GPU trainer's. */
+function ChatWithRun({ item }: { item: Item }) {
+  const { engines } = useEngines();
+  const engine = item.backend === "mlx" ? engines?.find((e) => e.id === "mlx" && e.available) : engines?.find((e) => (e.id === "vllm" || e.id === "sglang") && e.available);
+  if (!engine) return null;
+  return <LoadButton path={item.base_model!} name={item.name} engine={engine.id} adapter={`${item.path}/adapter`} label="Chat with it" />;
+}
 
 function details(item: Item): string {
   if (item.kind === "fine-tune") return [item.base_model, item.adapter ? "adapter saved" : "no adapter yet"].filter(Boolean).join(", ");
@@ -330,6 +341,7 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
             Export
           </Button>
         )}
+        {item.kind === "fine-tune" && item.adapter && item.base_model && <ChatWithRun item={item} />}
         {gguf && <LoadButton path={gguf} name={gguf.split(/[\\/]/).pop()!} />}
         {folders.length > 0 && (
           <Select value={item.folder ?? ""} onChange={(e) => void patch({ folder: e.target.value })} className="h-7 w-auto max-w-36 text-[12.5px]" aria-label={`Folder for ${item.name}`} title="Move to a folder">
