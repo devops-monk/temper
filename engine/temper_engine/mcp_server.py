@@ -74,23 +74,14 @@ def _unload(_: dict) -> Any:
 
 
 def _ask(args: dict) -> Any:
-    from .runtime import route
+    from .runtime import complete
 
     prompt = args.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("Give the `prompt` to send.")
     messages = ([{"role": "system", "content": args["system"]}] if args.get("system") else []) + [{"role": "user", "content": prompt}]
-    body = {"messages": messages, "max_tokens": int(args.get("max_tokens") or 1024), "stream": False, **({"model": args["model"]} if args.get("model") else {})}
-    if args.get("temperature") is not None:
-        body["temperature"] = float(args["temperature"])
-    server, url, body = route(body)
-    r = httpx.post(url, json=body, timeout=None)
-    if r.status_code != 200:
-        raise ValueError(f"The model's server answered {r.status_code}: {r.text[:300]}")
-    choice = (r.json().get("choices") or [{}])[0]
-    text = (choice.get("message") or {}).get("content") or ""
-    # A thinking model's reasoning, when the server leaves it in the text.
-    return re.sub(r"^\s*<think>.*?</think>\s*", "", text, flags=re.S) or "(The model wrote nothing.)"
+    temperature = float(args["temperature"]) if args.get("temperature") is not None else None
+    return complete(messages, int(args.get("max_tokens") or 1024), temperature, args.get("model")) or "(The model wrote nothing.)"
 
 
 def _jobs(args: dict) -> Any:

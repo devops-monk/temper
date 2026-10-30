@@ -97,7 +97,7 @@ export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
-  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move" | "engine-install" | "sandbox-install";
+  kind: "download" | "train" | "export" | "recipe" | "prepare" | "convert" | "move" | "engine-install" | "sandbox-install" | "research";
   title: string;
   status: JobStatus;
   progress: number | null;
@@ -166,7 +166,7 @@ export interface Run {
   path: string;
 }
 
-export type Page = "chat" | "models" | "library" | "train" | "datasets" | "recipes" | "export" | "connect" | "settings";
+export type Page = "chat" | "research" | "models" | "library" | "train" | "datasets" | "recipes" | "export" | "connect" | "settings";
 
 /** A recipe column in data-designer's format; the editor knows the common fields of each type. */
 export interface RecipeColumn {

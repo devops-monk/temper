@@ -441,6 +441,19 @@ def route(body: dict) -> tuple[RuntimeManager, str, dict]:
     return server, f"{server.base}/v1/chat/completions", translate(server.engine, body)
 
 
+def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | None = None, model: str | None = None) -> str:
+    """One whole reply from a loaded model (chat's, or `model`), with a thinking model's reasoning left out."""
+    body = {"messages": messages, "max_tokens": max_tokens, "stream": False, **({"model": model} if model else {})}
+    if temperature is not None:
+        body["temperature"] = temperature
+    _server, url, body = route(body)
+    r = httpx.post(url, json=body, timeout=None)
+    if r.status_code != 200:
+        raise ValueError(f"The model's server answered {r.status_code}: {r.text[:300]}")
+    text = ((r.json().get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    return re.sub(r"^\s*<think>.*?</think>\s*", "", text, flags=re.S)
+
+
 @router.post("/v1/chat/completions")
 async def v1_chat(request: Request):
     _, url, body = route(await request.json())

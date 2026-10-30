@@ -13,6 +13,7 @@ import { ExportPage } from "./pages/Export";
 import { LibraryPage } from "./pages/Library";
 import { ModelsPage } from "./pages/Models";
 import { RecipesPage } from "./pages/Recipes";
+import { ResearchPage } from "./pages/Research";
 import { SettingsPage } from "./pages/Settings";
 import { TrainPage } from "./pages/Train";
 
@@ -58,6 +59,7 @@ export function App() {
           ) : (
             <>
               {page === "chat" && <ChatPage />}
+              {page === "research" && <ResearchPage />}
               {page === "models" && <ModelsPage />}
               {page === "library" && <LibraryPage />}
               {page === "train" && <TrainPage />}

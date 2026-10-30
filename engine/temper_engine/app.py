@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, attachments, catalog, chat_import, chats, compaction, compare, convert, datasets, doctor, engines, export, files, generations, hardware, hub, instructions, jobs, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, recipes, runtime, sandbox, search, skills, sources, storage, tools, training
+from . import __version__, account, attachments, catalog, chat_import, chats, compaction, compare, convert, datasets, doctor, engines, export, files, generations, hardware, hub, instructions, jobs, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, recipes, research, runtime, sandbox, search, skills, sources, storage, tools, training
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health"}
@@ -48,7 +48,7 @@ def create_app(token: str = "") -> FastAPI:
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, datasets, files, llamacpp, recipes):
+    for module in (attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, datasets, files, llamacpp, recipes, research):
         app.include_router(module.router)
 
     return app

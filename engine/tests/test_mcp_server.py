@@ -64,7 +64,7 @@ def test_ask_model_returns_the_answer_without_its_thinking(monkeypatch):
         seen.update(json)
         return httpx.Response(200, json={"choices": [{"message": {"content": "<think>hmm</think>\nParis."}}]})
 
-    monkeypatch.setattr(mcp_server, "httpx", type("H", (), {"post": staticmethod(fake_post), "HTTPError": httpx.HTTPError}))
+    monkeypatch.setattr(runtime.httpx, "post", fake_post)
     monkeypatch.setattr(runtime, "route", lambda body: (None, "http://model/v1/chat/completions", body))
     out = mcp_server._call("ask_model", {"prompt": "Capital of France?", "system": "Be brief.", "max_tokens": 50})
     assert out["content"][0]["text"] == "Paris." and seen["messages"][0] == {"role": "system", "content": "Be brief."} and seen["max_tokens"] == 50

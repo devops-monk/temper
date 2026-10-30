@@ -173,7 +173,7 @@ temper/
 ## Phase 5: Search, research and RAG
 
 - [x] **5.1 Web search tool**: private web search with configurable providers. A `web_search` tool (asks first) returns numbered results with addresses and snippets, to read in full with `read_web_page`. Settings → Web search picks the provider: DuckDuckGo (default, no key), SearXNG (your instance), Brave Search or Tavily (your key, kept masked). Only the search words go to the provider. DuckDuckGo tried live; SearXNG, Brave and Tavily are tested against mocked answers (no instance or keys here).
-- [ ] **5.2 Deep research**: multi-step research runs with citations, a review screen and a report export.
+- [x] **5.2 Deep research**: multi-step research runs with citations, a review screen and a report export. A Research page: the loaded model plans searches, reads each source one at a time (so small models keep up) and notes what bears on the question, may search again for what's missing (Quick, Standard, Thorough), then writes a report from the notes alone with [n] citations that jump to the source. Review: untick sources and write the report again. Export to Markdown with a source list. Runs are kept and listed. Tried live with a 4B MLX model: 3 searches, 5 sources, a correct cited report.
 - [ ] **5.3 Knowledge base (RAG)**: add folders and files (PDF, DOCX, PPTX, XLSX, Markdown, code); chunk, embed (local embedding GGUF) and index in SQLite + FTS5 + vectors; hybrid retrieval with citations.
 - [ ] **5.4 Folder sync**: watch folders and re-index on change, honouring `.gitignore`.
 - [ ] **5.5 OCR for scanned PDFs**: vision-model transcription first, Tesseract as a fallback.

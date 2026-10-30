@@ -8,7 +8,7 @@ export const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(na
 export const MOD = MAC ? "⌘" : "Ctrl";
 
 /** Pages in the order the rail shows them, for Mod+1…8. */
-const PAGES: Page[] = ["chat", "models", "library", "train", "datasets", "recipes", "export", "connect"];
+const PAGES: Page[] = ["chat", "research", "models", "library", "train", "datasets", "recipes", "export", "connect"];
 
 /** Every shortcut, for the list that Mod+/ opens, in the current language. */
 export const shortcuts = (): { keys: string; what: string }[] => [
@@ -16,7 +16,7 @@ export const shortcuts = (): { keys: string; what: string }[] => [
   { keys: `${MOD} F`, what: t("keys.find") },
   { keys: `${MOD} L`, what: t("keys.focus") },
   { keys: "Esc", what: t("keys.stop") },
-  { keys: `${MOD} 1 … ${MOD} 8`, what: t("keys.pages") },
+  { keys: `${MOD} 1 … ${MOD} ${PAGES.length}`, what: t("keys.pages") },
   { keys: `${MOD} ,`, what: t("keys.settings") },
   { keys: `${MOD} +  /  ${MOD} −`, what: t("keys.zoom") },
   { keys: `${MOD} 0`, what: t("keys.actual") },
