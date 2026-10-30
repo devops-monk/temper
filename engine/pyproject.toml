@@ -12,6 +12,8 @@ dependencies = [
   "huggingface_hub>=0.26",
   "packaging>=23",
   "pypdf>=5",
+  # Windows has no time-zone database of its own; zoneinfo reads this one (the clock tool).
+  "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

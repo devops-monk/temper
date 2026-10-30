@@ -1874,6 +1874,7 @@ dependencies = [
     { name = "packaging" },
     { name = "psutil" },
     { name = "pypdf" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uvicorn" },
 ]
 
@@ -1898,6 +1899,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=6.0" },
     { name = "pypdf", specifier = ">=5" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 provides-extras = ["mlx", "dev"]
