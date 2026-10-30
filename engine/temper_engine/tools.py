@@ -135,6 +135,21 @@ def _search(args: dict, ctx: dict) -> str:
     return search.results_text(query, int(args.get("count") or 6))
 
 
+def _knowledge(args: dict, ctx: dict) -> str:
+    from . import knowledge
+
+    query = args.get("query")
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("Give what to look for in `query`.")
+    return knowledge.results_text(query.strip())
+
+
+def _has_knowledge() -> bool:
+    from . import knowledge
+
+    return any(b["enabled"] for b in knowledge.bases())
+
+
 def _shell() -> bool:
     from . import sandbox
 
@@ -184,6 +199,14 @@ TOOLS: dict[str, Tool] = {
             {"type": "object", "properties": {"query": {"type": "string", "description": "What to search for, in a few words"}, "count": {"type": "integer", "description": "How many results, up to 10 (default 6)"}}, "required": ["query"]},
             _search,
             mode="ask",
+        ),
+        Tool(
+            "search_knowledge",
+            "Knowledge bases",
+            "Searches the person's own documents (their knowledge bases) and returns the passages that match best, with the file each came from. Use it for questions about their files, notes and projects.",
+            {"type": "object", "properties": {"query": {"type": "string", "description": "What to look for: a question or a few key words"}}, "required": ["query"]},
+            _knowledge,
+            available=_has_knowledge,
         ),
         Tool(
             "read_web_page",

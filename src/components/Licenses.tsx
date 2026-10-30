@@ -33,6 +33,7 @@ const DOWNLOADED = [
   ["vLLM (if installed)", "Apache-2.0", "https://github.com/vllm-project/vllm"],
   ["SGLang (if installed)", "Apache-2.0", "https://github.com/sgl-project/sglang"],
   ["pypdf", "BSD-3-Clause", "https://github.com/py-pdf/pypdf"],
+  ["NumPy", "BSD-3-Clause", "https://github.com/numpy/numpy"],
   ["tzdata (Windows)", "Apache-2.0", "https://github.com/python/tzdata"],
   ["python-docx", "MIT", "https://github.com/python-openxml/python-docx"],
 ] as const;
