@@ -23,6 +23,17 @@ fine-tuning does to a base model.
 
 Everything else is planned feature by feature in [PLAN.md](PLAN.md).
 
+## From a terminal
+
+The app's own binary takes a few commands while Temper is open (on macOS it's
+`/Applications/Temper.app/Contents/MacOS/temper`; alias it as `temper`):
+
+```bash
+temper start codex          # or opencode, aider: starts the agent on the model loaded in Temper
+temper mcp add claude       # or codex, cursor, vscode: gives the agent Temper's MCP tools
+temper doctor               # checks drivers, disk, ports and engine packages (--mcp checks the MCP server)
+```
+
 ## Develop
 
 You need Node 20+, Rust (stable) and [uv](https://docs.astral.sh/uv/).

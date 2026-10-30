@@ -4,13 +4,15 @@
 //! (see setup.rs). Development builds run it straight from `../engine` with `uv run`, unless
 //! TEMPER_BOOTSTRAP is set to exercise the setup flow.
 //!
-//! The engine listens on a loopback port and requires a random bearer token, so other local
-//! processes cannot drive it. It also watches our PID and exits if the app dies uncleanly.
+//! The engine listens on a loopback port and requires a bearer token, so other local processes
+//! cannot drive it. The token is random, kept in app data (readable only by this user) so agent
+//! configs that use it keep working across launches. The engine also watches our PID and exits if
+//! the app dies uncleanly.
 
 use crate::setup::{self, Check, Layout, Profile, SetupState, Shared};
 use serde::Serialize;
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -72,8 +74,8 @@ pub fn uses_setup() -> bool {
     !cfg!(debug_assertions) || std::env::var_os("TEMPER_BOOTSTRAP").is_some()
 }
 
-/// What `temper doctor` runs: the engine's checks, printed as text.
-pub fn doctor_command(app: &AppHandle) -> Result<Command, String> {
+/// What `temper doctor`, `temper start` and `temper mcp` run: the engine's command of that name.
+pub fn cli_command(app: &AppHandle, args: &[String]) -> Result<Command, String> {
     let mut cmd = if uses_setup() {
         let layout = layout(app);
         match setup::check(&layout, &app.package_info().version.to_string()) {
@@ -90,7 +92,7 @@ pub fn doctor_command(app: &AppHandle) -> Result<Command, String> {
         c.arg("run").arg("--quiet").arg("--project").arg(project).arg("temper-engine");
         c
     };
-    cmd.arg("doctor");
+    cmd.args(args);
     if let Ok(data) = app.path().app_data_dir() {
         cmd.env("TEMPER_HOME", data);
     }
@@ -135,6 +137,9 @@ impl Engine {
     }
 
     pub fn start(&self, app: &AppHandle) {
+        if let Ok(data) = app.path().app_data_dir() {
+            self.inner.lock().unwrap().token = api_key(&data);
+        }
         if !uses_setup() {
             let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine");
             return self.supervise(app, Launcher::Dev { project });
@@ -311,6 +316,28 @@ pub(crate) fn find_uv() -> Option<PathBuf> {
     }
     dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
     dirs.into_iter().map(|d| d.join(exe)).find(|p| p.is_file())
+}
+
+/// The key agents and the app use, made once and kept in app data so it survives restarts.
+fn api_key(data: &Path) -> String {
+    let file = data.join("api-key");
+    if let Ok(key) = std::fs::read_to_string(&file) {
+        let key = key.trim();
+        if key.len() >= 32 && key.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return key.to_string();
+        }
+    }
+    let key = uuid::Uuid::new_v4().simple().to_string();
+    let _ = std::fs::create_dir_all(data);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    if let Ok(mut f) = options.open(&file) {
+        use std::io::Write;
+        let _ = f.write_all(key.as_bytes());
+    }
+    key
 }
 
 /// Prefers 8765 so agent configs that point at the engine keep working across launches.

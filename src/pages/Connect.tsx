@@ -186,7 +186,9 @@ export function ConnectPage() {
         <div className="max-w-[760px]">
           <Tabs recipes={RECIPES} active={active} onChange={setActive} url={url} token={token} model={model} />
           <p className="mt-4 text-[13px] text-muted">
-            The key changes every time Temper starts. Claude Code needs an Anthropic-compatible endpoint, which is on the roadmap (PLAN.md, item 10.2).
+            The key stays the same when Temper restarts, so these configs keep working. From a terminal, <span className="font-mono text-[12.5px] text-text">temper start codex</span> (or{" "}
+            <span className="font-mono text-[12.5px] text-text">opencode</span>, <span className="font-mono text-[12.5px] text-text">aider</span>) starts the agent already pointed at the loaded model. Claude Code needs an Anthropic-compatible
+            endpoint, which is on the roadmap (PLAN.md, item 10.2).
           </p>
         </div>
 
@@ -197,7 +199,10 @@ export function ConnectPage() {
             them questions, and follow or cancel downloads, training and exports. It uses the same key.
           </p>
           <Tabs recipes={MCP_RECIPES} active={activeMcp} onChange={setActiveMcp} url={url} token={token} model={model} />
-          <p className="mt-4 text-[13px] text-muted">Because the key changes when Temper restarts, update it in the agent's config after a restart.</p>
+          <p className="mt-4 text-[13px] text-muted">
+            Or, from a terminal: <span className="font-mono text-[12.5px] text-text">temper mcp add claude</span> (or <span className="font-mono text-[12.5px] text-text">codex</span>, <span className="font-mono text-[12.5px] text-text">cursor</span>,{" "}
+            <span className="font-mono text-[12.5px] text-text">vscode</span>) adds it for you, and <span className="font-mono text-[12.5px] text-text">temper doctor --mcp</span> checks it.
+          </p>
         </div>
       </div>
     </div>

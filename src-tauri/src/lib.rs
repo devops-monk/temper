@@ -54,7 +54,7 @@ fn headless_setup() -> Option<(Profile, bool)> {
 }
 
 /// Release builds on Windows have no console of their own; borrow the terminal that started us
-/// so `temper doctor` and `temper --setup` can print.
+/// so `temper doctor`, `temper start` and `temper --setup` can print.
 fn attach_console() {
     #[cfg(windows)]
     unsafe {
@@ -66,8 +66,10 @@ fn attach_console() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let headless = headless_setup();
-    let doctor = std::env::args().nth(1).as_deref() == Some("doctor");
-    if headless.is_some() || doctor {
+    // `temper doctor`, `temper start <agent>` and `temper mcp add <agent>` are the engine's to answer.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let cli = matches!(args.first().map(String::as_str), Some("doctor" | "start" | "mcp"));
+    if headless.is_some() || cli {
         attach_console();
     }
     let app = tauri::Builder::default()
@@ -77,10 +79,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Engine::new())
         .setup(move |app| {
-            if doctor {
+            if cli {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
-                    let code = match engine::doctor_command(&handle).and_then(|mut c| c.status().map_err(|e| e.to_string())) {
+                    let code = match engine::cli_command(&handle, &args).and_then(|mut c| c.status().map_err(|e| e.to_string())) {
                         Ok(status) => status.code().unwrap_or(1),
                         Err(e) => {
                             eprintln!("{e}");
