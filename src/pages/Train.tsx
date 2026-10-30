@@ -2,7 +2,7 @@ import { FolderOpen, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LossChart } from "../components/LossChart";
 import { MemoryEstimate, type Budget, type Estimate, type Verdict } from "../components/MemoryEstimate";
-import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, cx } from "../components/ui";
+import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { duration } from "../lib/format";
 import { useApp } from "../lib/store";
@@ -18,6 +18,7 @@ interface Form {
   dataset_format: "auto" | "messages" | "sharegpt" | "alpaca" | "text";
   max_samples: number;
   method: "qlora" | "lora" | "full";
+  train_embeddings: boolean;
   max_seq_length: number;
   lora_r: number;
   lora_alpha: number;
@@ -38,6 +39,7 @@ const DEFAULTS: Form = {
   dataset_format: "auto",
   max_samples: 2000,
   method: "qlora",
+  train_embeddings: false,
   max_seq_length: 2048,
   lora_r: 16,
   lora_alpha: 16,
@@ -55,7 +57,7 @@ const MLX_DEFAULT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit";
 const METHODS = {
   qlora: { label: "QLoRA", note: "4-bit base weights plus small adapters. Uses the least memory." },
   lora: { label: "LoRA", note: "16-bit base weights plus adapters. Slightly better quality, about twice the memory." },
-  full: { label: "Full fine-tune", note: "Updates every weight. Needs a large GPU." },
+  full: { label: "Full fine-tune", note: "Updates every weight. Needs a large GPU, or on a Mac a 16-bit model and plenty of memory." },
 } as const;
 
 function NumberField({ label, value, onChange, step, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string }) {
@@ -361,25 +363,22 @@ export function TrainPage() {
 
           <Section title="Method">
             <div className="flex flex-col gap-2" role="radiogroup">
-              {(Object.keys(METHODS) as (keyof typeof METHODS)[]).map((m) => {
-                const disabled = trainer === "mlx" && m === "full";
-                return (
-                  <button
-                    key={m}
-                    role="radio"
-                    aria-checked={form.method === m}
-                    disabled={disabled}
-                    onClick={() => set("method")(m)}
-                    className={cx(
-                      "rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-40",
-                      form.method === m ? "border-accent bg-accent/6" : "border-line bg-surface hover:bg-surface-2",
-                    )}
-                  >
-                    <span className="font-medium">{METHODS[m].label}</span>
-                    <span className="block text-[12.5px] text-muted">{METHODS[m].note}</span>
-                  </button>
-                );
-              })}
+              {(Object.keys(METHODS) as (keyof typeof METHODS)[]).map((m) => (
+                <button
+                  key={m}
+                  role="radio"
+                  aria-checked={form.method === m}
+                  onClick={() => set("method")(m)}
+                  className={cx("rounded-lg border px-3 py-2 text-left transition-colors", form.method === m ? "border-accent bg-accent/6" : "border-line bg-surface hover:bg-surface-2")}
+                >
+                  <span className="font-medium">{METHODS[m].label}</span>
+                  <span className="block text-[12.5px] text-muted">{METHODS[m].note}</span>
+                </button>
+              ))}
+              <Toggle label="Also train the embeddings and output head" checked={form.train_embeddings} onChange={set("train_embeddings")} />
+              <p className="-mt-1.5 text-[12px] text-muted">
+                For continued pretraining on new words or a new language. Needs a 16-bit model, and more memory.
+              </p>
             </div>
           </Section>
 

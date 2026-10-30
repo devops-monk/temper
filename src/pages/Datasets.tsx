@@ -1,10 +1,11 @@
-import { Database, FlaskConical, FolderOpen, Sparkles } from "lucide-react";
+import { Database, FileText, FlaskConical, FolderOpen, FolderPlus, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
+import { pickFolder } from "../components/Skills";
 
 type Format = "messages" | "sharegpt" | "alpaca" | "text";
 type Turn = { role: string; content: string };
@@ -107,6 +108,73 @@ function PrepareRun({ job }: { job: Job }) {
           <span className="truncate font-mono text-[11.5px] text-muted" title={result.output}>
             {result.output}
           </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Training text for continued pretraining: documents cut into pieces, no chat format needed (engine datasets.from_documents). */
+function FromDocuments() {
+  const { jobs, refreshJobs } = useApp();
+  const [paths, setPaths] = useState<string[]>([]);
+  const [size, setSize] = useState(4000);
+  const [error, setError] = useState<string | null>(null);
+  const runs = jobs.filter((j) => j.kind === "prepare" && j.title.startsWith("Training text from")).slice(0, 3);
+
+  async function add() {
+    const folder = await pickFolder("Folder of documents to train on");
+    if (folder) setPaths((p) => [...new Set([...p, folder])]);
+  }
+
+  async function make() {
+    setError(null);
+    try {
+      await api("/api/datasets/from-documents", { json: { paths, chunk_chars: size } });
+      setPaths([]);
+      void refreshJobs();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="mx-auto mt-6 max-w-[620px] rounded-xl border border-line bg-surface p-4 text-left text-[13px]">
+      <div className="mb-1 flex items-center gap-2 font-medium">
+        <FileText className="size-4 text-muted" /> Or train on your own documents
+      </div>
+      <p className="mb-3 text-[12.5px] text-muted">
+        Temper reads PDF, Word, PowerPoint, Excel, HTML, Markdown, text and code, and cuts it into pieces of plain training text, so a model learns their
+        content and style (continued pretraining). No chat format needed; 5% is held out to measure progress.
+      </p>
+      {paths.map((p) => (
+        <div key={p} className="flex items-center gap-2 font-mono text-[12px]">
+          <span className="min-w-0 flex-1 truncate">{p}</span>
+          <button className="text-muted hover:text-text" onClick={() => setPaths(paths.filter((x) => x !== p))} aria-label="Remove folder">
+            ×
+          </button>
+        </div>
+      ))}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={() => void add()}>
+          <FolderPlus className="size-3.5" /> Add folder
+        </Button>
+        <Select value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-auto" aria-label="Piece size">
+          <option value={2000}>Pieces of about 500 tokens</option>
+          <option value={4000}>Pieces of about 1,000 tokens</option>
+          <option value={8000}>Pieces of about 2,000 tokens</option>
+        </Select>
+        <span className="flex-1" />
+        <Button size="sm" variant="primary" onClick={() => void make()} disabled={!paths.length}>
+          <Sparkles className="size-3.5" /> Make training text
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
+      {runs.length > 0 && (
+        <div className="mt-3 flex flex-col gap-2">
+          {runs.map((j) => (
+            <PrepareRun key={j.id} job={j} />
+          ))}
         </div>
       )}
     </div>
@@ -233,6 +301,7 @@ export function DatasetsPage() {
                   </Button>
                 ))}
               </div>
+              <FromDocuments />
             </EmptyState>
           )}
         </div>

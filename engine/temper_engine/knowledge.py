@@ -185,23 +185,23 @@ def read_document(path: Path) -> list[tuple[str, str]]:
     return _markdown_sections(text) if suffix in (".md", ".markdown") else [("", text)]
 
 
-def chunks(sections: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Passages of about CHUNK characters, cut at paragraph or line breaks, overlapping a little."""
+def chunks(sections: list[tuple[str, str]], size: int = CHUNK, overlap: int = OVERLAP) -> list[tuple[str, str]]:
+    """Passages of about `size` characters, cut at paragraph or line breaks, overlapping a little."""
     out = []
     for heading, text in sections:
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
         start = 0
         while start < len(text):
-            end = min(start + CHUNK, len(text))
+            end = min(start + size, len(text))
             if end < len(text):
-                cut = max(text.rfind("\n\n", start + CHUNK // 2, end), text.rfind("\n", start + CHUNK // 2, end), text.rfind(". ", start + CHUNK // 2, end))
+                cut = max(text.rfind("\n\n", start + size // 2, end), text.rfind("\n", start + size // 2, end), text.rfind(". ", start + size // 2, end))
                 end = cut + 1 if cut > 0 else end
             piece = text[start:end].strip()
             if piece:
                 out.append((heading, piece))
             if end >= len(text):
                 break
-            start = max(end - OVERLAP, start + 1)
+            start = max(end - overlap, start + 1)
     return out
 
 

@@ -6,6 +6,7 @@ Prints `@@{json}` lines (see jobs.emit_from_worker) that the engine turns into l
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import subprocess
@@ -84,7 +85,7 @@ def train_gpu(cfg: dict, out: Path) -> None:
             r=cfg["lora_r"],
             lora_alpha=cfg["lora_alpha"],
             lora_dropout=cfg["lora_dropout"],
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"] + (["embed_tokens", "lm_head"] if cfg.get("train_embeddings") else []),
             bias="none",
             use_gradient_checkpointing="unsloth",
             random_state=cfg["seed"],
@@ -252,9 +253,12 @@ def train_mlx(cfg: dict, out: Path) -> None:
     ]
     if fmt != "text":
         cmd.append("--mask-prompt")  # loss on the replies only, not on the prompts
+    if cfg["method"] == "full":
+        cmd += ["--fine-tune-type", "full", "--num-layers", "-1"]  # every layer, not mlx-lm's default last 16
+    env = {**os.environ, **({"TEMPER_TRAIN_EMBEDDINGS": "1"} if cfg.get("train_embeddings") else {})}
     emit("phase", name="Training", total_steps=iters)
     started = time.time()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
     assert proc.stdout
     last = ""
     for line in proc.stdout:

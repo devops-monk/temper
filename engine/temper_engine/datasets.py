@@ -143,3 +143,71 @@ def prepare(req: Prepare):
     job.result["output"] = str(output)
     registry.run_worker(job, "temper_engine.prepare_worker", str(cfg_path))
     return job.summary()
+
+
+# --- Training text from documents (continued pretraining) ------------------------------------------
+
+
+class FromDocuments(BaseModel):
+    paths: list[str] = Field(min_length=1)  # folders and files
+    name: str | None = None
+    chunk_chars: int = Field(4000, ge=200, le=40_000)  # about 1,000 tokens
+    overlap_chars: int = Field(200, ge=0, le=4000)
+    eval_fraction: float = Field(0.05, ge=0, le=0.5)
+    seed: int = 3407
+
+
+def documents_to_text(job, req: FromDocuments, output: Path) -> None:
+    """Reads the documents, cuts them into pieces of training text and writes {"text": ...} rows, holding some out to evaluate on."""
+    import random
+
+    from .knowledge import chunks, files_in, read_document
+
+    job.emit("phase", name="Reading documents")
+    files = files_in([str(Path(p).expanduser()) for p in req.paths])
+    if not files:
+        raise ValueError("Those folders have no documents Temper can read (PDF, Word, PowerPoint, Excel, HTML, Markdown, text or code).")
+    pieces, unread = [], 0
+    for i, path in enumerate(files):
+        if job.cancel_requested:
+            return
+        job.progress = i / len(files)
+        try:
+            sections = read_document(path)
+        except Exception:  # noqa: BLE001 — a file that can't be read is counted and left out
+            unread += 1
+            continue
+        pieces += [text for _, text in chunks(sections, req.chunk_chars, min(req.overlap_chars, req.chunk_chars // 2))]
+    seen, rows = set(), []
+    for p in pieces:
+        if p not in seen and len(p) >= 50:
+            seen.add(p)
+            rows.append({"text": p})
+    if not rows:
+        raise ValueError("No text came out of those documents.")
+    random.Random(req.seed).shuffle(rows)
+    n_eval = int(len(rows) * req.eval_fraction) if len(rows) >= 20 else 0
+    evaluation, train = rows[:n_eval], rows[n_eval:]
+    eval_output = output.with_suffix(".eval.jsonl") if evaluation else None
+    for target, chunk in ((output, train), (eval_output, evaluation)):
+        if target:
+            with open(target, "w", encoding="utf-8") as f:
+                f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in chunk)
+    stats = {"rows_in": len(pieces), "train": len(train), "eval": len(evaluation), "duplicates": len(pieces) - len(seen), "files": len(files), "unreadable": unread}
+    job.emit("result", output=str(output), eval_output=str(eval_output) if eval_output else None, stats=stats)
+    job.finish("done", output=str(output))
+
+
+@router.post("/from-documents")
+def from_documents(req: FromDocuments):
+    missing = [p for p in req.paths if not Path(p).expanduser().exists()]
+    if missing:
+        raise HTTPException(422, f"{missing[0]} doesn't exist.")
+    stem = re.sub(r"[^a-z0-9]+", "-", (req.name or Path(req.paths[0]).name).lower()).strip("-")[:40] or "documents"
+    out_dir = home() / "datasets"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / f"{stem}-text-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+    job = registry.create("prepare", f"Training text from {stem}")
+    job.result["output"] = str(output)
+    registry.run_thread(job, lambda j: documents_to_text(j, req, output))
+    return job.summary()

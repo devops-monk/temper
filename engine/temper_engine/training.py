@@ -42,6 +42,8 @@ class TrainConfig(BaseModel):
     dataset_format: Literal["auto", "messages", "sharegpt", "alpaca", "text"] = "auto"
     max_samples: int | None = Field(default=2000, ge=1)
     method: Literal["lora", "qlora", "full"] = "qlora"
+    # Continued pretraining: train the token embeddings and output head too, for new vocabulary or a new language.
+    train_embeddings: bool = False
     max_seq_length: int = Field(default=2048, ge=128, le=262144)
     lora_r: int = Field(default=16, ge=1, le=512)
     lora_alpha: int = Field(default=16, ge=1)
@@ -59,6 +61,19 @@ class TrainConfig(BaseModel):
     # Set by the engine.
     backend: str | None = None
     output_dir: str | None = None
+
+
+def quantized(model: str) -> bool:
+    """Whether an MLX model's weights are quantized (4- or 8-bit), as far as its config.json on this computer says."""
+    from huggingface_hub import try_to_load_from_cache
+
+    path = Path(model).expanduser()
+    found = path / "config.json" if path.is_dir() else try_to_load_from_cache(model, "config.json")
+    try:
+        config = json.loads(Path(found).read_text()) if isinstance(found, (str, Path)) and Path(found).is_file() else {}
+    except (OSError, ValueError):
+        config = {}
+    return bool(config.get("quantization") or config.get("quantization_config")) or bool(re.search(r"[-_](?:[2-8]bit|q[2-8])\b", model, re.I))
 
 
 def runs_dir() -> Path:
@@ -81,8 +96,9 @@ def start(cfg: TrainConfig):
         else:
             hint = "Training needs an NVIDIA, AMD or Intel GPU, or an Apple Silicon Mac."
         raise HTTPException(409, f"No trainer is available on this machine. {hint}")
-    if trainer == "mlx" and cfg.method == "full":
-        raise HTTPException(400, "Full fine-tuning on Apple Silicon is not supported yet; choose LoRA.")
+    if trainer == "mlx" and (cfg.method == "full" or cfg.train_embeddings) and quantized(cfg.base_model):
+        what = "Full fine-tuning" if cfg.method == "full" else "Training the embeddings"
+        raise HTTPException(400, f"{what} changes every weight, which a 4- or 8-bit model can't store. Choose the 16-bit version of the model (without 4bit or 8bit in its name), or LoRA.")
 
     if sources.modelscope() and not Path(cfg.base_model).expanduser().exists():
         cfg.source_id, cfg.base_model = cfg.base_model, cached_snapshot(cfg.base_model)

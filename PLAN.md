@@ -184,7 +184,7 @@ temper/
 - [x] **6.1 Training wizard UI**: choose base model, dataset, method and hyperparameters, then start, stop and watch.
 - [~] **6.2 SFT with LoRA / QLoRA**: 4-bit loading, LoRA adapters and TRL `SFTTrainer` on NVIDIA/AMD; MLX-LM on Apple Silicon.
 - [x] **6.3 Live metrics**: loss chart, learning rate, step/epoch, tokens/s, ETA and a log console over SSE.
-- [ ] **6.4 Full fine-tuning and continued pretraining** (including embedding and `lm_head` training).
+- [~] **6.4 Full fine-tuning and continued pretraining** (including embedding and `lm_head` training). Done: Full fine-tune is offered on Apple Silicon too (mlx-lm, every layer rather than its default last 16), and a new *Also train the embeddings and output head* option trains `embed_tokens` and `lm_head` for continued pretraining (on MLX by unfreezing them in Temper's trainer wrapper; on GPUs by adding them to the LoRA targets). Both refuse a 4- or 8-bit MLX model, which can't store changed weights. Tested: the rules, and the unfreezing on a tiny MLX model. Not run live: there's no 16-bit model downloaded here, and no NVIDIA GPU.
 - [ ] **6.5 Preference training**: DPO, ORPO, KTO, SimPO.
 - [ ] **6.6 Reinforcement learning**: GRPO, GSPO, Dr. GRPO, DAPO, with reward-function editor and vLLM fast generation.
 - [ ] **6.7 FP8 and NVFP4 training** on supported GPUs; QAT (quantization-aware training).
@@ -207,7 +207,7 @@ temper/
 - [ ] **6.24 Memory-saving optimizers** *(audit)*: 8-bit AdamW, Q-GaLore, FlashAdamW and optimizer-state CPU offload.
 - [ ] **6.25 Drafter and MTP-head fine-tuning** *(audit)*: fine-tune a model's multi-token-prediction head or a draft model so speculative decoding still works after fine-tuning.
 - [ ] **6.26 Checkpoint preview** *(audit)*: chat with any checkpoint during or after training through a per-checkpoint `/v1` endpoint.
-- [ ] **6.27 Raw-text continued pretraining** *(audit)*: chunk plain documents into training text, with no chat format needed.
+- [x] **6.27 Raw-text continued pretraining** *(audit)*: chunk plain documents into training text, with no chat format needed. Datasets → *Or train on your own documents*: pick folders; Temper reads them with the knowledge-base readers (PDF, Word, PowerPoint, Excel, HTML, Markdown, text, code; scanned pages by OCR), cuts them into pieces of about 500, 1,000 or 2,000 tokens, drops duplicates and writes `{"text"}` rows with 5% held out, ready to train with no chat format. Tried live: README and PLAN became 42 rows, and a 6-step LoRA on Qwen3-0.6B (MLX) trained on them.
 
 ## Phase 7: Datasets and Data Recipes
 
