@@ -141,7 +141,9 @@ def test_a_synced_base_is_reindexed_when_its_folder_changes(client, tmp_path):
     assert knowledge.watcher.check() == []
     client.put("/api/knowledge/sync", headers=AUTH, json={"sync": True})
     assert knowledge.watcher.check() == ["sync"]
-    assert wait(client, "sync")["files"] == 2
+    base = wait(client, "sync")
+    job = max((j for j in knowledge.registry.jobs.values() if j.kind == "knowledge-index"), key=lambda j: j.created)
+    assert base["files"] == 2, (job.status, job.error, [e.get("line") for e in job.events if e["event"] == "log"])
     (docs / "a.md").unlink()
     assert knowledge.changed("sync")
 

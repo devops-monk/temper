@@ -118,7 +118,12 @@ def start(cfg: TrainConfig):
         cfg.eval_dataset = str(dataset.with_suffix(".eval.jsonl"))
 
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(cfg.name or cfg.source_id or cfg.base_model)
-    out = runs_dir() / run_id
+    # Two runs of the same name started in the same second get -2, -3 and so on.
+    out, n = runs_dir() / run_id, 1
+    while out.exists():
+        n += 1
+        out = runs_dir() / f"{run_id}-{n}"
+    run_id = out.name
     out.mkdir(parents=True)
     cfg.backend, cfg.output_dir = trainer, str(out)
     (out / "config.json").write_text(cfg.model_dump_json(indent=2))
