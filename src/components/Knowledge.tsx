@@ -14,6 +14,7 @@ interface Base {
   paths: string[];
   embedder: string;
   enabled: boolean;
+  sync: boolean;
   files: number;
   passages: number;
   skipped: number;
@@ -195,6 +196,10 @@ function BaseRow({ base: b, onChange }: { base: Base; onChange: () => void }) {
       <p className="mt-1 truncate font-mono text-[11.5px] text-muted" title={b.paths.join("\n")}>
         {b.paths.join(" · ")}
       </p>
+      <div className="mt-1.5 flex items-center gap-2 text-[12px] text-muted">
+        <Toggle label={t("kb.sync")} checked={b.sync} onChange={(sync) => void api(path, { method: "PUT", json: { sync } }).then(onChange)} />
+        <span>{b.sync ? t("kb.sync_on") : t("kb.sync_off")}</span>
+      </div>
       {b.skipped > 0 && !indexing && <p className="mt-0.5 text-[12px] text-muted">{t("kb.skipped", { count: b.skipped })}</p>}
       {indexing && (
         <div className="mt-2">

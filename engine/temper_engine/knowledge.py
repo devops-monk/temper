@@ -9,6 +9,10 @@ two, and keeps them in knowledge/<base>/index.db (SQLite) with
 A search runs both and merges the rankings (reciprocal rank fusion), so a passage that matches on
 either rises. Re-indexing reads only files that changed since last time.
 
+Folders honour .gitignore files (and skip hidden and build folders). A base kept in sync is checked
+for changes every minute while the engine runs, and re-indexed when anything was added, changed or
+removed.
+
 The embedding model is a GGUF downloaded from Hugging Face (EMBEDDERS) and runs in its own
 llama-server, started when needed and stopped after a few idle minutes; it never touches chat's model.
 """
@@ -343,21 +347,106 @@ def db(name: str) -> sqlite3.Connection:
     return conn
 
 
+def _gitignore(folder: Path):
+    import pathspec
+
+    try:
+        lines = (folder / ".gitignore").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    return pathspec.GitIgnoreSpec.from_lines(lines)
+
+
 def files_in(paths: list[str]) -> list[Path]:
-    """The documents in a base's folders and files that Temper can read."""
+    """The documents in a base's folders and files that Temper can read, leaving out what .gitignore files exclude."""
     out: list[Path] = []
     for p in paths:
         base = Path(p).expanduser()
         if base.is_file():
             out.append(base)
             continue
+        rules: dict[str, list] = {}  # folder -> the .gitignore specs that apply in it, nearest last
         for dirpath, dirnames, filenames in os.walk(base):
-            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
+            here = Path(dirpath)
+            parent = rules.get(str(here.parent), []) if here != base else []
+            own = _gitignore(here)
+            specs = rules[dirpath] = parent + ([(here, own)] if own else [])
+
+            def ignored(path: Path, is_dir: bool) -> bool:
+                verdict = False
+                for folder, spec in specs:
+                    rel = path.relative_to(folder).as_posix() + ("/" if is_dir else "")
+                    result = spec.check_file(rel).include
+                    if result is not None:
+                        verdict = result
+                return verdict
+
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") and not ignored(here / d, True))
             for f in sorted(filenames):
-                path = Path(dirpath) / f
-                if path.suffix.lower() in SUFFIXES and not f.startswith(".") and not f.startswith("~$"):
+                path = here / f
+                if path.suffix.lower() in SUFFIXES and not f.startswith(".") and not f.startswith("~$") and not ignored(path, False):
                     out.append(path)
     return out
+
+
+def changed(name: str) -> bool:
+    """Whether a base's folders hold files added, changed or removed since it was last indexed."""
+    conn = db(name)
+    try:
+        known = {row[0]: (row[1], row[2]) for row in conn.execute("SELECT path, mtime, size FROM files")}
+    finally:
+        conn.close()
+    seen = 0
+    for p in files_in(config(name)["paths"]):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        if known.get(str(p)) != (st.st_mtime, st.st_size):
+            return True
+        seen += 1
+    return seen != len(known)
+
+
+class Watcher:
+    """Re-indexes bases kept in sync when their folders change, checking every INTERVAL seconds."""
+
+    INTERVAL = 60
+
+    def __init__(self) -> None:
+        self.stopped = threading.Event()
+        self.thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self.thread and self.thread.is_alive():
+            return
+        self.stopped.clear()
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stopped.set()
+
+    def check(self) -> list[str]:
+        """Starts indexing each synced base that changed; returns their names."""
+        started = []
+        for b in bases():
+            if not b["enabled"] or not b.get("sync", True) or b["job"] or (not embedder_path(b["embedder"]) and not embedder.client):
+                continue
+            try:
+                if changed(b["name"]):
+                    _start_index(b["name"])
+                    started.append(b["name"])
+            except (OSError, HTTPException, sqlite3.Error):
+                continue
+        return started
+
+    def _loop(self) -> None:
+        while not self.stopped.wait(self.INTERVAL):
+            self.check()
+
+
+watcher = Watcher()
 
 
 def index(job: Job, name: str) -> None:
@@ -474,7 +563,7 @@ def bases() -> list[dict]:
             finally:
                 conn.close()
         running = next((j for j in registry.jobs.values() if j.kind == "knowledge-index" and j.status == "running" and j.result.get("base") == d.name), None)
-        out.append({"name": d.name, **cfg, **stats, "job": running.id if running else None, "enabled": cfg.get("enabled", True)})
+        out.append({"name": d.name, **cfg, **stats, "job": running.id if running else None, "enabled": cfg.get("enabled", True), "sync": cfg.get("sync", True)})
     return out
 
 
@@ -559,6 +648,7 @@ def create_base(req: NewBase):
 class EditBase(BaseModel):
     paths: list[str] | None = None
     enabled: bool | None = None
+    sync: bool | None = None  # re-index by itself when the folders change
 
 
 @router.put("/{name}")
@@ -568,6 +658,8 @@ def edit_base(name: str, req: EditBase):
         cfg["paths"] = [str(Path(p).expanduser().resolve()) for p in req.paths]
     if req.enabled is not None:
         cfg["enabled"] = req.enabled
+    if req.sync is not None:
+        cfg["sync"] = req.sync
     _save_config(name, cfg)
     return {"base": name, "job": _start_index(name) if req.paths is not None else None}
 

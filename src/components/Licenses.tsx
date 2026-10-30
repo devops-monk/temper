@@ -34,6 +34,7 @@ const DOWNLOADED = [
   ["SGLang (if installed)", "Apache-2.0", "https://github.com/sgl-project/sglang"],
   ["pypdf", "BSD-3-Clause", "https://github.com/py-pdf/pypdf"],
   ["NumPy", "BSD-3-Clause", "https://github.com/numpy/numpy"],
+  ["pathspec", "MPL-2.0", "https://github.com/cpburnz/python-pathspec"],
   ["tzdata (Windows)", "Apache-2.0", "https://github.com/python/tzdata"],
   ["python-docx", "MIT", "https://github.com/python-openxml/python-docx"],
 ] as const;

@@ -14,7 +14,9 @@ OPEN_PATHS = {"/api/health"}
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    knowledge.watcher.start()
     yield
+    knowledge.watcher.stop()
     runtime.manager.unload()
     compare.pool.unload_all()
     await asyncio.to_thread(mcp.manager.close_all)  # closing a session over HTTP blocks

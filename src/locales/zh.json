@@ -356,5 +356,8 @@
   "kb.skipped": "{count} 个文件无法读取。",
   "kb.try": "试着搜索",
   "kb.search": "搜索",
-  "kb.no_results": "没有匹配的内容。"
+  "kb.no_results": "没有匹配的内容。",
+  "kb.sync": "保持同步",
+  "kb.sync_on": "这些文件夹中的更改会在一分钟内建立索引，并遵循 .gitignore 规则。",
+  "kb.sync_off": "用刷新按钮手动索引更改。"
 }

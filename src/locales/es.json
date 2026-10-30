@@ -356,5 +356,8 @@
   "kb.skipped": "{count} archivos no se pudieron leer.",
   "kb.try": "Prueba una búsqueda",
   "kb.search": "Buscar",
-  "kb.no_results": "No hubo coincidencias."
+  "kb.no_results": "No hubo coincidencias.",
+  "kb.sync": "Mantener al día",
+  "kb.sync_on": "Los cambios en estas carpetas se indexan en menos de un minuto. Se respetan las reglas de .gitignore.",
+  "kb.sync_off": "Indexa los cambios a mano con el botón de actualizar."
 }

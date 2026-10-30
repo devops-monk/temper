@@ -114,3 +114,32 @@ def test_bad_bases_are_refused(client, tmp_path):
 def test_vectors_are_unit_length(client):
     v = knowledge.embedder.embed(["llama llama", "budget"], "bge-small-en-1.5")
     assert np.allclose(np.linalg.norm(v, axis=1), 1)
+
+
+def test_gitignore_rules_are_honoured_in_nested_folders(tmp_path):
+    (tmp_path / "out").mkdir()
+    (tmp_path / "src" / "gen").mkdir(parents=True)
+    (tmp_path / ".gitignore").write_text("out/\n*.log\nsecret*.md\n")
+    (tmp_path / "src" / ".gitignore").write_text("gen/\n!secret-ok.md\n")
+    for f in ["a.md", "run.log", "secret.md", "out/b.md", "src/c.py", "src/gen/d.py", "src/secret-ok.md", "src/secret-no.md"]:
+        (tmp_path / f).write_text("x")
+    found = sorted(p.relative_to(tmp_path).as_posix() for p in knowledge.files_in([str(tmp_path)]))
+    assert found == ["a.md", "src/c.py", "src/secret-ok.md"]
+
+
+def test_a_synced_base_is_reindexed_when_its_folder_changes(client, tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("llama")
+    client.post("/api/knowledge", headers=AUTH, json={"name": "sync", "paths": [str(docs)]})
+    wait(client, "sync")
+    assert not knowledge.changed("sync") and knowledge.watcher.check() == []
+    (docs / "b.md").write_text("rocket")
+    assert knowledge.changed("sync")
+    client.put("/api/knowledge/sync", headers=AUTH, json={"sync": False})
+    assert knowledge.watcher.check() == []
+    client.put("/api/knowledge/sync", headers=AUTH, json={"sync": True})
+    assert knowledge.watcher.check() == ["sync"]
+    assert wait(client, "sync")["files"] == 2
+    (docs / "a.md").unlink()
+    assert knowledge.changed("sync")

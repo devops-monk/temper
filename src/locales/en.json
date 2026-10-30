@@ -356,5 +356,8 @@
   "kb.skipped": "{count} files couldn't be read.",
   "kb.try": "Try a search",
   "kb.search": "Search",
-  "kb.no_results": "Nothing matched."
+  "kb.no_results": "Nothing matched.",
+  "kb.sync": "Keep in sync",
+  "kb.sync_on": "Changes in these folders are indexed within a minute. .gitignore rules are honoured.",
+  "kb.sync_off": "Index changes by hand with the refresh button."
 }

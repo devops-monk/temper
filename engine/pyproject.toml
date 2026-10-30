@@ -14,6 +14,8 @@ dependencies = [
   "pypdf>=5",
   # Knowledge bases: passage vectors and their similarity.
   "numpy>=1.26",
+  # .gitignore rules, which knowledge bases honour.
+  "pathspec>=0.12",
   # Windows has no time-zone database of its own; zoneinfo reads this one (the clock tool).
   "tzdata>=2024.1; sys_platform == 'win32'",
 ]
