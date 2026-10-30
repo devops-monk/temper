@@ -78,3 +78,21 @@ def test_verdicts():
     assert m.verdict(5 * m.GB, budget) == "fits"
     assert m.verdict(10 * m.GB, budget) == "tight"
     assert m.verdict(12 * m.GB, budget) == "too_large"
+
+
+def test_training_setups_are_fitted_to_the_memory_there_is():
+    def fit(config, gb, method="lora", trainer="mlx"):
+        budget = {"kind": "unified", "total": int(gb * m.GB), "free": int(gb * m.GB)}
+        return m.training_fit(m.shape_from_config(config), m.weight_bits(config), trainer, method, budget)
+
+    roomy = fit(QWEN3_4B, 64)
+    assert (roomy["max_seq_length"], roomy["lora_r"], roomy["batch_size"], roomy["grad_accum"]) == (4096, 16, 4, 2) and roomy["fits"]
+    mac16 = fit(QWEN3_4B, 10.7)  # a 16 GB Mac's GPU share: the page's defaults
+    assert (mac16["max_seq_length"], mac16["lora_r"], mac16["batch_size"], mac16["grad_accum"]) == (2048, 16, 2, 4)
+    assert mac16["fits"] and mac16["total"] <= 10.7 * m.GB * m.FIT_SHARE
+    small = fit(QWEN3_4B, 5.5)
+    assert (small["max_seq_length"], small["lora_r"], small["batch_size"], small["grad_accum"]) == (1024, 16, 1, 8) and small["fits"]
+    hopeless = fit(QWEN3_4B, 2)
+    assert not hopeless["fits"] and (hopeless["max_seq_length"], hopeless["lora_r"], hopeless["batch_size"]) == (512, 8, 1)
+    short = fit({**QWEN3_06B, "max_position_embeddings": 1024}, 64)
+    assert short["max_seq_length"] == 1024

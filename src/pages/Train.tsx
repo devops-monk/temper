@@ -252,6 +252,33 @@ function useTrainEstimate(form: Form, enabled: boolean) {
   return { estimate, error, loading };
 }
 
+type FitKey = "max_seq_length" | "lora_r" | "lora_alpha" | "batch_size" | "grad_accum";
+
+/** Context length, LoRA rank and batch size that fit this computer (engine memory.training_fit), applied as the model or
+ * method changes until they're edited by hand. */
+function useFit(base_model: string, method: Form["method"], enabled: boolean, apply: (fit: Pick<Form, FitKey>) => void) {
+  const [autoFit, setAutoFit] = useState(true);
+  const [fitted, setFitted] = useState<string | null>(null);
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
+  useEffect(() => {
+    if (!enabled || !autoFit || !base_model.trim()) return;
+    let stale = false;
+    const t = setTimeout(async () => {
+      const fit = await api<Pick<Form, FitKey> & { fits: boolean }>("/api/memory/train/fit", { json: { base_model, method } }).catch(() => null);
+      if (stale || !fit) return;
+      const { max_seq_length, lora_r, lora_alpha, batch_size, grad_accum } = fit;
+      applyRef.current({ max_seq_length, lora_r, lora_alpha, batch_size, grad_accum });
+      setFitted(`${base_model} ${method}`);
+    }, 600);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
+  }, [enabled, autoFit, base_model, method]);
+  return { autoFit, setAutoFit, fitted: fitted === `${base_model} ${method}` };
+}
+
 export function TrainPage() {
   const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, pendingBaseModel, setPendingBaseModel, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
@@ -261,6 +288,12 @@ export function TrainPage() {
   const [starting, setStarting] = useState(false);
   const set = <K extends keyof Form>(k: K) => (v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const memory = useTrainEstimate(form, !!trainer);
+  const { autoFit, setAutoFit, fitted } = useFit(form.base_model, form.method, !!trainer, (fit) => setForm((f) => ({ ...f, ...fit })));
+  // Editing a fitted value by hand stops Temper fitting it again.
+  const setByHand = <K extends FitKey>(k: K) => (v: Form[K]) => {
+    setAutoFit(false);
+    set(k)(v);
+  };
 
   // Hardware info can arrive after mount; swap to the MLX default unless the user already edited it.
   useEffect(() => {
@@ -409,18 +442,30 @@ export function TrainPage() {
             </div>
           </Section>
 
-          <Section title="Hyperparameters">
+          <Section
+            title="Hyperparameters"
+            aside={
+              trainer &&
+              (autoFit ? (
+                fitted && <span className="text-[12px] text-muted" title="Context length, LoRA rank and batch size are chosen to fit this computer's memory">Fitted to this computer</span>
+              ) : (
+                <button className="text-[12px] text-muted hover:text-text" onClick={() => setAutoFit(true)}>
+                  Fit to this computer
+                </button>
+              ))
+            }
+          >
             <div className="grid grid-cols-2 gap-3">
               <NumberField label="Max steps" value={form.max_steps} onChange={set("max_steps")} hint="0 = full epochs" />
               <NumberField label="Epochs" value={form.epochs} onChange={set("epochs")} step={0.5} />
               <NumberField label="Learning rate" value={form.learning_rate} onChange={set("learning_rate")} step={0.00005} />
-              <NumberField label="Context length" value={form.max_seq_length} onChange={set("max_seq_length")} step={256} />
-              <NumberField label="Batch size" value={form.batch_size} onChange={set("batch_size")} />
-              <NumberField label="Grad accumulation" value={form.grad_accum} onChange={set("grad_accum")} />
+              <NumberField label="Context length" value={form.max_seq_length} onChange={setByHand("max_seq_length")} step={256} />
+              <NumberField label="Batch size" value={form.batch_size} onChange={setByHand("batch_size")} />
+              <NumberField label="Grad accumulation" value={form.grad_accum} onChange={setByHand("grad_accum")} />
               {form.method !== "full" && (
                 <>
-                  <NumberField label="LoRA rank" value={form.lora_r} onChange={set("lora_r")} />
-                  <NumberField label="LoRA alpha" value={form.lora_alpha} onChange={set("lora_alpha")} />
+                  <NumberField label="LoRA rank" value={form.lora_r} onChange={setByHand("lora_r")} />
+                  <NumberField label="LoRA alpha" value={form.lora_alpha} onChange={setByHand("lora_alpha")} />
                 </>
               )}
               <NumberField label="Warmup steps" value={form.warmup_steps} onChange={set("warmup_steps")} />
@@ -462,7 +507,7 @@ export function TrainPage() {
           ) : (
             <div className="flex min-h-[50%] flex-col items-center justify-center text-center">
               <div className="bg-temper mb-5 h-1.5 w-40 rounded-full opacity-80" />
-              <p className="font-semibold">No training runs yet</p>
+              <p className="font-semibold">Ready to train</p>
               <p className="mt-1 max-w-[46ch] text-muted">
                 The defaults train a small instruct model for 60 steps, a few minutes on most GPUs. Change anything on the left, then start training.
               </p>

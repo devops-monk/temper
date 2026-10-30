@@ -334,6 +334,43 @@ MLX_OVERHEAD = int(1.25 * GB)  # Metal buffers and caches that don't depend on t
 
 # ------------------------------------------------------------------ suggestions
 
+FIT_SHARE = 0.8  # of the memory budget a suggested training setup may use, leaving room for everything else
+EFFECTIVE_BATCH = 8  # rows per optimizer step; gradient accumulation makes up what the batch can't hold
+
+
+def training_fit(shape: Shape, bits: float, trainer: str, method: str, budget: dict) -> dict:
+    """The longest context, then highest rank, then biggest batch whose estimate fits this computer.
+
+    Context comes first because rows cut short train on less of their text; rank next, as it shapes
+    what the adapter can learn; batch size last, since gradient accumulation stands in for it.
+    """
+    room = budget["total"] * FIT_SHARE
+    seqs = [s for s in (4096, 2048, 1024, 512) if not shape.context_max or s <= shape.context_max] or [512]
+    ranks = (16, 8) if method != "full" else (16,)
+    for seq in seqs:
+        for rank in ranks:
+            for batch in (4, 2, 1):
+                est = training_estimate(shape, bits, trainer, method, rank, batch, seq)
+                # 4096 only when it fits at a batch of 2 or more: most rows are shorter, and speed matters.
+                if est["total"] <= room and not (seq == 4096 and batch < 2):
+                    return _fit(seq, rank, batch, est, budget, True)
+    # Nothing fits: the smallest setup, so the estimate shows how far off it is.
+    seq, rank = seqs[-1], ranks[-1]
+    return _fit(seq, rank, 1, training_estimate(shape, bits, trainer, method, rank, 1, seq), budget, False)
+
+
+def _fit(seq: int, rank: int, batch: int, est: dict, budget: dict, fits: bool) -> dict:
+    return {
+        "max_seq_length": seq,
+        "lora_r": rank,
+        "lora_alpha": rank,
+        "batch_size": batch,
+        "grad_accum": max(1, EFFECTIVE_BATCH // batch),
+        "total": est["total"],
+        "budget": budget,
+        "fits": fits,
+    }
+
 
 def _gb(n: int) -> str:
     return f"{n / GB:.1f} GB"
@@ -440,23 +477,27 @@ class TrainEstimate(BaseModel):
     max_seq_length: int = Field(default=2048, ge=128)
 
 
-@router.post("/train")
-def estimate_train(req: TrainEstimate):
+def _train_shape(base_model: str) -> tuple[dict, Shape]:
     from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 
     from . import sources
 
     try:
-        config = _hf_config(req.base_model)
-        shape = shape_from_config(config)
+        config = _hf_config(base_model)
+        return config, shape_from_config(config)
     except GatedRepoError as e:
-        raise HTTPException(422, f"{req.base_model} is gated. Accept its licence on Hugging Face and add a token to estimate it.") from e
+        raise HTTPException(422, f"{base_model} is gated. Accept its licence on Hugging Face and add a token to estimate it.") from e
     except (RepositoryNotFoundError, sources.NotAvailable) as e:
-        raise HTTPException(422, f"There's no model called {req.base_model} on {'ModelScope' if sources.modelscope() else 'Hugging Face'}, or it's private.") from e
+        raise HTTPException(422, f"There's no model called {base_model} on {'ModelScope' if sources.modelscope() else 'Hugging Face'}, or it's private.") from e
     except (KeyError, TypeError) as e:
-        raise HTTPException(422, f"{req.base_model} has a configuration Temper can't estimate yet (missing {e}).") from e
+        raise HTTPException(422, f"{base_model} has a configuration Temper can't estimate yet (missing {e}).") from e
     except (OSError, ValueError, httpx.HTTPError) as e:
-        raise HTTPException(422, f"Couldn't read {req.base_model}'s configuration: {str(e).splitlines()[0]}") from e
+        raise HTTPException(422, f"Couldn't read {base_model}'s configuration: {str(e).splitlines()[0]}") from e
+
+
+@router.post("/train")
+def estimate_train(req: TrainEstimate):
+    config, shape = _train_shape(req.base_model)
     backend = hardware.probe_backend()
     trainer = "mlx" if backend == "metal" else "pytorch"
     est = training_estimate(shape, weight_bits(config), trainer, req.method, req.lora_r, req.batch_size, req.max_seq_length)
@@ -471,3 +512,16 @@ def estimate_train(req: TrainEstimate):
         "shape": asdict(shape),
     }
 
+
+
+class TrainFit(BaseModel):
+    base_model: str
+    method: Literal["lora", "qlora", "full"] = "qlora"
+
+
+@router.post("/train/fit")
+def fit_train(req: TrainFit):
+    """Batch size, LoRA rank and context length that fit this computer's memory."""
+    config, shape = _train_shape(req.base_model)
+    trainer = "mlx" if hardware.probe_backend() == "metal" else "pytorch"
+    return training_fit(shape, weight_bits(config), trainer, req.method, memory_budget())

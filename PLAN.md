@@ -204,7 +204,8 @@ temper/
   Runs save a checkpoint every N steps (five over the run by default). Past runs on the Train page list each one; "Carry on from here" starts a new run from it for the steps left, its curve lined up with the original's, and ticked runs share one loss chart. Tested on MLX: a resumed run picks up the checkpoint's weights. GPU runs use the trainer's own checkpoints and `resume_from_checkpoint`.
 - [x] **6.20 Training history**: every run stored with config, metrics, dataset hash and provenance; re-run with one click.
   Each run keeps its events (metrics, evaluations, dataset summary, errors) in `events.jsonl` and its outcome in `status.json`, with the base model's revision, the dataset's SHA-256 and library versions. "Run again" starts it with the same settings.
-- [ ] **6.21 VRAM-aware defaults**: choose batch size, rank and context automatically from the hardware probe.
+- [x] **6.21 VRAM-aware defaults**: choose batch size, rank and context automatically from the hardware probe.
+  The Train page fits context length, then LoRA rank, then batch size to 80% of the memory the trainer can use (from the same estimate as the Memory section), with gradient accumulation keeping eight rows per step. It refits when the model or method changes, until one of those values is edited by hand; *Fit to this computer* turns it back on. On a 16 GB Mac, Qwen3-4B gets 2,048 tokens, rank 16, batch 2 × 4; Qwen3-0.6B gets 4,096.
 - [ ] **6.22 Remote and cloud training**: launch the same job on a remote machine, Colab, Kaggle or a cloud GPU and stream its metrics back.
 - [ ] **6.23 Text-diffusion language models** *(audit)*: train and run diffusion LMs such as DiffusionGemma and Dream.
 - [ ] **6.24 Memory-saving optimizers** *(audit)*: 8-bit AdamW, Q-GaLore, FlashAdamW and optimizer-state CPU offload.
