@@ -82,3 +82,28 @@ def test_files_are_capped_in_size(monkeypatch):
     monkeypatch.setattr(sandbox, "MAX_FILE", 1000)
     out = sandbox.run("python", "open('big', 'wb').write(b'x' * 50000)", None)
     assert "File too large" in out or "Exit code" in out
+
+
+def test_the_terminal_tool_runs_commands_in_the_chats_folder():
+    step = tools.run(Call("run_shell", {"command": "echo made > notes.txt\necho hello"}), ["run_shell"], {"chat": "c3"})
+    assert step["result"].startswith("hello") and "Files written: notes.txt" in step["result"] and tools.TOOLS["run_shell"].mode == "ask"
+    assert "Give the commands" in tools.run(Call("run_shell", {"command": " "}), ["run_shell"])["result"]
+
+
+def test_the_check_reports_what_holds_without_an_os_sandbox(tmp_path, monkeypatch):
+    user = tmp_path / "user"
+    (user / ".aws").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: user))
+    monkeypatch.setattr(sandbox, "kind", lambda: None)
+    found = {c["id"]: c for c in sandbox.check()["checks"]}
+    assert found["write"]["blocked"] is False and found["secrets"]["blocked"] is False and found["secrets"]["path"] == str(user / ".aws")
+    assert found["time"]["blocked"] and not list(sandbox.root().glob("outside-*"))
+
+
+@seatbelt
+def test_the_check_finds_seatbelt_holding(tmp_path, monkeypatch):
+    user = tmp_path / "user"
+    (user / ".ssh").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: user))
+    report = sandbox.check()
+    assert report["sandbox"] == "seatbelt" and all(c["blocked"] for c in report["checks"])

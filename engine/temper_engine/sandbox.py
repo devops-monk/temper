@@ -14,11 +14,16 @@ system's sandbox where there is one:
 
 Python runs in Temper's own interpreter (the standard library only) until data libraries are added
 (numpy, pandas, matplotlib, sympy), which go in a venv of their own. JavaScript needs Node.js on PATH.
+Shell commands run in bash (or sh) on macOS and Linux, and PowerShell on Windows.
+
+`check()` tries to break out (reach the network, write outside the folder, read a credential
+folder) from inside the sandbox, so the app can show what actually holds on this computer.
 """
 
 from __future__ import annotations
 
 import functools
+import json
 import os
 import re
 import shutil
@@ -73,6 +78,15 @@ def python() -> str:
 
 def node() -> str | None:
     return shutil.which("node")
+
+
+def shell() -> list[str] | None:
+    """The shell commands run in, with its arguments before the script's name."""
+    if os.name == "nt":
+        ps = shutil.which("pwsh") or shutil.which("powershell")
+        return [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"] if ps else None
+    sh = shutil.which("bash") or ("/bin/sh" if Path("/bin/sh").exists() else None)
+    return [sh] if sh else None
 
 
 @functools.cache
@@ -148,6 +162,11 @@ def run(language: str, code: str, chat: str | None) -> str:
         if not (runtime := node()):
             raise RuntimeError("Node.js isn't installed on this computer, so JavaScript can't run. Use Python instead.")
         script, cmd = work / f"{name}.mjs", [runtime, f"{name}.mjs"]
+    elif language == "shell":
+        if not (sh := shell()):
+            raise RuntimeError("There's no shell on this computer for commands to run in.")
+        script = work / (f"{name}.ps1" if os.name == "nt" else f"{name}.sh")
+        cmd = [*sh, script.name]
     else:
         raise ValueError(f"Temper can't run {language}.")
     script.write_text(code, encoding="utf-8")
@@ -194,6 +213,50 @@ def run(language: str, code: str, chat: str | None) -> str:
     return "\n\n".join(parts) or f"(It printed nothing; it ran in {time.monotonic() - started:.1f} s.)"
 
 
+# Run inside the sandbox: each attempt prints whether it was stopped.
+PROBE = """
+import json, os, socket, sys
+outside, secret = sys.argv[1], sys.argv[2]
+def tried(f):
+    try:
+        f()
+        return False
+    except Exception:
+        return True
+def write():
+    with open(outside, "w") as f:
+        f.write("x")
+def connect():
+    socket.create_connection(("1.1.1.1", 443), timeout=4).close()
+print(json.dumps({"network": tried(connect), "write": tried(write), "secrets": tried(lambda: os.listdir(secret)) if secret else None}))
+"""
+
+
+def check() -> dict:
+    """What the sandbox stops, found by trying it: the network, writing outside the working folder, reading credentials."""
+    work = workdir(None)
+    outside = root() / f"outside-{uuid.uuid4().hex[:8]}"
+    secret = next((str(Path.home() / s) for s in SECRETS if (Path.home() / s).is_dir()), "")
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(work), "TMPDIR": str(work)} | ({k: os.environ[k] for k in ("SYSTEMROOT",) if k in os.environ} if os.name == "nt" else {})
+    try:
+        done = subprocess.run(wrap(_limited([python(), "-I", "-c", PROBE, str(outside), secret]), work), cwd=work, env=env, capture_output=True, text=True, timeout=TIMEOUT)
+        found = json.loads(done.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
+        found = {"network": None, "write": None, "secrets": None}
+    finally:
+        outside.unlink(missing_ok=True)
+    return {
+        "sandbox": kind(),
+        "checks": [
+            {"id": "network", "blocked": found["network"]},
+            {"id": "write", "blocked": found["write"]},
+            {"id": "secrets", "blocked": found["secrets"], "path": secret or None},
+            {"id": "time", "blocked": True, "seconds": TIMEOUT},
+            {"id": "size", "blocked": os.name != "nt", "megabytes": MAX_FILE // (1024 * 1024)},
+        ],
+    }
+
+
 @router.get("")
 def status():
     venv = data_venv()
@@ -203,7 +266,13 @@ def status():
         "data_libraries": (venv / ".installed").is_file(),
         "packages": DATA_PACKAGES,
         "node": node(),
+        "shell": (shell() or [None])[0],
     }
+
+
+@router.get("/check")
+def check_sandbox():
+    return check()
 
 
 @router.post("/python")

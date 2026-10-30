@@ -24,6 +24,7 @@ import difflib
 import json
 import math
 import operator
+import os
 import re
 import uuid
 from collections.abc import Callable
@@ -104,13 +105,13 @@ def current_time(args: dict, ctx: dict | None = None) -> str:
     return now.strftime("%A %d %B %Y, %H:%M:%S ") + (zone or now.tzname() or "local time") + f" (UTC{now.strftime('%z')[:3]}:{now.strftime('%z')[3:]})"
 
 
-def _code(language: str) -> Callable[[dict, dict], str]:
+def _code(language: str, key: str = "code") -> Callable[[dict, dict], str]:
     def run(args: dict, ctx: dict) -> str:
         from . import sandbox
 
-        code = args.get("code")
+        code = args.get(key)
         if not isinstance(code, str) or not code.strip():
-            raise ValueError("Give the code to run as a string in `code`.")
+            raise ValueError(f"Give the {'commands' if key == 'command' else 'code'} to run as a string in `{key}`.")
         return sandbox.run(language, code, ctx.get("chat"))
 
     return run
@@ -123,6 +124,12 @@ def _web(args: dict, ctx: dict) -> str:
     if not isinstance(url, str) or not url.strip():
         raise ValueError("Give the page's `url`.")
     return web.read(url, int(args.get("part") or 1))
+
+
+def _shell() -> bool:
+    from . import sandbox
+
+    return sandbox.shell() is not None
 
 
 def _node() -> bool:
@@ -177,6 +184,16 @@ TOOLS: dict[str, Tool] = {
             _code("javascript"),
             mode="ask",
             available=_node,
+        ),
+        Tool(
+            "run_shell",
+            "Terminal",
+            ("Runs PowerShell commands" if os.name == "nt" else "Runs shell commands (bash)")
+            + " and returns their output: list and search files, use command-line programs, run scripts." + _CODE_NOTE,
+            {"type": "object", "properties": {"command": {"type": "string", "description": "The command, or several lines of them"}}, "required": ["command"]},
+            _code("shell", "command"),
+            mode="ask",
+            available=_shell,
         ),
     )
 }

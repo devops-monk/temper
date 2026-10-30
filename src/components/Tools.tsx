@@ -1,4 +1,4 @@
-import { ChevronRight, LoaderCircle, ShieldAlert, ShieldCheck, Wrench } from "lucide-react";
+import { Check, ChevronRight, LoaderCircle, ShieldAlert, ShieldCheck, Wrench, X } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { useT, type Key } from "../lib/i18n";
@@ -48,7 +48,7 @@ function useLabel() {
 /** An MCP tool's name, mcp__<server>__<tool>, as "server: tool". */
 const mcpLabel = (name: string) => (name.startsWith("mcp__") ? name.slice(5).replace("__", ": ") : name);
 
-const CODE = ["run_python", "run_javascript"];
+const CODE = ["run_python", "run_javascript", "run_shell"];
 
 /** The Generation panel's tools: each off, asking before each call, or running calls straight away. */
 export function ToolsControl({ value, onChange }: { value: ToolModes; onChange: (tools: ToolModes) => void }) {
@@ -116,8 +116,12 @@ function SandboxNote({ kind }: { kind: string | null }) {
 }
 
 const shown = (args: ToolStep["arguments"]) => (typeof args === "string" ? args : Object.values(args).length === 1 ? String(Object.values(args)[0]) : JSON.stringify(args));
-/** The arguments in full: code as it was written, anything else as JSON. */
-const full = (args: ToolStep["arguments"]) => (typeof args === "string" ? args : typeof args.code === "string" && Object.keys(args).length === 1 ? args.code : JSON.stringify(args, null, 2));
+/** The arguments in full: code or commands as they were written, anything else as JSON. */
+const full = (args: ToolStep["arguments"]) => {
+  if (typeof args === "string") return args;
+  const code = args.code ?? args.command;
+  return typeof code === "string" && Object.keys(args).length === 1 ? code : JSON.stringify(args, null, 2);
+};
 
 /** What a card's buttons do with a call waiting to be allowed; `always` also sets the tool to run without asking in this chat. */
 export type OnApprove = (step: ToolStep, allow: boolean, always?: boolean) => void;
@@ -208,6 +212,16 @@ interface SandboxStatus {
   data_libraries: boolean;
   packages: string[];
   node: string | null;
+  shell: string | null;
+}
+
+/** What the sandbox stopped when Temper tried it (engine sandbox.check); `blocked` is null when it couldn't be tried. */
+interface SandboxCheck {
+  id: "network" | "write" | "secrets" | "time" | "size";
+  blocked: boolean | null;
+  path?: string | null;
+  seconds?: number;
+  megabytes?: number;
 }
 
 /** Settings: what protects code the model runs, and the data libraries for its Python (engine sandbox.py). */
@@ -272,7 +286,57 @@ export function CodeSandbox() {
         )}
         {(error || (status === "failed" && failure)) && <p className="text-[12px] text-danger">{error ?? failure}</p>}
         <p className="text-[12px] text-muted">{info.node ? t("sandbox.node", { path: info.node }) : t("sandbox.no_node")}</p>
+        {info.shell && <p className="-mt-2 text-[12px] text-muted">{t("sandbox.shell", { path: info.shell })}</p>}
+        <SandboxChecks />
       </div>
     </Section>
+  );
+}
+
+/** Tries to break out of the sandbox, and lists what held. */
+function SandboxChecks() {
+  const t = useT();
+  const [checks, setChecks] = useState<SandboxCheck[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    await api<{ checks: SandboxCheck[] }>("/api/sandbox/check").then((r) => setChecks(r.checks), () => setChecks(null));
+    setBusy(false);
+  }
+  const label = (c: SandboxCheck) =>
+    c.id === "secrets"
+      ? c.path
+        ? t("sandbox.c.secrets", { path: c.path })
+        : t("sandbox.c.no_secrets")
+      : c.id === "time"
+        ? t("sandbox.c.time", { seconds: c.seconds ?? 0 })
+        : c.id === "size"
+          ? t("sandbox.c.size", { megabytes: c.megabytes ?? 0 })
+          : t(c.id === "network" ? "sandbox.c.network" : "sandbox.c.write");
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <span>
+          <span className="font-medium">{t("sandbox.check")}</span>
+          <span className="block text-[12px] text-muted">{t("sandbox.check_about")}</span>
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => void run()} disabled={busy}>
+          {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : t(checks ? "sandbox.check_again" : "sandbox.check_run")}
+        </Button>
+      </div>
+      {checks && (
+        <ul className="flex flex-col gap-1 text-[12.5px]">
+          {checks.map((c) => (
+            <li key={c.id} className="flex items-center gap-2">
+              {c.blocked ? <Check className="size-3.5 shrink-0 text-ok" /> : <X className={cx("size-3.5 shrink-0", c.blocked === false ? "text-danger" : "text-muted")} />}
+              <span className="min-w-0 flex-1 truncate">{label(c)}</span>
+              <span className={cx("text-[12px]", c.blocked ? "text-ok" : c.blocked === false ? "text-danger" : "text-muted")}>
+                {t(c.blocked ? "sandbox.c.blocked" : c.blocked === false ? "sandbox.c.allowed" : "sandbox.c.unknown")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
