@@ -8,6 +8,7 @@ resumed from a checkpoint, or chatted with at any checkpoint.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import shutil
@@ -18,7 +19,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from . import home, sources
+from . import chat_render, home, sources
 from .hardware import probe
 from .jobs import registry
 
@@ -294,3 +295,76 @@ def checkpoint_adapter(run_id: str, step: int):
         except OSError:
             shutil.copy2(path, target)
     return {"adapter": str(folder)}
+
+
+# --- Token preview --------------------------------------------------------------------------------
+
+
+@functools.lru_cache(maxsize=4)
+def _tokenizer(base_model: str):
+    try:
+        from transformers import AutoTokenizer
+    except ImportError:
+        raise HTTPException(409, "Seeing tokens needs training support. Add it in Settings.") from None
+    try:
+        return AutoTokenizer.from_pretrained(base_model)
+    except (OSError, ValueError) as e:
+        raise HTTPException(422, f"Couldn't load {base_model}'s tokenizer: {str(e).splitlines()[0]}") from e
+
+
+def tokens_for(tokenizer, conv: list[dict] | str) -> tuple[list[int], int]:
+    """A row's token ids as training sees them, and how many at the start are the prompt (masked from the loss).
+
+    The same split as the trainers: everything before the last reply is prompt; plain text has none.
+    """
+    if isinstance(conv, str):
+        prompt, completion = "", conv
+    else:
+        try:
+            prompt, completion = chat_render.render(tokenizer, conv)
+        except ValueError:  # doesn't end with a reply: trained on in full
+            prompt, completion = "", tokenizer.apply_chat_template(conv, tokenize=False)
+    head = tokenizer.encode(prompt, add_special_tokens=False) if prompt else []
+    return head + tokenizer.encode(completion, add_special_tokens=False), len(head)
+
+
+class TokenPreview(BaseModel):
+    base_model: str
+    dataset: str
+    dataset_split: str = "train"
+    dataset_config: str | None = None
+    dataset_format: str = "auto"
+    max_seq_length: int = 2048
+    row: int = Field(default=0, ge=0, le=99)
+
+
+@router.post("/preview")
+def preview_tokens(req: TokenPreview):
+    """One row of the dataset exactly as the model will see it: its tokens, which are masked, and where it's cut."""
+    from . import datasets, formats
+
+    rows, _ = datasets._rows(req.dataset, req.dataset_split, req.row + 2, req.dataset_config)
+    if not rows:
+        raise HTTPException(404, "The dataset has no rows.")
+    row = rows[min(req.row, len(rows) - 1)]
+    fmt = req.dataset_format if req.dataset_format != "auto" else formats.detect_format(list(row))
+    if fmt is None:
+        raise HTTPException(422, f"Couldn't tell the dataset's format from its columns ({', '.join(sorted(row))}). Prepare it on the Datasets page first.")
+    try:
+        conv = formats.to_messages(row, fmt)
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
+        raise HTTPException(422, f"Row {req.row + 1} can't be used: {e}") from e
+    tok = _tokenizer(req.base_model)
+    if not isinstance(conv, str) and not tok.chat_template:
+        raise HTTPException(422, f"{req.base_model} has no chat template, so it can't be trained on conversations. Choose an instruct model, or prepare the data as plain text.")
+    ids, masked = tokens_for(tok, conv)
+    shown = ids[:4000]
+    return {
+        "tokens": [{"id": i, "text": tok.decode([i])} for i in shown],
+        "count": len(ids),
+        "masked": masked,
+        "max_seq_length": req.max_seq_length,
+        "format": fmt,
+        "row": min(req.row, len(rows) - 1),
+        "more": len(rows) > req.row + 1,  # whether there's a next row
+    }

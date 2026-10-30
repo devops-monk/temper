@@ -154,3 +154,30 @@ def test_mlx_training_stops_early_and_keeps_the_best_adapter(tmp_path, monkeypat
     best = [json.loads(line[7:]) for line in capsys.readouterr().out.splitlines() if line.startswith("TEMPER ")]
     assert best == [{"event": "best", "step": 11, "val_loss": 1.5, "stopped_at": 31}]
     assert not (tmp_path / "best_adapters.safetensors").exists()
+
+
+def test_the_token_preview_masks_the_prompt_and_counts_tokens(tmp_path, monkeypatch):
+    class Tok:
+        chat_template = "x"
+
+        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+            text = "".join(f"<{m['role']}>{m['content']}</>" for m in messages)
+            return text + ("<assistant>" if add_generation_prompt else "")
+
+        def encode(self, text, add_special_tokens=False):
+            return [ord(c) for c in text]
+
+        def decode(self, ids):
+            return "".join(chr(i) for i in ids)
+
+    monkeypatch.setattr(training, "_tokenizer", lambda base: Tok())
+    data = tmp_path / "d.jsonl"
+    rows = [{"messages": [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Yo"}]}, {"text": "plain"}]
+    data.write_text("\n".join(json.dumps(r) for r in rows))
+    with TestClient(create_app(token="t")) as c:
+        got = c.post("/api/train/preview", headers={"Authorization": "Bearer t"}, json={"base_model": "m", "dataset": str(data)}).json()
+        assert "".join(t["text"] for t in got["tokens"][: got["masked"]]) == "<user>Hi</><assistant>"
+        assert "".join(t["text"] for t in got["tokens"][got["masked"]:]) == "Yo</>"
+        assert got["count"] == len(got["tokens"]) and got["format"] == "messages" and got["more"] is True
+        text = c.post("/api/train/preview", headers={"Authorization": "Bearer t"}, json={"base_model": "m", "dataset": str(data), "dataset_format": "text", "row": 1}).json()
+        assert text["masked"] == 0 and "".join(t["text"] for t in text["tokens"]) == "plain" and text["more"] is False

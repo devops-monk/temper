@@ -135,22 +135,30 @@ def train_gpu(cfg: dict, out: Path) -> None:
         )
 
     emit("phase", name="Preparing dataset")
-    def chat_text(conv: list[dict] | str) -> str:
-        if isinstance(conv, str):
-            return conv
-        try:
-            return "".join(chat_render.render(tokenizer, conv))
-        except ValueError:  # doesn't end with an assistant reply
-            return tokenizer.apply_chat_template(conv, tokenize=False)
 
-    render = lambda convs: [chat_text(c) for c in convs]  # noqa: E731
+    def pair(conv: list[dict] | str) -> tuple[str, str]:
+        """(prompt, completion): loss is on the completion only, as on MLX. Plain text has no prompt."""
+        if isinstance(conv, str):
+            return "", conv
+        try:
+            return chat_render.render(tokenizer, conv)
+        except ValueError:  # doesn't end with an assistant reply: trained on in full
+            return "", tokenizer.apply_chat_template(conv, tokenize=False)
+
+    def to_dataset(convs: list) -> Dataset:
+        pairs = [pair(c) for c in convs]
+        if not any(p for p, _ in pairs):
+            return Dataset.from_dict({"text": [c for _, c in pairs]})
+        # A prompt-completion dataset: TRL masks the prompt from the loss (completion_only_loss).
+        return Dataset.from_dict({"prompt": [p for p, _ in pairs], "completion": [c for _, c in pairs]})
+
     fmt, convs = conversations(cfg, load_rows(cfg))
-    texts = render(convs)
-    dataset = Dataset.from_dict({"text": texts})
+    texts = ["".join(pair(c)) for c in convs]
+    dataset = to_dataset(convs)
     eval_dataset, eval_convs = None, []
     if cfg.get("eval_dataset"):
         _, eval_convs = conversations(cfg, load_rows(cfg, cfg["eval_dataset"]))
-        eval_dataset = Dataset.from_dict({"text": render(eval_convs)})
+        eval_dataset = to_dataset(eval_convs)
     emit("dataset", rows=len(texts), format=fmt, sample=texts[0][:1500], eval_rows=len(eval_dataset) if eval_dataset else 0)
     provenance(cfg, texts=texts)
 
@@ -225,6 +233,8 @@ def train_gpu(cfg: dict, out: Path) -> None:
     # TRL renamed max_seq_length to max_length; pass whichever this version accepts.
     params = inspect.signature(SFTConfig.__init__).parameters
     args["max_length" if "max_length" in params else "max_seq_length"] = cfg["max_seq_length"]
+    if "completion_only_loss" in params:
+        args["completion_only_loss"] = True  # for prompt-completion rows; plain text is trained on in full
     if eval_dataset is not None:
         # transformers renamed evaluation_strategy to eval_strategy.
         args["eval_strategy" if "eval_strategy" in params else "evaluation_strategy"] = "steps"

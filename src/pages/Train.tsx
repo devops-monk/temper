@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { LossChart } from "../components/LossChart";
 import { RunHistory } from "../components/RunHistory";
 import { SampleReplies, type Sample } from "../components/SampleReplies";
+import { TokenPreview } from "../components/TokenPreview";
 import { MemoryEstimate, type Budget, type Estimate, type Verdict } from "../components/MemoryEstimate";
 import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
@@ -286,6 +287,7 @@ export function TrainPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [tokens, setTokens] = useState(false);
   const set = <K extends keyof Form>(k: K) => (v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const memory = useTrainEstimate(form, !!trainer);
   const { autoFit, setAutoFit, fitted } = useFit(form.base_model, form.method, !!trainer, (fit) => setForm((f) => ({ ...f, ...fit })));
@@ -418,6 +420,11 @@ export function TrainPage() {
                   </Field>
                 </div>
               )}
+              {trainer && form.dataset.trim() && (
+                <button className="self-start text-[12.5px] text-muted hover:text-text" onClick={() => setTokens(true)}>
+                  See a row as the model sees it, token by token
+                </button>
+              )}
             </div>
           </Section>
 
@@ -500,6 +507,11 @@ export function TrainPage() {
                   {j.title}
                 </button>
               ))}
+            </div>
+          )}
+          {tokens && (
+            <div className="mb-5">
+              <TokenPreview source={form} onClose={() => setTokens(false)} />
             </div>
           )}
           {current ? (
