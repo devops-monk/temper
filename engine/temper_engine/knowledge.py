@@ -158,7 +158,10 @@ def read_document(path: Path) -> list[tuple[str, str]]:
     if suffix == ".pdf":
         from pypdf import PdfReader
 
-        return [(f"Page {i}", p.extract_text() or "") for i, p in enumerate(PdfReader(str(path)).pages, 1)]
+        from .ocr import fill_scanned
+
+        pages, _ = fill_scanned(str(path), [p.extract_text() or "" for p in PdfReader(str(path)).pages], limit=500)
+        return [(f"Page {i}", text) for i, text in enumerate(pages, 1)]
     data = path.read_bytes()
     if suffix == ".docx":
         from .attachments import docx_text
@@ -599,7 +602,14 @@ def list_bases():
         "embedders": [{"id": k, **{x: e[x] for x in ("name", "megabytes", "languages")}, "downloaded": embedder_path(k) is not None} for k, e in EMBEDDERS.items()],
         "embedder": current,
         "llama_cpp": _llama_ready(),
+        "ocr": _ocr(),
     }
+
+
+def _ocr() -> str | None:
+    from .ocr import available
+
+    return available()
 
 
 def _llama_ready() -> bool:

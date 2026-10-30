@@ -359,5 +359,8 @@
   "kb.no_results": "没有匹配的内容。",
   "kb.sync": "保持同步",
   "kb.sync_on": "这些文件夹中的更改会在一分钟内建立索引，并遵循 .gitignore 规则。",
-  "kb.sync_off": "用刷新按钮手动索引更改。"
+  "kb.sync_off": "用刷新按钮手动索引更改。",
+  "kb.ocr_vision": "PDF 中的扫描页由为聊天加载的视觉模型读取。",
+  "kb.ocr_tesseract": "PDF 中的扫描页用 Tesseract 读取（为聊天加载视觉模型读得更好）。",
+  "kb.ocr_none": "PDF 中的扫描页会被跳过：为聊天加载视觉模型或安装 Tesseract 即可读取。"
 }

@@ -359,5 +359,8 @@
   "kb.no_results": "Nothing matched.",
   "kb.sync": "Keep in sync",
   "kb.sync_on": "Changes in these folders are indexed within a minute. .gitignore rules are honoured.",
-  "kb.sync_off": "Index changes by hand with the refresh button."
+  "kb.sync_off": "Index changes by hand with the refresh button.",
+  "kb.ocr_vision": "Scanned PDF pages are read by the vision model loaded for chat.",
+  "kb.ocr_tesseract": "Scanned PDF pages are read with Tesseract (a vision model loaded for chat reads them better).",
+  "kb.ocr_none": "Scanned PDF pages are skipped: load a vision model for chat, or install Tesseract, to read them."
 }

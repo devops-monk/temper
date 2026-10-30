@@ -35,6 +35,7 @@ interface KnowledgeInfo {
   embedders: Embedder[];
   embedder: string;
   llama_cpp: boolean;
+  ocr: "vision" | "tesseract" | null;
 }
 
 interface Passage {
@@ -99,6 +100,7 @@ export function KnowledgeBases() {
         </Field>
         {download && <ProgressBar value={progress ?? null} />}
         {!info.llama_cpp && <p className="text-[12px] text-straw">{t("kb.needs_llama")}</p>}
+        <p className="text-[12px] text-muted">{t(info.ocr === "vision" ? "kb.ocr_vision" : info.ocr === "tesseract" ? "kb.ocr_tesseract" : "kb.ocr_none")}</p>
       </div>
       {adding && <NewBase onDone={(made) => (setAdding(false), made && (refresh(), void refreshJobs()))} />}
       {info.bases.length === 0 && !adding && <p className="text-[13px] text-muted">{t("kb.empty")}</p>}

@@ -12,6 +12,8 @@ dependencies = [
   "huggingface_hub>=0.26",
   "packaging>=23",
   "pypdf>=5",
+  # Renders scanned PDF pages for OCR.
+  "pypdfium2>=4.30",
   # Knowledge bases: passage vectors and their similarity.
   "numpy>=1.26",
   # .gitignore rules, which knowledge bases honour.

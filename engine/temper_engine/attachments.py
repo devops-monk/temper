@@ -71,6 +71,9 @@ def file_path(attachment_id: str) -> Path:
 # --- Reading documents ----------------------------------------------------------------------------
 
 
+OCR_PAGES = 20  # scanned pages read when a PDF is attached; a knowledge base reads them all
+
+
 def pdf_text(data: bytes) -> tuple[str, int]:
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
@@ -82,9 +85,18 @@ def pdf_text(data: bytes) -> tuple[str, int]:
         pages = [(page.extract_text() or "").strip() for page in reader.pages]
     except PdfReadError as e:
         raise ValueError(f"The PDF couldn't be read: {e}") from e
-    text = "\n\n".join(f"[Page {i}]\n{p}" for i, p in enumerate(pages, 1) if p)
+    from .ocr import fill_scanned
+
+    pages, unread = fill_scanned(data, pages, limit=OCR_PAGES)  # scanned pages, read by a vision model or Tesseract
+    text = "\n\n".join(f"[Page {i}]\n{p.strip()}" for i, p in enumerate(pages, 1) if p.strip())
     if not text:
-        raise ValueError("The PDF has no text to read; it may be scanned pages. Attach the pages as images to a vision model instead.")
+        from .ocr import available
+
+        if available():
+            raise ValueError("The PDF has no text to read, not even in its scanned pages.")
+        raise ValueError("The PDF has no text to read; it may be scanned pages. Load a vision model for chat, or install Tesseract, and attach it again.")
+    if unread:
+        text += f"\n\n[{unread} scanned pages weren't read.]"
     return text, len(pages)
 
 

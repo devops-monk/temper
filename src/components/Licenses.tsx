@@ -33,6 +33,7 @@ const DOWNLOADED = [
   ["vLLM (if installed)", "Apache-2.0", "https://github.com/vllm-project/vllm"],
   ["SGLang (if installed)", "Apache-2.0", "https://github.com/sgl-project/sglang"],
   ["pypdf", "BSD-3-Clause", "https://github.com/py-pdf/pypdf"],
+  ["pypdfium2 and PDFium", "BSD-3-Clause, Apache-2.0", "https://github.com/pypdfium2-team/pypdfium2"],
   ["NumPy", "BSD-3-Clause", "https://github.com/numpy/numpy"],
   ["pathspec", "MPL-2.0", "https://github.com/cpburnz/python-pathspec"],
   ["tzdata (Windows)", "Apache-2.0", "https://github.com/python/tzdata"],

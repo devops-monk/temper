@@ -359,5 +359,8 @@
   "kb.no_results": "No hubo coincidencias.",
   "kb.sync": "Mantener al día",
   "kb.sync_on": "Los cambios en estas carpetas se indexan en menos de un minuto. Se respetan las reglas de .gitignore.",
-  "kb.sync_off": "Indexa los cambios a mano con el botón de actualizar."
+  "kb.sync_off": "Indexa los cambios a mano con el botón de actualizar.",
+  "kb.ocr_vision": "Las páginas escaneadas de los PDF las lee el modelo de visión cargado para el chat.",
+  "kb.ocr_tesseract": "Las páginas escaneadas de los PDF se leen con Tesseract (un modelo de visión cargado para el chat las lee mejor).",
+  "kb.ocr_none": "Las páginas escaneadas de los PDF se omiten: carga un modelo de visión para el chat o instala Tesseract para leerlas."
 }
