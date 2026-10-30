@@ -242,5 +242,7 @@
   "skills.description": "कब इस्तेमाल करें",
   "skills.description_hint": "Python कोड के लिए यूनिट टेस्ट लिखना",
   "skills.instructions": "निर्देश",
-  "skills.save": "स्किल बनाएँ"
+  "skills.save": "स्किल बनाएँ",
+  "tool.read_web_page": "वेब पेज",
+  "tool.read_web_page.about": "मॉडल के माँगे सार्वजनिक वेब पेज और PDF, उनके लिंक समेत, पढ़ता है।"
 }

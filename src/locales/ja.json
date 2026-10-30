@@ -242,5 +242,7 @@
   "skills.description": "使う場面",
   "skills.description_hint": "Python コードの単体テストを書く",
   "skills.instructions": "指示",
-  "skills.save": "スキルを作成"
+  "skills.save": "スキルを作成",
+  "tool.read_web_page": "ウェブページ",
+  "tool.read_web_page.about": "モデルが求めた公開ウェブページや PDF とそのリンクを読みます。"
 }

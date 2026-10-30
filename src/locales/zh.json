@@ -242,5 +242,7 @@
   "skills.description": "何时使用",
   "skills.description_hint": "为 Python 代码编写单元测试",
   "skills.instructions": "指令",
-  "skills.save": "创建技能"
+  "skills.save": "创建技能",
+  "tool.read_web_page": "网页",
+  "tool.read_web_page.about": "读取模型请求的公开网页和 PDF，以及其中的链接。"
 }

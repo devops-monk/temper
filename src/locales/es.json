@@ -242,5 +242,7 @@
   "skills.description": "Cuándo usarla",
   "skills.description_hint": "Escribir pruebas unitarias para código Python",
   "skills.instructions": "Instrucciones",
-  "skills.save": "Crear habilidad"
+  "skills.save": "Crear habilidad",
+  "tool.read_web_page": "Páginas web",
+  "tool.read_web_page.about": "Lee las páginas web públicas y los PDF que pida el modelo, y sus enlaces."
 }

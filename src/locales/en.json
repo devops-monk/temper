@@ -242,5 +242,7 @@
   "skills.description": "When to use it",
   "skills.description_hint": "Writing unit tests for Python code",
   "skills.instructions": "Instructions",
-  "skills.save": "Make skill"
+  "skills.save": "Make skill",
+  "tool.read_web_page": "Web pages",
+  "tool.read_web_page.about": "Reads public web pages and PDFs the model asks for, and their links."
 }

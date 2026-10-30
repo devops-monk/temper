@@ -116,6 +116,15 @@ def _code(language: str) -> Callable[[dict, dict], str]:
     return run
 
 
+def _web(args: dict, ctx: dict) -> str:
+    from . import web
+
+    url = args.get("url")
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("Give the page's `url`.")
+    return web.read(url, int(args.get("part") or 1))
+
+
 def _node() -> bool:
     from . import sandbox
 
@@ -150,6 +159,14 @@ TOOLS: dict[str, Tool] = {
             "Runs Python 3 code and returns its output. Use it for calculations, data work and checking code." + _CODE_NOTE,
             {"type": "object", "properties": {"code": {"type": "string", "description": "The Python program to run"}}, "required": ["code"]},
             _code("python"),
+            mode="ask",
+        ),
+        Tool(
+            "read_web_page",
+            "Web pages",
+            "Fetches a public web page (or PDF) and returns its text, with its links numbered so you can follow one. Long pages come in parts.",
+            {"type": "object", "properties": {"url": {"type": "string", "description": "The page's full address, starting with https://"}, "part": {"type": "integer", "description": "Which part of a long page, from 1"}}, "required": ["url"]},
+            _web,
             mode="ask",
         ),
         Tool(
