@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
 import { CodeSandbox } from "../components/Tools";
+import { McpServers } from "../components/McpServers";
 import { GlobalInstructions } from "../components/Instructions";
 import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
@@ -231,6 +232,8 @@ export function SettingsPage() {
           {engine?.status === "running" && <GlobalInstructions />}
 
           {engine?.status === "running" && <CodeSandbox />}
+
+          {engine?.status === "running" && <McpServers />}
 
           {engine?.status === "running" && <Engines />}
 

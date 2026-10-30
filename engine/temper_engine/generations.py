@@ -158,19 +158,22 @@ async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]
         server, _, _ = route(dict(body))
         # llama-server takes the tools natively; other engines were offered them in the system prompt (compaction.py).
         native = server.engine == "llama.cpp"
-        specs = tools.schemas(names)
+        offered = await asyncio.to_thread(tools.offer, names)  # connects the chat's MCP servers
+        approve = [*approve, *offered.approve()]
         messages = list(body["messages"])
         made: dict[str, dict] = {}  # each distinct call's step, by tool and arguments
         looping = False
         async with httpx.AsyncClient(timeout=None) as client:
             for turn in range(tools.MAX_ROUNDS + 1):
+                # The tools offered can grow: search_tools makes the MCP tools it finds callable.
+                specs, known = offered.specs(), offered.names
                 offer = bool(specs) and turn < tools.MAX_ROUNDS and not looping
                 start = len(gen.content)
                 calls = await _round(gen, client, {**body, "messages": messages, **({"tools": specs} if offer and native else {})})
                 if calls is None or not specs:
                     return
                 # Calls the model wrote into its text, in its own format, are taken out of the text and made.
-                found, cleaned = tools.extract_calls(gen.content[start:], names)
+                found, cleaned = tools.extract_calls(gen.content[start:], known)
                 if found or cleaned != gen.content[start:]:
                     gen.content = gen.content[:start] + cleaned
                     gen.push({"temper_content": gen.content})
@@ -182,11 +185,11 @@ async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]
                     call.id = call.id or f"call_{uuid.uuid4().hex[:10]}"
                     arguments = tools.parse_arguments(call.arguments)
                     # Small models repeat calls they've made; the repeat gets the earlier result instead of running again.
-                    key = f"{tools.resolve_name(call.name, names)}:{json.dumps(arguments, sort_keys=True) if arguments is not None else call.arguments}"
+                    key = f"{tools.resolve_name(call.name, known)}:{json.dumps(arguments, sort_keys=True) if arguments is not None else call.arguments}"
                     if key in made:
                         steps.append({**made[key], "id": call.id, "result": f"{made[key]['result']}\n(The same call as before: answer from the results you have.)"})
                         continue
-                    name = tools.resolve_name(call.name, names)
+                    name = tools.resolve_name(call.name, known)
                     step = {"id": call.id, "name": name or call.name or "?", "arguments": call.arguments if arguments is None else arguments, "result": None, "error": False, "at": len(gen.content)}
                     if name in approve and arguments is not None:
                         step["approval"] = "pending"
@@ -200,7 +203,7 @@ async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]
                     if step["result"] is None:
                         if step.get("approval"):
                             gen.push({"temper_tool": step})  # allowed, and running
-                        step.update(await asyncio.to_thread(tools.run, call, names, {"chat": gen.chat_id}))
+                        step.update(await asyncio.to_thread(offered.run, call, {"chat": gen.chat_id}))
                     gen.push({"temper_tool": step})
                     steps.append(made.setdefault(key, step))
                     fresh += 1

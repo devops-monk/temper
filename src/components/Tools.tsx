@@ -5,6 +5,7 @@ import { useT, type Key } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
+import type { McpServer } from "./McpServers";
 import { ReplyText } from "./Reply";
 import { Button, ProgressBar, Section, Select, cx } from "./ui";
 
@@ -44,6 +45,9 @@ function useLabel() {
   };
 }
 
+/** An MCP tool's name, mcp__<server>__<tool>, as "server: tool". */
+const mcpLabel = (name: string) => (name.startsWith("mcp__") ? name.slice(5).replace("__", ": ") : name);
+
 const CODE = ["run_python", "run_javascript"];
 
 /** The Generation panel's tools: each off, asking before each call, or running calls straight away. */
@@ -51,7 +55,11 @@ export function ToolsControl({ value, onChange }: { value: ToolModes; onChange: 
   const t = useT();
   const label = useLabel();
   const [list, setList] = useState<{ tools: ToolInfo[]; sandbox: string | null } | null>(null);
-  useEffect(() => void toolList().then(setList), []);
+  const [servers, setServers] = useState<McpServer[]>([]);
+  useEffect(() => {
+    void toolList().then(setList);
+    void api<{ servers: McpServer[] }>("/api/mcp").then((r) => setServers(r.servers.filter((s) => s.enabled)), () => {});
+  }, []);
   if (!list?.tools.length) return null;
   const set = (name: string, mode: ToolMode | "off") => {
     const { [name]: _, ...rest } = value;
@@ -74,6 +82,18 @@ export function ToolsControl({ value, onChange }: { value: ToolModes; onChange: 
             </Select>
           </div>
           <p className="text-[12px] text-muted">{label(`tool.${tool.name}.about`, tool.description)}</p>
+        </div>
+      ))}
+      {servers.map((server) => (
+        <div key={server.name}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="truncate text-[13px]">{t("tools.mcp_server", { name: server.name })}</span>
+            <Select value={value[`mcp:${server.name}`] ? "auto" : "off"} onChange={(e) => set(`mcp:${server.name}`, e.target.value === "off" ? "off" : "auto")} aria-label={server.name} className="h-7 w-24 text-[12.5px]">
+              <option value="off">{t("tools.off")}</option>
+              <option value="auto">{t("tools.on")}</option>
+            </Select>
+          </div>
+          <p className="text-[12px] text-muted">{server.error ? server.error : t("tools.mcp_about", { count: server.tools.length || "…" })}</p>
         </div>
       ))}
       {code && <SandboxNote kind={list.sandbox} />}
@@ -109,7 +129,7 @@ export function ToolCard({ step, onApprove }: { step: ToolStep; onApprove?: OnAp
   const [open, setOpen] = useState(false);
   const waiting = step.approval === "pending";
   const running = step.result === null && !waiting;
-  const name = label(`tool.${step.name}`, step.name);
+  const name = label(`tool.${step.name}`, mcpLabel(step.name));
   const title = waiting ? t("tools.wants", { name }) : running ? t("tools.running", { name }) : step.approval === "declined" ? t("tools.declined", { name }) : step.error ? t("tools.failed", { name }) : t("tools.used", { name });
   return (
     <div className={cx("not-prose my-2 rounded-lg border bg-surface text-[12.5px]", waiting ? "border-accent/60" : "border-line")}>

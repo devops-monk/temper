@@ -27,7 +27,7 @@ import operator
 import re
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -331,6 +331,86 @@ def run(call: Call, known: list[str], ctx: dict | None = None) -> dict:
     if len(result) > MAX_RESULT:
         result = result[:MAX_RESULT] + "\n[The rest of the result was cut.]"
     return {**step, "result": result}
+
+
+# --- A chat's tools -------------------------------------------------------------------------------
+
+
+@dataclass
+class Offer:
+    """What a chat's choice of tools offers the model: built-in tools, its MCP servers' tools, and
+    whether those are found with search_tools because there are too many to send (mcp.py)."""
+
+    builtin: list[str]
+    mcp: list[dict]  # every tool the chat's MCP servers offer (mcp.catalog)
+    searching: bool
+    found: list[str] = field(default_factory=list)  # MCP tools search_tools has turned up
+
+    def visible(self) -> list[dict]:
+        return [e for e in self.mcp if not self.searching or e["name"] in self.found]
+
+    @property
+    def names(self) -> list[str]:
+        from .mcp import SEARCH
+
+        return [*self.builtin, *([SEARCH] if self.searching else []), *(e["name"] for e in self.visible())]
+
+    def approve(self) -> list[str]:
+        """The MCP tools set to ask before each call."""
+        return [e["name"] for e in self.mcp if e["mode"] == "ask"]
+
+    def specs(self) -> list[dict]:
+        from .mcp import search_spec
+
+        mcp = [{"type": "function", "function": {"name": e["name"], "description": f"[{e['server']}] {e['description']}".strip(), "parameters": e["parameters"]}} for e in self.visible()]
+        return [*schemas(self.builtin), *([search_spec()] if self.searching else []), *mcp]
+
+    def prompt(self) -> str:
+        """The system prompt text that offers these tools as text, for engines that don't take them natively."""
+        if not (specs := self.specs()):
+            return ""
+        lines = "\n".join(f"- {s['function']['name']}: {s['function']['description']} Arguments (JSON schema): {json.dumps(s['function']['parameters'])}" for s in specs)
+        return (
+            "You can call tools. To call one, write only this, on its own line, then stop:\n"
+            '<tool_call>{"name": "<tool name>", "arguments": {<arguments>}}</tool_call>\n'
+            "The result comes back in a <tool_response> message, and you continue from there. "
+            "Call a tool when it helps answer; otherwise answer directly.\n\nTools:\n" + lines
+        )
+
+    def run(self, call: Call, ctx: dict | None = None) -> dict:
+        """Runs a call to any of the offered tools; returns its step, as run() does."""
+        from . import mcp
+
+        known = self.names
+        name = resolve_name(call.name, known) if call.name else None
+        if name == mcp.SEARCH:
+            args = parse_arguments(call.arguments) or {}
+            hits = mcp.search(self.mcp, str(args.get("query", "")))
+            self.found += [h["name"] for h in hits if h["name"] not in self.found]
+            text = "\n".join(f"- {h['name']}: {h['description']} Arguments (JSON schema): {json.dumps(h['parameters'])}" for h in hits)
+            result = f"Tools you can call now:\n{text}" if hits else "No tools matched. Try other words, or answer without a tool."
+            return {"id": call.id or f"call_{uuid.uuid4().hex[:10]}", "name": name, "arguments": args, "result": result, "error": not hits}
+        entry = next((e for e in self.mcp if e["name"] == name), None)
+        if not entry:  # a built-in tool, or one that doesn't exist
+            return run(call, known, ctx)
+        step = {"id": call.id or f"call_{uuid.uuid4().hex[:10]}", "name": name, "arguments": call.arguments, "result": None, "error": False}
+        args = parse_arguments(call.arguments)
+        if args is None:
+            return {**step, "error": True, "result": f"The arguments weren't valid JSON: {str(call.arguments)[:300]}. Call {name} again with a JSON object."}
+        try:
+            text, failed = mcp.manager.connection(entry["server"]).call(entry["tool"], args)
+        except mcp.McpError as e:
+            return {**step, "arguments": args, "error": True, "result": str(e)}
+        return {**step, "arguments": args, "result": text, "error": failed}
+
+
+def offer(names: list[str]) -> Offer:
+    """The tools a chat turned on: built-in names, and MCP servers as "mcp:<server>"."""
+    from . import mcp
+
+    builtin = [n for n in names if n in TOOLS]
+    entries = mcp.catalog([n[4:] for n in names if n.startswith("mcp:")])
+    return Offer(builtin, entries, searching=len(entries) > mcp.CATALOG_LIMIT)
 
 
 # --- Messages -------------------------------------------------------------------------------------

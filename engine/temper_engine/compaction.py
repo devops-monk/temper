@@ -240,9 +240,10 @@ def prepare(req: Prepare):
     system = with_instructions(req.system, req.project) if req.instructions else req.system
     # llama-server takes tools natively; other engines are offered them in the system prompt.
     native = server.engine == "llama.cpp"
-    specs = tools.schemas(req.tools) if native else None
-    if req.tools and not native:
-        system = "\n\n".join(t for t in (system, tools.prompt(req.tools)) if t)
+    offered = tools.offer(req.tools) if req.tools else None
+    specs = offered.specs() if offered and native else None
+    if offered and not native:
+        system = "\n\n".join(t for t in (system, offered.prompt()) if t)
 
     def build(upto: int, text: str | None) -> list[dict]:
         return _with_system(system, text) + _sendable(req.messages[upto:], native)
