@@ -2,6 +2,7 @@ import { FolderOpen, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LossChart } from "../components/LossChart";
 import { RunHistory } from "../components/RunHistory";
+import { SampleReplies, type Sample } from "../components/SampleReplies";
 import { MemoryEstimate, type Budget, type Estimate, type Verdict } from "../components/MemoryEstimate";
 import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
@@ -29,6 +30,8 @@ interface Form {
   batch_size: number;
   grad_accum: number;
   warmup_steps: number;
+  early_stopping: boolean;
+  sample_replies: boolean;
 }
 
 const DEFAULTS: Form = {
@@ -50,6 +53,8 @@ const DEFAULTS: Form = {
   batch_size: 2,
   grad_accum: 4,
   warmup_steps: 5,
+  early_stopping: false,
+  sample_replies: true,
 };
 
 /** On Apple Silicon, MLX needs MLX-format weights; these community conversions mirror the defaults. */
@@ -69,18 +74,27 @@ function NumberField({ label, value, onChange, step, hint }: { label: string; va
   );
 }
 
+/** The evaluation whose adapter a run kept, when it stopped early (engine train_worker, "best"). */
+interface Best {
+  step: number;
+  val_loss: number;
+  stopped_at: number | null;
+}
+
 function RunPanel({ job }: { job: Job }) {
   const { events, status } = useJob(job.id);
   const refreshJobs = useApp((s) => s.refreshJobs);
   const logRef = useRef<HTMLPreElement>(null);
 
-  const { points, last, phase, dataset, logs, totalSteps, val } = useMemo(() => {
+  const { points, last, phase, dataset, logs, totalSteps, val, samples, best } = useMemo(() => {
     const points: { step: number; loss: number }[] = [];
     let val: { step: number; val_loss: number } | null = null;
     let last: Record<string, number> | null = null;
     let phase = "Starting worker";
     let totalSteps: number | null = null;
     let dataset: Record<string, unknown> | null = null;
+    let best: Best | null = null;
+    const samples: Sample[] = [];
     const logs: string[] = [];
     for (const ev of events) {
       if (ev.event === "metrics" && typeof ev.loss === "number") {
@@ -92,10 +106,12 @@ function RunPanel({ job }: { job: Job }) {
         totalSteps = (ev.total_steps as number) ?? totalSteps;
       } else if (ev.event === "eval" && typeof ev.val_loss === "number") val = { step: ev.step as number, val_loss: ev.val_loss };
       else if (ev.event === "dataset") dataset = ev;
+      else if (ev.event === "sample") samples.push(ev as unknown as Sample);
+      else if (ev.event === "best") best = ev as unknown as Best;
       else if (ev.event === "log") logs.push(ev.line as string);
       else if (ev.event === "error") logs.push(`Error: ${ev.message}`);
     }
-    return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps, val };
+    return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps, val, samples, best };
   }, [events]);
 
   useEffect(() => {
@@ -147,7 +163,15 @@ function RunPanel({ job }: { job: Job }) {
             Validation loss {val.val_loss.toFixed(3)} at step {val.step}
           </p>
         )}
+        {best && (
+          <p className="mt-1 text-[12.5px]">
+            {best.stopped_at ? `Stopped early at step ${best.stopped_at}: validation loss had stopped improving. ` : ""}
+            Kept the adapter from step {best.step} (validation loss {best.val_loss.toFixed(3)}).
+          </p>
+        )}
       </div>
+
+      {samples.length > 0 && <SampleReplies samples={samples} />}
 
       {state === "failed" && job.error && <Notice tone="error">{job.error}</Notice>}
 
@@ -400,6 +424,15 @@ export function TrainPage() {
                 </>
               )}
               <NumberField label="Warmup steps" value={form.warmup_steps} onChange={set("warmup_steps")} />
+            </div>
+          </Section>
+
+          <Section title="Evaluation">
+            <div className="flex flex-col gap-2.5">
+              <Toggle label="Show sample replies while training" checked={form.sample_replies} onChange={set("sample_replies")} />
+              <p className="-mt-1.5 text-[12px] text-muted">At each evaluation the model answers two held-out prompts, so you can watch its replies change.</p>
+              <Toggle label="Stop early when validation loss stops improving" checked={form.early_stopping} onChange={set("early_stopping")} />
+              <p className="-mt-1.5 text-[12px] text-muted">Stops after three evaluations without improvement, and keeps the adapter from the best one.</p>
             </div>
           </Section>
           {trainer && (

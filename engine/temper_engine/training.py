@@ -65,6 +65,10 @@ class TrainConfig(BaseModel):
     name: str | None = None
     # Held-out rows for validation loss. A prepared `x.jsonl` with a sibling `x.eval.jsonl` uses it automatically.
     eval_dataset: str | None = None
+    # Stop once validation loss hasn't improved for a few evaluations, keeping the best adapter.
+    early_stopping: bool = False
+    # Answer a couple of held-out prompts at each evaluation, to see replies change as it trains.
+    sample_replies: bool = True
     save_every: int = Field(default=0, ge=0, description="steps between checkpoints; 0 saves five over the run")
     resume_from: str | None = None  # a checkpoint to carry on from
     start_step: int = 0  # the step of that checkpoint, so the run's steps line up with the run it carries on
@@ -116,6 +120,9 @@ def start(cfg: TrainConfig):
     dataset = Path(cfg.dataset).expanduser()
     if cfg.eval_dataset is None and dataset.suffix == ".jsonl" and dataset.with_suffix(".eval.jsonl").is_file():
         cfg.eval_dataset = str(dataset.with_suffix(".eval.jsonl"))
+    if cfg.early_stopping and trainer != "mlx" and not cfg.eval_dataset:
+        # MLX holds out a slice of the data by itself; the GPU trainer evaluates only on a separate set.
+        raise HTTPException(400, "Stopping early needs a held-out set to measure against. Prepare the dataset on the Datasets page (it sets one aside), or give an evaluation file.")
 
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + _slug(cfg.name or cfg.source_id or cfg.base_model)
     # Two runs of the same name started in the same second get -2, -3 and so on.
@@ -223,6 +230,8 @@ def get_run(run_id: str):
         "dataset_info": next(({k: v for k, v in e.items() if k not in ("event", "t", "sample")} for e in evs if e["event"] == "dataset"), None),
         "provenance": next(({k: v for k, v in e.items() if k not in ("event", "t")} for e in evs if e["event"] == "provenance"), None),
         "error": next((e.get("message") for e in evs if e["event"] == "error"), None),
+        "best": next(({k: e.get(k) for k in ("step", "val_loss", "stopped_at")} for e in evs if e["event"] == "best"), None),
+        "samples": [{k: e.get(k) for k in ("step", "prompt", "reply", "expected")} for e in evs if e["event"] == "sample"],
         "checkpoint_list": checkpoints(d),
     }
 

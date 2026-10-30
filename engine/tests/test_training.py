@@ -99,3 +99,58 @@ def test_the_worker_records_its_events(tmp_path, monkeypatch, capsys):
     kept = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
     assert [(e["event"], e["loss"]) for e in kept] == [("metrics", 2.5)]
     assert train_worker.save_every({"save_every": 0}, 200) == 40 and train_worker.save_every({"save_every": 0}, 20) == 10 and train_worker.save_every({"save_every": 7}, 200) == 7
+
+
+def test_held_out_conversations_become_sample_prompts():
+    from temper_engine import train_worker
+
+    convs = [
+        "plain text",
+        [{"role": "user", "content": "Hi"}],
+        [{"role": "system", "content": "Be brief."}, {"role": "user", "content": "2+2?"}, {"role": "assistant", "content": "4"}],
+        [{"role": "user", "content": "Capital of France?"}, {"role": "assistant", "content": "Paris"}],
+        [{"role": "user", "content": "Third"}, {"role": "assistant", "content": "not needed"}],
+    ]
+    prompts = train_worker.sample_prompts(convs)
+    assert [p["expected"] for p in prompts] == ["4", "Paris"]
+    assert prompts[0]["messages"][-1] == {"role": "user", "content": "2+2?"} and len(prompts[0]["messages"]) == 2
+    assert train_worker.eval_every(200) == 20 and train_worker.eval_every(5) == 1
+
+
+def test_mlx_training_stops_early_and_keeps_the_best_adapter(tmp_path, monkeypatch, capsys):
+    pytest.importorskip("mlx_lm")
+    import mlx.core as mx
+
+    from temper_engine import mlx_lora
+
+    class Model:
+        weight = 0.0
+
+        def trainable_parameters(self):
+            return {"w": mx.array([self.weight])}
+
+        def eval(self):
+            pass
+
+        def train(self):
+            pass
+
+    class Args:
+        adapter_file = str(tmp_path / "adapters.safetensors")
+
+    monkeypatch.setenv("TEMPER_EARLY_STOP", "2")
+    monkeypatch.delenv("TEMPER_SAMPLES", raising=False)
+    model = Model()
+
+    def fake_train(model, args, training_callback, **kw):
+        for it, (w, loss) in enumerate([(1, 2.0), (2, 1.5), (3, 1.6), (4, 1.7), (5, 1.0)]):
+            model.weight = w
+            training_callback.on_val_loss_report({"iteration": it * 10, "val_loss": loss})
+        mx.save_safetensors(args.adapter_file, {"w": mx.array([float(model.weight)])})
+
+    monkeypatch.setattr(mlx_lora, "_train", fake_train)
+    mlx_lora._train_watched(model=model, args=Args(), optimizer=None, train_dataset=None, val_dataset=None, training_callback=None)
+    assert mx.load(Args.adapter_file)["w"].item() == 2  # the best evaluation's weights, not the last step's
+    best = [json.loads(line[7:]) for line in capsys.readouterr().out.splitlines() if line.startswith("TEMPER ")]
+    assert best == [{"event": "best", "step": 11, "val_loss": 1.5, "stopped_at": 31}]
+    assert not (tmp_path / "best_adapters.safetensors").exists()

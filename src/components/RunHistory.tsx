@@ -4,6 +4,7 @@ import { api } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import { useEngines } from "./LoadButton";
+import { SampleReplies, type Sample } from "./SampleReplies";
 import { Badge, Button, Notice, Section, cx } from "./ui";
 
 /** A past fine-tuning run (engine training.summary). */
@@ -31,6 +32,8 @@ interface Detail extends Run {
   evals: { step: number; val_loss: number | null }[];
   provenance: Record<string, unknown> | null;
   error: string | null;
+  best: { step: number; val_loss: number; stopped_at: number | null } | null;
+  samples: Sample[];
   checkpoint_list: { step: number; path: string; bytes: number }[];
 }
 
@@ -147,7 +150,13 @@ function RunDetail({ run, onAct, onChat }: { run: Run; onAct: (call: Promise<unk
           </>
         )}
       </dl>
+      {detail?.best && (
+        <p>
+          {detail.best.stopped_at ? `Stopped early at step ${detail.best.stopped_at}. ` : ""}Kept the adapter from step {detail.best.step}, validation loss {detail.best.val_loss.toFixed(3)}.
+        </p>
+      )}
       {detail?.error && <Notice tone="error">{detail.error}</Notice>}
+      {detail && detail.samples.length > 0 && <SampleReplies samples={detail.samples} />}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" onClick={() => void onAct(api(`/api/train/runs/${run.id}/rerun`, { method: "POST" }))} disabled={run.status === "running"}>
           <RotateCcw className="size-3.5" /> Run again
