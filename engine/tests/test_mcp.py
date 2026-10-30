@@ -196,3 +196,20 @@ def test_bm25_ranks_the_tool_that_matches_best():
     assert [e["name"] for e in mcp.search(entries, "open an issue on github")][0] == "create_issue"
     assert [e["name"] for e in mcp.search(entries, "email")] == ["send_email"]
     assert mcp.search(entries, "weather") == []
+
+
+def test_ready_made_servers_are_added_with_what_they_need(tmp_path, monkeypatch):
+    mcp.manager.client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(401)))
+    monkeypatch.setattr(mcp.shutil, "which", lambda name: "/usr/bin/npx" if name == "npx" else None)
+    with TestClient(create_app(token="secret")) as c:
+        assert {p["id"]: p["added"] for p in c.get("/api/mcp/presets", headers=AUTH).json()["presets"]} == {"filesystem": False, "github": False, "blender": False}
+        assert c.post("/api/mcp/presets/filesystem", headers=AUTH, json={"value": str(tmp_path / "nope")}).status_code == 422
+        c.post("/api/mcp/presets/filesystem", headers=AUTH, json={"value": str(tmp_path)})
+        assert mcp.load()["files"]["args"] == ["-y", "@modelcontextprotocol/server-filesystem", str(tmp_path.resolve())]
+        assert c.post("/api/mcp/presets/github", headers=AUTH, json={"value": " "}).status_code == 422
+        github = c.post("/api/mcp/presets/github", headers=AUTH, json={"value": "ghp_x"}).json()
+        assert github["config"]["headers"]["Authorization"] == mcp.MASK and mcp.load()["github"]["headers"]["Authorization"] == "Bearer ghp_x"
+        assert c.get("/api/mcp/presets", headers=AUTH).json()["presets"][0]["added"]
+        monkeypatch.setattr(mcp.shutil, "which", lambda name: None)
+        assert c.post("/api/mcp/presets/filesystem", headers=AUTH, json={"value": str(tmp_path)}).status_code == 409
+        assert c.post("/api/mcp/presets/nope", headers=AUTH, json={}).status_code == 404

@@ -22,6 +22,7 @@ import math
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import threading
 from collections import Counter
@@ -512,6 +513,86 @@ def add_server(req: ServerConfig):
 
 class Paste(BaseModel):
     text: str
+
+
+# --- Ready-made servers --------------------------------------------------------------------------
+
+# Each asks for at most one thing (`needs`: a folder or a token) and may need a program installed.
+PRESETS = [
+    {
+        "id": "filesystem",
+        "name": "files",
+        "title": "Files",
+        "description": "Read, search and write files in one folder you choose, and nowhere else.",
+        "needs": "folder",
+        "requires": "node",
+        "url": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+    },
+    {
+        "id": "github",
+        "name": "github",
+        "title": "GitHub",
+        "description": "Issues, pull requests, code search and repositories, through GitHub's own MCP server.",
+        "needs": "token",
+        "requires": None,
+        "url": "https://github.com/github/github-mcp-server",
+    },
+    {
+        "id": "blender",
+        "name": "blender",
+        "title": "Blender",
+        "description": "Build and change 3D scenes in a running Blender. Needs the blender-mcp add-on installed and connected in Blender.",
+        "needs": None,
+        "requires": None,
+        "url": "https://github.com/ahujasid/blender-mcp",
+    },
+]
+
+
+def preset_config(preset: str, value: str | None) -> dict:
+    """The server config a ready-made server needs, with the folder or token given."""
+    if preset == "filesystem":
+        folder = Path(value or "").expanduser()
+        if not value or not folder.is_dir():
+            raise HTTPException(422, "Choose a folder for the files server to work in.")
+        if not shutil.which("npx"):
+            raise HTTPException(409, "The files server runs with Node.js, which isn't installed. Install it from nodejs.org, then add the server.")
+        return {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", str(folder.resolve())]}
+    if preset == "github":
+        if not value or not value.strip():
+            raise HTTPException(422, "Paste a GitHub personal access token (github.com/settings/tokens).")
+        return {"url": "https://api.githubcopilot.com/mcp/", "type": "http", "headers": {"Authorization": f"Bearer {value.strip()}"}}
+    if preset == "blender":
+        from .llamacpp import uv_binary
+
+        try:
+            uv = uv_binary()
+        except RuntimeError as e:
+            raise HTTPException(409, str(e)) from None
+        return {"command": uv, "args": ["tool", "run", "blender-mcp"]}
+    raise HTTPException(404, f"There's no ready-made server called {preset}.")
+
+
+@router.get("/presets")
+def list_presets():
+    added = load()
+    return {"presets": [{**p, "added": p["name"] in added, "ready": not p["requires"] or bool(shutil.which("npx"))} for p in PRESETS]}
+
+
+class AddPreset(BaseModel):
+    value: str | None = None  # the folder or token it needs
+
+
+@router.post("/presets/{preset}")
+def add_preset(preset: str, req: AddPreset):
+    entry = next((p for p in PRESETS if p["id"] == preset), None)
+    if not entry:
+        raise HTTPException(404, f"There's no ready-made server called {preset}.")
+    servers = load()
+    servers[entry["name"]] = preset_config(preset, req.value)
+    save(servers)
+    manager.disconnect(entry["name"])
+    return connect(entry["name"])
 
 
 @router.post("/import")

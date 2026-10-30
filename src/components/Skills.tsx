@@ -68,7 +68,8 @@ export function SkillPicker({ query, project, onPick, onDismiss }: { query: stri
   );
 }
 
-async function pickFolder(title: string): Promise<string | null> {
+/** A folder picked in the system dialog (or typed, in a browser). */
+export async function pickFolder(title: string): Promise<string | null> {
   if (inTauri) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({ directory: true, title });

@@ -1,7 +1,8 @@
-import { ChevronRight, Plug, RotateCw, Trash2 } from "lucide-react";
+import { ChevronRight, FolderOpen, Plug, RotateCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { useT } from "../lib/i18n";
+import { pickFolder } from "./Skills";
 import { Badge, Button, Field, Input, Section, Select, Toggle, cx } from "./ui";
 
 /** An MCP server as the engine lists it (engine mcp.py); env and header values come back masked. */
@@ -71,6 +72,7 @@ export function McpServers() {
           }}
         />
       )}
+      {!adding && servers && <ReadyMade added={servers} onAdded={(s) => setServers((list) => [...(list ?? []).filter((x) => x.name !== s.name), s])} />}
       {servers?.length === 0 && !adding && <p className="text-[13px] text-muted">{t("mcp.empty")}</p>}
       <ul className="flex flex-col gap-2">
         {servers?.map((s) => (
@@ -88,6 +90,87 @@ export function McpServers() {
       </ul>
       {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
     </Section>
+  );
+}
+
+interface Preset {
+  id: "filesystem" | "github" | "blender";
+  name: string;
+  needs: "folder" | "token" | null;
+  requires: "node" | null;
+  url: string;
+  added: boolean;
+  ready: boolean;
+}
+
+/** Servers that are a click (and a folder or a token) away: files, GitHub and Blender. */
+function ReadyMade({ added, onAdded }: { added: McpServer[]; onAdded: (s: McpServer) => void }) {
+  const t = useT();
+  const [presets, setPresets] = useState<Preset[] | null>(null);
+  const [asking, setAsking] = useState<string | null>(null);
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => void api<{ presets: Preset[] }>("/api/mcp/presets").then((r) => setPresets(r.presets), () => {}), []);
+  const shown = presets?.filter((p) => !added.some((s) => s.name === p.name)) ?? [];
+  if (!shown.length) return null;
+
+  async function add(p: Preset, value?: string) {
+    setBusy(p.id);
+    setError(null);
+    await api<McpServer>(`/api/mcp/presets/${p.id}`, { json: { value } }).then(
+      (s) => (onAdded(s), setAsking(null), setToken("")),
+      (e: Error) => setError(e.message),
+    );
+    setBusy(null);
+  }
+
+  async function start(p: Preset) {
+    if (p.needs === "folder") {
+      const folder = await pickFolder(t("mcp.preset.pick_folder"));
+      if (folder) await add(p, folder);
+    } else if (p.needs === "token") setAsking(p.id);
+    else await add(p);
+  }
+
+  return (
+    <div className="mb-3">
+      <h4 className="mb-1.5 text-[12px] font-medium text-muted">{t("mcp.preset.title")}</h4>
+      <ul className="grid gap-2 sm:grid-cols-3">
+        {shown.map((p) => (
+          <li key={p.id} className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3 text-[13px]">
+            <span className="font-medium">{t(`mcp.preset.${p.id}`)}</span>
+            <span className="flex-1 text-[12px] text-muted">
+              {t(`mcp.preset.${p.id}_about`)}{" "}
+              <a href={p.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                {t("mcp.preset.more")}
+              </a>
+            </span>
+            {asking === p.id ? (
+              <form onSubmit={(e) => (e.preventDefault(), void add(p, token))} className="flex flex-col gap-1.5">
+                <Input autoFocus type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("mcp.preset.token")} aria-label={t("mcp.preset.token")} />
+                <span className="flex gap-1">
+                  <Button size="sm" variant="primary" type="submit" disabled={!token.trim() || busy === p.id}>
+                    {busy === p.id ? t("mcp.connecting") : t("mcp.save")}
+                  </Button>
+                  <Button size="sm" variant="ghost" type="button" onClick={() => setAsking(null)}>
+                    {t("prompts.cancel")}
+                  </Button>
+                </span>
+              </form>
+            ) : p.ready ? (
+              <Button size="sm" className="self-start" onClick={() => void start(p)} disabled={busy !== null}>
+                {p.needs === "folder" && <FolderOpen className="size-3.5" />}
+                {busy === p.id ? t("mcp.connecting") : p.needs === "folder" ? t("mcp.preset.choose_folder") : t("mcp.preset.add")}
+              </Button>
+            ) : (
+              <span className="text-[12px] text-straw">{t("mcp.preset.needs_node")}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
+    </div>
   );
 }
 
