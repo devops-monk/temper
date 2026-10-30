@@ -172,7 +172,7 @@ temper/
 
 ## Phase 5: Search, research and RAG
 
-- [ ] **5.1 Web search tool**: private web search with configurable providers.
+- [x] **5.1 Web search tool**: private web search with configurable providers. A `web_search` tool (asks first) returns numbered results with addresses and snippets, to read in full with `read_web_page`. Settings → Web search picks the provider: DuckDuckGo (default, no key), SearXNG (your instance), Brave Search or Tavily (your key, kept masked). Only the search words go to the provider. DuckDuckGo tried live; SearXNG, Brave and Tavily are tested against mocked answers (no instance or keys here).
 - [ ] **5.2 Deep research**: multi-step research runs with citations, a review screen and a report export.
 - [ ] **5.3 Knowledge base (RAG)**: add folders and files (PDF, DOCX, PPTX, XLSX, Markdown, code); chunk, embed (local embedding GGUF) and index in SQLite + FTS5 + vectors; hybrid retrieval with citations.
 - [ ] **5.4 Folder sync**: watch folders and re-index on change, honouring `.gitignore`.

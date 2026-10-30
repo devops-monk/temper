@@ -273,5 +273,21 @@
   "skills.instructions": "निर्देश",
   "skills.save": "स्किल बनाएँ",
   "tool.read_web_page": "वेब पेज",
-  "tool.read_web_page.about": "मॉडल के माँगे सार्वजनिक वेब पेज और PDF, उनके लिंक समेत, पढ़ता है।"
+  "tool.read_web_page.about": "मॉडल के माँगे सार्वजनिक वेब पेज और PDF, उनके लिंक समेत, पढ़ता है।",
+  "tool.web_search": "वेब खोज",
+  "tool.web_search.about": "सेटिंग्स में चुने प्रदाता से मॉडल के लिए वेब पर खोजता है।",
+  "search.title": "वेब खोज",
+  "search.about": "वेब खोज टूल मॉडल की खोजें कहाँ भेजता है। प्रदाता को केवल खोज के शब्द जाते हैं, चैट कभी नहीं।",
+  "search.provider": "इससे खोजें",
+  "search.duckduckgo": "कोई खाता या की नहीं चाहिए।",
+  "search.searxng": "आपका चलाया या भरोसेमंद SearXNG इंस्टेंस, जिसमें JSON फ़ॉर्मेट चालू हो।",
+  "search.brave": "Brave का सर्च API, आपकी की के साथ (इसका मुफ़्त प्लान है)।",
+  "search.tavily": "AI एजेंटों के लिए Tavily का सर्च API, आपकी की के साथ (इसका मुफ़्त प्लान है)।",
+  "search.key": "API की",
+  "search.get_key": "{name} की पाएँ",
+  "search.url": "पता",
+  "search.url_hint": "जहाँ आपका SearXNG इंस्टेंस जवाब देता है, जैसे http://localhost:8888।",
+  "search.save": "सहेजें और आज़माएँ",
+  "search.trying": "आज़मा रहे हैं…",
+  "search.works": "{name} काम कर रहा है: टेस्ट खोज में {count} नतीजे।"
 }

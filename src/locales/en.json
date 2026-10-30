@@ -273,5 +273,21 @@
   "skills.instructions": "Instructions",
   "skills.save": "Make skill",
   "tool.read_web_page": "Web pages",
-  "tool.read_web_page.about": "Reads public web pages and PDFs the model asks for, and their links."
+  "tool.read_web_page.about": "Reads public web pages and PDFs the model asks for, and their links.",
+  "tool.web_search": "Web search",
+  "tool.web_search.about": "Searches the web for the model, through the provider chosen in Settings.",
+  "search.title": "Web search",
+  "search.about": "Where the Web search tool sends a model's searches. Only the search words go to the provider, never the chat.",
+  "search.provider": "Search with",
+  "search.duckduckgo": "No account or key needed.",
+  "search.searxng": "A SearXNG instance you run or trust, with its JSON format turned on.",
+  "search.brave": "Brave's search API, with your key (it has a free tier).",
+  "search.tavily": "Tavily's search API for AI agents, with your key (it has a free tier).",
+  "search.key": "API key",
+  "search.get_key": "Get a {name} key",
+  "search.url": "Address",
+  "search.url_hint": "Where your SearXNG instance answers, such as http://localhost:8888.",
+  "search.save": "Save and try",
+  "search.trying": "Trying…",
+  "search.works": "{name} works: {count} results for a test search."
 }

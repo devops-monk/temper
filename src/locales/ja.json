@@ -273,5 +273,21 @@
   "skills.instructions": "指示",
   "skills.save": "スキルを作成",
   "tool.read_web_page": "ウェブページ",
-  "tool.read_web_page.about": "モデルが求めた公開ウェブページや PDF とそのリンクを読みます。"
+  "tool.read_web_page.about": "モデルが求めた公開ウェブページや PDF とそのリンクを読みます。",
+  "tool.web_search": "ウェブ検索",
+  "tool.web_search.about": "設定で選んだプロバイダーを通して、モデルのためにウェブを検索します。",
+  "search.title": "ウェブ検索",
+  "search.about": "ウェブ検索ツールがモデルの検索を送る先です。プロバイダーに送られるのは検索語だけで、チャットは送られません。",
+  "search.provider": "検索に使う",
+  "search.duckduckgo": "アカウントもキーも不要です。",
+  "search.searxng": "自分で運用しているか信頼できる SearXNG インスタンス（JSON 形式を有効にしてください）。",
+  "search.brave": "Brave の検索 API（あなたのキーを使用、無料枠あり）。",
+  "search.tavily": "AI エージェント向けの Tavily 検索 API（あなたのキーを使用、無料枠あり）。",
+  "search.key": "API キー",
+  "search.get_key": "{name} のキーを取得",
+  "search.url": "アドレス",
+  "search.url_hint": "SearXNG インスタンスのアドレス（例: http://localhost:8888）。",
+  "search.save": "保存して試す",
+  "search.trying": "試しています…",
+  "search.works": "{name} は動作しています: テスト検索で {count} 件。"
 }

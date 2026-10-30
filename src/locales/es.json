@@ -273,5 +273,21 @@
   "skills.instructions": "Instrucciones",
   "skills.save": "Crear habilidad",
   "tool.read_web_page": "Páginas web",
-  "tool.read_web_page.about": "Lee las páginas web públicas y los PDF que pida el modelo, y sus enlaces."
+  "tool.read_web_page.about": "Lee las páginas web públicas y los PDF que pida el modelo, y sus enlaces.",
+  "tool.web_search": "Búsqueda web",
+  "tool.web_search.about": "Busca en la web para el modelo, con el proveedor elegido en Ajustes.",
+  "search.title": "Búsqueda web",
+  "search.about": "Adónde envía la herramienta Búsqueda web las búsquedas del modelo. Solo las palabras buscadas van al proveedor, nunca el chat.",
+  "search.provider": "Buscar con",
+  "search.duckduckgo": "No necesita cuenta ni clave.",
+  "search.searxng": "Una instancia de SearXNG que gestionas o en la que confías, con el formato JSON activado.",
+  "search.brave": "La API de búsqueda de Brave, con tu clave (tiene plan gratuito).",
+  "search.tavily": "La API de búsqueda de Tavily para agentes de IA, con tu clave (tiene plan gratuito).",
+  "search.key": "Clave de API",
+  "search.get_key": "Obtener una clave de {name}",
+  "search.url": "Dirección",
+  "search.url_hint": "Dónde responde tu instancia de SearXNG, por ejemplo http://localhost:8888.",
+  "search.save": "Guardar y probar",
+  "search.trying": "Probando…",
+  "search.works": "{name} funciona: {count} resultados en una búsqueda de prueba."
 }

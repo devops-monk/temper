@@ -126,6 +126,15 @@ def _web(args: dict, ctx: dict) -> str:
     return web.read(url, int(args.get("part") or 1))
 
 
+def _search(args: dict, ctx: dict) -> str:
+    from . import search
+
+    query = args.get("query")
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("Give what to search for in `query`.")
+    return search.results_text(query, int(args.get("count") or 6))
+
+
 def _shell() -> bool:
     from . import sandbox
 
@@ -166,6 +175,14 @@ TOOLS: dict[str, Tool] = {
             "Runs Python 3 code and returns its output. Use it for calculations, data work and checking code." + _CODE_NOTE,
             {"type": "object", "properties": {"code": {"type": "string", "description": "The Python program to run"}}, "required": ["code"]},
             _code("python"),
+            mode="ask",
+        ),
+        Tool(
+            "web_search",
+            "Web search",
+            "Searches the web and returns the top results with their addresses and a snippet of each. Read one in full with read_web_page.",
+            {"type": "object", "properties": {"query": {"type": "string", "description": "What to search for, in a few words"}, "count": {"type": "integer", "description": "How many results, up to 10 (default 6)"}}, "required": ["query"]},
+            _search,
             mode="ask",
         ),
         Tool(
