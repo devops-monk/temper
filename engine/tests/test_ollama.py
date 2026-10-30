@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -55,3 +56,34 @@ def test_import_puts_it_in_the_library_and_chat_gets_its_settings(ollama):
     assert match["publisher"] == "Ollama" and match["sampling"]["temperature"] == 0.6 and match["system"] == "You are a pirate."
     assert client.get("/api/ollama", headers=AUTH).json()["models"][0]["imported"] is True
     assert client.post("/api/ollama/import", json={"names": ["gone:1b"]}, headers=AUTH).status_code == 404
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the stand-in ollama command is a script with a shebang")
+def test_an_export_is_added_to_ollama_with_a_modelfile(tmp_path, monkeypatch):
+    import time
+
+    from temper_engine import ollama
+
+    model = tmp_path / "run-Q4_K_M.gguf"
+    model.write_bytes(b"GGUF")
+    # A stand-in for the ollama command that records what it was asked.
+    fake = tmp_path / "ollama"
+    fake.write_text(f"#!{sys.executable}\nimport sys, pathlib\npathlib.Path(sys.argv[0]).with_name('called').write_text(' '.join(sys.argv[1:]))\nprint('success')\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(ollama, "binary", lambda: str(fake))
+    monkeypatch.setattr(ollama, "running", lambda: "0.40.0")
+    with TestClient(create_app(token="t")) as c:
+        h = {"Authorization": "Bearer t"}
+        assert c.post("/api/ollama/create", headers=h, json={"gguf": str(model), "name": "Not OK"}).status_code == 422
+        assert c.post("/api/ollama/create", headers=h, json={"gguf": str(tmp_path / "missing.gguf"), "name": "x"}).status_code == 404
+        job = c.post("/api/ollama/create", headers=h, json={"gguf": str(model), "name": "tutor:q4_k_m", "system": "Be brief."}).json()
+        for _ in range(100):
+            if c.get(f"/api/jobs/{job['id']}", headers=h).json()["status"] != "running":
+                break
+            time.sleep(0.05)
+        assert c.get(f"/api/jobs/{job['id']}", headers=h).json()["status"] == "done"
+    assert (tmp_path / "called").read_text() == f"create tutor:q4_k_m -f {tmp_path / 'run-Q4_K_M.Modelfile'}"
+    assert (tmp_path / "run-Q4_K_M.Modelfile").read_text() == f'FROM {model}\nSYSTEM """Be brief."""\n'
+    monkeypatch.setattr(ollama, "running", lambda: None)
+    with TestClient(create_app(token="t")) as c:
+        assert c.post("/api/ollama/create", headers={"Authorization": "Bearer t"}, json={"gguf": str(model), "name": "x"}).status_code == 409

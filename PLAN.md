@@ -234,7 +234,8 @@ temper/
 - [~] **8.3 GGUF export**: q4_k_m, q5_k_m, q8_0, f16 and other quant types. On Apple Silicon it fuses with mlx-lm, converts with llama.cpp's `convert_hf_to_gguf.py` (in an isolated uv environment), then runs `llama-quantize`; checked end to end. On NVIDIA/AMD it uses the training library's GGUF saver (not yet run).
 - [ ] **8.4 Dynamic quants**: dynamic per-layer quants with an importance matrix.
 - [ ] **8.5 FP8, NVFP4, TorchAO, OpenVINO and MLX exports.**
-- [ ] **8.6 Ollama export**: write a Modelfile with the right template and `ollama create`.
+- [x] **8.6 Ollama export**: write a Modelfile with the right template and `ollama create`.
+  *Add to Ollama* on an export (Export page and Library) writes a Modelfile beside the GGUF and runs `ollama create` as a job, under a name taken from the run and quant (e.g. `gsm8k-math-tutor:q4_k_m`). Ollama picks the matching chat template and stop tokens from the template the GGUF carries, which is more reliable than translating Jinja to Go templates. Says so when Ollama isn't installed or isn't running. Tested with Ollama 0.40: it recognised a ChatML GGUF's template.
 - [ ] **8.7 Push to Hugging Face**: model card generated from the training run.
 - [x] **8.8 Load the exported model in Chat** in one click, to try it right away.
 - [ ] **8.9 MoE expert pruning (REAP)** *(audit)*: drop rarely used experts from mixture-of-experts models to shrink them before export.

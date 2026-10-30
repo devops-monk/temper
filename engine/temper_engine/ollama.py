@@ -1,4 +1,5 @@
-"""Models already downloaded with Ollama, added to the library without copying them.
+"""Ollama, both ways: its downloaded models added to the library without copying them, and Temper's
+GGUF exports added to Ollama (`ollama create`), so a fine-tune runs in anything that talks to it.
 
 Ollama stores each model as an OCI-style manifest whose layers are content-addressed blobs: the
 weights are a plain GGUF (llama.cpp loads it from the blob path), and small layers hold the
@@ -11,12 +12,18 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import httpx
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import library
+from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/ollama", tags=["models"])
 
@@ -117,3 +124,86 @@ def import_models(req: ImportRequest):
         m = models[name]
         library.add_entry(m["path"], name, settings={"source": "Ollama", "sampling": m["sampling"], "system": m["system"], "context": m["context"]})
     return {"imported": req.names}
+
+
+# --- Adding exports to Ollama ---------------------------------------------------------------------
+
+NAME = re.compile(r"[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?")
+
+
+def binary() -> str | None:
+    """The ollama command: on PATH, or inside the macOS app."""
+    found = shutil.which("ollama")
+    app = Path("/Applications/Ollama.app/Contents/Resources/ollama")
+    return found or (str(app) if app.is_file() else None)
+
+
+def host() -> str:
+    h = os.environ.get("OLLAMA_HOST") or "127.0.0.1:11434"
+    return h if h.startswith("http") else f"http://{h}"
+
+
+def running() -> str | None:
+    """Ollama's version when its server answers."""
+    try:
+        r = httpx.get(f"{host()}/api/version", timeout=2)
+        return r.json().get("version") if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def modelfile(gguf: Path, system: str | None = None, params: dict | None = None) -> str:
+    """A Modelfile for a GGUF. Ollama picks the chat template itself from the one the GGUF carries."""
+    lines = [f"FROM {gguf}"]
+    lines += [f"PARAMETER {k} {v}" for k, v in (params or {}).items()]
+    if system:
+        lines.append('SYSTEM """' + system.replace('"""', '"') + '"""')
+    return "\n".join(lines) + "\n"
+
+
+def create(job: Job, gguf: Path, name: str, system: str | None) -> None:
+    mf = gguf.with_suffix(".Modelfile")
+    mf.write_text(modelfile(gguf, system))
+    job.log(f"ollama create {name}")
+    proc = subprocess.Popen([binary(), "create", name, "-f", str(mf)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=gguf.parent)
+    assert proc.stdout
+    last = ""
+    for line in proc.stdout:
+        line = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", line).strip()
+        if line and line != last:
+            job.log(line)
+            last = line
+        if job.cancel_requested:
+            proc.terminate()
+            return
+    if proc.wait() != 0:
+        raise RuntimeError(f"ollama create failed: {last[:300]}")
+    job.finish("done", name=name)
+
+
+class CreateRequest(BaseModel):
+    gguf: str
+    name: str
+    system: str | None = None
+
+
+@router.get("/status")
+def status():
+    return {"installed": binary() is not None, "running": running()}
+
+
+@router.post("/create")
+def create_model(req: CreateRequest):
+    """Adds a GGUF to Ollama under `name`, as a job: Ollama copies the weights into its own store."""
+    gguf = Path(req.gguf).expanduser()
+    if not gguf.is_file() or gguf.suffix.lower() != ".gguf":
+        raise HTTPException(404, "There's no GGUF file there.")
+    if not NAME.fullmatch(req.name):
+        raise HTTPException(422, "Ollama names are lowercase letters, numbers, dots, dashes and underscores, optionally with a :tag, like my-model:q4.")
+    if not binary():
+        raise HTTPException(409, "Ollama isn't installed. Get it from ollama.com, then try again.")
+    if not running():
+        raise HTTPException(409, "Ollama isn't running. Open the Ollama app (or run `ollama serve`), then try again.")
+    job = registry.create("ollama", f"Add {req.name} to Ollama")
+    registry.run_thread(job, lambda j: create(j, gguf, req.name, (req.system or "").strip() or None))
+    return job.summary()

@@ -1,5 +1,6 @@
 import { FolderOpen, MessageSquare, PackageOpen } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { AddToOllama } from "../components/AddToOllama";
 import { Badge, Button, EmptyState, Notice, PageHeader, ProgressBar, Section, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { useApp } from "../lib/store";
@@ -74,7 +75,10 @@ function ExportJob({ job }: { job: Job }) {
       {state === "done" && (
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {ggufs.map((path) => (
-            <ChatButton key={path} path={path} />
+            <span key={path} className="inline-flex flex-wrap items-center gap-2">
+              <ChatButton path={path} />
+              <AddToOllama path={path} />
+            </span>
           ))}
           {inTauri && (
             <Button size="sm" onClick={() => reveal(out)}>

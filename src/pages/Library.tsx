@@ -1,5 +1,6 @@
 import { Check, Folder, FolderOpen, FolderPlus, Pencil, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AddToOllama } from "../components/AddToOllama";
 import { LoadButton, useEngines } from "../components/LoadButton";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, Select, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
@@ -343,6 +344,7 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
         )}
         {item.kind === "fine-tune" && item.adapter && item.base_model && <ChatWithRun item={item} />}
         {gguf && <LoadButton path={gguf} name={gguf.split(/[\\/]/).pop()!} />}
+        {gguf && item.kind === "export" && <AddToOllama path={gguf} />}
         {folders.length > 0 && (
           <Select value={item.folder ?? ""} onChange={(e) => void patch({ folder: e.target.value })} className="h-7 w-auto max-w-36 text-[12.5px]" aria-label={`Folder for ${item.name}`} title="Move to a folder">
             <option value="">No folder</option>
