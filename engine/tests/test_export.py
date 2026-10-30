@@ -80,3 +80,31 @@ def test_a_dataset_is_published_with_its_held_out_split(tmp_path, monkeypatch):
             time.sleep(0.05)
         assert c.get(f"/api/jobs/{job['id']}", headers=h).json()["status"] == "done"
     assert calls == [("create", "me/qa", "dataset", False), ("upload", "README.md", "dataset"), ("upload", "data/train.jsonl", "dataset"), ("upload", "data/test.jsonl", "dataset")]
+
+
+def test_quantize_with_an_importance_matrix_keeps_the_output_layer_at_8_bits_for_tiny_quants(tmp_path, monkeypatch):
+    from temper_engine import llamacpp
+
+    monkeypatch.setattr(llamacpp, "binary", lambda name: f"/bin/{name}")
+    src, dst, im = tmp_path / "f16.gguf", tmp_path / "q.gguf", tmp_path / "imatrix.dat"
+    assert llamacpp.quantize_command(src, dst, "q4_k_m") == ["/bin/llama-quantize", str(src), str(dst), "Q4_K_M"]
+    assert llamacpp.quantize_command(src, dst, "q4_k_m", im) == ["/bin/llama-quantize", "--imatrix", str(im), str(src), str(dst), "Q4_K_M"]
+    assert llamacpp.quantize_command(src, dst, "iq2_m", im)[1:5] == ["--imatrix", str(im), "--output-tensor-type", "q8_0"]
+    cmd = llamacpp.imatrix_command(src, tmp_path / "cal.txt", im)
+    assert cmd[0] == "/bin/llama-imatrix" and cmd[cmd.index("-f") + 1] == str(tmp_path / "cal.txt") and cmd[cmd.index("-o") + 1] == str(im)
+
+
+def test_export_requests_are_checked_before_anything_runs():
+    from temper_engine import home
+
+    run = home() / "runs" / "20261030-130000-gpu-run"
+    (run / "adapter").mkdir(parents=True)
+    (run / "config.json").write_text(json.dumps({"backend": "gpu", "base_model": "Qwen/Qwen3-0.6B"}))
+    with TestClient(create_app(token="t")) as c:
+        h = {"Authorization": "Bearer t"}
+        r = c.post("/api/export", headers=h, json={"run_id": run.name, "formats": ["gguf"], "gguf_quants": ["iq3_m"]})
+        assert r.status_code == 400 and "importance matrix" in r.json()["detail"]
+        r = c.post("/api/export", headers=h, json={"run_id": run.name, "formats": ["mlx"]})
+        assert r.status_code == 400 and "Apple Silicon" in r.json()["detail"]
+        assert c.get("/api/export/options", headers=h).json()["needs_imatrix"] == ["iq2_m", "iq3_m", "iq4_xs"]
+    assert not (home() / "exports").exists() or not any((home() / "exports").iterdir())

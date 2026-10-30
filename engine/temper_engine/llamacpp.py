@@ -277,11 +277,26 @@ def uv_env() -> dict[str, str]:
     return env
 
 
-def quantize_command(src: Path, dst: Path, quant: str) -> list[str]:
+# Low-bit quants keep the output head at 8 bits: it's one tensor, and the one that picks every token.
+KEEP_OUTPUT = {"q2_k", "q3_k_m", "iq2_m", "iq3_m"}
+
+
+def quantize_command(src: Path, dst: Path, quant: str, imatrix: Path | None = None) -> list[str]:
     tool = binary("llama-quantize")
     if not tool:
         raise RuntimeError("llama-quantize was not found. Install llama.cpp from the Models page.")
-    return [tool, str(src), str(dst), quant.upper()]
+    extra = ["--imatrix", str(imatrix)] if imatrix else []
+    if imatrix and quant.lower() in KEEP_OUTPUT:
+        extra += ["--output-tensor-type", "q8_0"]
+    return [tool, *extra, str(src), str(dst), quant.upper()]
+
+
+def imatrix_command(model: Path, text: Path, out: Path) -> list[str]:
+    """llama-imatrix over calibration text, on the GPU when there is one."""
+    tool = binary("llama-imatrix")
+    if not tool:
+        raise RuntimeError("llama-imatrix was not found. Update llama.cpp from the Models page.")
+    return [tool, "-m", str(model), "-f", str(text), "-o", str(out), "-c", "512", "-ngl", "99"]
 
 
 # ------------------------------------------------------------------ API

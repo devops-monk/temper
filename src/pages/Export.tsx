@@ -1,7 +1,7 @@
 import { FolderOpen, MessageSquare, PackageOpen } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AddToOllama } from "../components/AddToOllama";
-import { Badge, Button, EmptyState, Notice, PageHeader, ProgressBar, Section, cx } from "../components/ui";
+import { Badge, Button, EmptyState, Notice, PageHeader, ProgressBar, Section, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { useApp } from "../lib/store";
 import { useJob } from "../lib/useJob";
@@ -12,6 +12,7 @@ const FORMATS = [
   { id: "lora", label: "LoRA adapter", note: "Just the trained adapter. Small; needs the base model to run." },
   { id: "merged_16bit", label: "Merged 16-bit", note: "Full safetensors model for vLLM, SGLang or transformers." },
   { id: "merged_4bit", label: "Merged 4-bit", note: "Bitsandbytes 4-bit weights. NVIDIA only." },
+  { id: "mlx", label: "MLX", note: "The merged model in MLX format, quantized like its base. For mlx-lm and LM Studio on Apple Silicon." },
 ];
 const QUANTS = [
   { id: "q4_k_m", note: "Recommended balance" },
@@ -20,6 +21,12 @@ const QUANTS = [
   { id: "f16", note: "Unquantized" },
   { id: "q3_k_m", note: "Smaller" },
   { id: "q2_k", note: "Smallest" },
+];
+/** I-quants: better than K quants at the same size, but only with an importance matrix. */
+const IQUANTS = [
+  { id: "iq4_xs", note: "Smaller than Q4_K_M, close in quality" },
+  { id: "iq3_m", note: "Small, still usable" },
+  { id: "iq2_m", note: "Tiny" },
 ];
 
 async function reveal(path: string) {
@@ -103,6 +110,7 @@ export function ExportPage() {
   const [runId, setRunId] = useState<string | null>(null);
   const [formats, setFormats] = useState<string[]>(["gguf"]);
   const [quants, setQuants] = useState<string[]>(["q4_k_m"]);
+  const [imatrix, setImatrix] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const finishedTrains = jobs.filter((j) => j.kind === "train" && j.status === "done").length;
@@ -123,7 +131,7 @@ export function ExportPage() {
   async function start() {
     setError(null);
     try {
-      await api("/api/export", { json: { run_id: runId, formats, gguf_quants: quants } });
+      await api("/api/export", { json: { run_id: runId, formats, gguf_quants: imatrix ? quants : quants.filter((q) => !q.startsWith("iq")), imatrix } });
       await refreshJobs();
     } catch (e) {
       setError((e as Error).message);
@@ -176,7 +184,7 @@ export function ExportPage() {
           <Section title="Formats">
             <div className="flex flex-col gap-1.5">
               {FORMATS.map((f) => {
-                const disabled = mlx && f.id === "merged_4bit";
+                const disabled = (mlx && f.id === "merged_4bit") || (!mlx && f.id === "mlx");
                 return (
                   <label key={f.id} className={cx("flex cursor-pointer gap-3 rounded-lg border border-line bg-surface px-3 py-2", disabled && "opacity-40")}>
                     <input type="checkbox" disabled={disabled} checked={formats.includes(f.id)} onChange={() => toggle(formats, setFormats, f.id)} className="mt-1 accent-[var(--accent)]" />
@@ -192,13 +200,19 @@ export function ExportPage() {
           {formats.includes("gguf") && (
             <Section title="GGUF quantization">
               <div className="grid grid-cols-2 gap-1.5">
-                {QUANTS.map((q) => (
+                {[...QUANTS, ...(imatrix ? IQUANTS : [])].map((q) => (
                   <label key={q.id} className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px]">
                     <input type="checkbox" checked={quants.includes(q.id)} onChange={() => toggle(quants, setQuants, q.id)} className="accent-[var(--accent)]" />
                     <span className="font-mono text-[12px]">{q.id.toUpperCase()}</span>
                     <span className="truncate text-muted">{q.note}</span>
                   </label>
                 ))}
+              </div>
+              <div className="mt-3">
+                <Toggle label="Calibrate on the training data (importance matrix)" checked={imatrix} onChange={setImatrix} />
+                <p className="mt-1 text-[12.5px] text-muted">
+                  Measures which weights matter most for what this model learnt, and keeps them more precise. Adds a minute or two, and makes the IQ quants available.
+                </p>
               </div>
               <p className="mt-2 text-[12.5px] text-muted">The first GGUF export also downloads llama.cpp's converter and PyTorch, which takes a few minutes.</p>
             </Section>

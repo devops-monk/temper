@@ -234,8 +234,10 @@ temper/
 - [x] **8.1 Export UI**: choose a checkpoint and one or more formats.
 - [~] **8.2 LoRA adapter, merged 16-bit and merged 4-bit** (`save_pretrained_merged`).
 - [~] **8.3 GGUF export**: q4_k_m, q5_k_m, q8_0, f16 and other quant types. On Apple Silicon it fuses with mlx-lm, converts with llama.cpp's `convert_hf_to_gguf.py` (in an isolated uv environment), then runs `llama-quantize`; checked end to end. On NVIDIA/AMD it uses the training library's GGUF saver (not yet run).
-- [ ] **8.4 Dynamic quants**: dynamic per-layer quants with an importance matrix.
-- [ ] **8.5 FP8, NVFP4, TorchAO, OpenVINO and MLX exports.**
+- [x] **8.4 Dynamic quants**: dynamic per-layer quants with an importance matrix.
+  Done: Export has "Calibrate on the training data (importance matrix)". The run's own training rows, rendered with the model's chat template, go through `llama-imatrix`, and every quant is made with that matrix (named `…-imatrix-Q4_K_M.gguf`). It also unlocks the IQ quants (IQ4_XS, IQ3_M, IQ2_M), and the smallest ones keep their output layer at 8 bits. Tested: Q4_K_M and IQ3_M made from a Qwen3-0.6B run, and both generate.
+- [~] **8.5 FP8, NVFP4, TorchAO, OpenVINO and MLX exports.**
+  Done: MLX. Runs trained on Apple Silicon export a fused MLX model that keeps the base model's quantization, ready for mlx-lm and LM Studio's MLX engine. Tested: it loads and chats. Still to do: FP8, NVFP4, TorchAO and OpenVINO, which need NVIDIA or Intel hardware to make and test.
 - [x] **8.6 Ollama export**: write a Modelfile with the right template and `ollama create`.
   *Add to Ollama* on an export (Export page and Library) writes a Modelfile beside the GGUF and runs `ollama create` as a job, under a name taken from the run and quant (e.g. `gsm8k-math-tutor:q4_k_m`). Ollama picks the matching chat template and stop tokens from the template the GGUF carries, which is more reliable than translating Jinja to Go templates. Says so when Ollama isn't installed or isn't running. Tested with Ollama 0.40: it recognised a ChatML GGUF's template.
 - [x] **8.7 Push to Hugging Face**: model card generated from the training run.

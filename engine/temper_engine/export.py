@@ -14,19 +14,21 @@ from .training import runs_dir
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
-FORMATS = {"lora", "merged_16bit", "merged_4bit", "gguf"}
-GGUF_QUANTS = ["q4_k_m", "q5_k_m", "q8_0", "f16", "q3_k_m", "q6_k", "q2_k"]
+FORMATS = {"lora", "merged_16bit", "merged_4bit", "gguf", "mlx"}
+GGUF_QUANTS = ["q4_k_m", "q5_k_m", "q8_0", "f16", "q3_k_m", "q6_k", "q2_k", "iq4_xs", "iq3_m", "iq2_m"]
+NEEDS_IMATRIX = {"iq4_xs", "iq3_m", "iq2_m"}  # llama.cpp won't make these without one
 
 
 class ExportRequest(BaseModel):
     run_id: str
     formats: list[str] = ["gguf"]
     gguf_quants: list[str] = ["q4_k_m"]
+    imatrix: bool = False  # calibrate the quants on the run's own training data
 
 
 @router.get("/options")
 def options():
-    return {"formats": sorted(FORMATS), "gguf_quants": GGUF_QUANTS}
+    return {"formats": sorted(FORMATS), "gguf_quants": GGUF_QUANTS, "needs_imatrix": sorted(NEEDS_IMATRIX)}
 
 
 @router.post("")
@@ -40,8 +42,14 @@ def start(req: ExportRequest):
     bad = set(req.formats) - FORMATS
     if bad:
         raise HTTPException(400, f"Unknown formats: {', '.join(sorted(bad))}")
+    if set(req.gguf_quants) - set(GGUF_QUANTS):
+        raise HTTPException(400, f"Unknown quants: {', '.join(sorted(set(req.gguf_quants) - set(GGUF_QUANTS)))}")
+    if "gguf" in req.formats and NEEDS_IMATRIX & set(req.gguf_quants) and not req.imatrix:
+        raise HTTPException(400, "The IQ quants need an importance matrix: turn it on, or choose K quants.")
 
     cfg = json.loads(cfg_file.read_text())
+    if "mlx" in req.formats and cfg["backend"] != "mlx":
+        raise HTTPException(400, "The MLX format is for runs trained on Apple Silicon.")
     out = home() / "exports" / f"{req.run_id}-{time.strftime('%H%M%S')}"
     out.mkdir(parents=True)
     job_cfg = {**req.model_dump(), "backend": cfg["backend"], "base_model": cfg["base_model"], "adapter": str(run / "adapter"), "output_dir": str(out)}
