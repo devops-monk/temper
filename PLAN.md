@@ -226,7 +226,8 @@ temper/
 - [~] **7.5 Synthetic data generation**: use a local or cloud model to generate Q&A, conversations or reasoning traces from source documents, with validators. Generated text, fields, code and grades, random-choice and template columns, and code checks all work with the local chat model; OpenAI-compatible cloud providers are wired up but not yet tested against a live service.
 - [x] **7.6 Push to Hub**: upload finished datasets to Hugging Face.
   The upload icon on a prepared dataset in the Library publishes it (private unless unticked) as `data/train.jsonl` plus its held-out `data/test.jsonl`, with a dataset card naming the splits so the Hub's viewer and `load_dataset` read it. Tested against a stand-in for the Hub; nothing was uploaded to a real account.
-- [ ] **7.7 S3 and remote sources.**
+- [~] **7.7 S3 and remote sources.**
+  Done: anywhere a dataset is given (Datasets, Train, the token preview), it can be an https:// link to a .jsonl, .json, .csv or .parquet file, or a public `s3://` or `gs://` one. It's downloaded once into Temper's cache and then read like a local file; previews of JSONL and CSV stream only their first rows. Tested with GSM8K's Parquet test split from the Hub: previewed, mapped and prepared. Still to do: private buckets (credentials and request signing).
 
 ## Phase 8: Export and deploy
 

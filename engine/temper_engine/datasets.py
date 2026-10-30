@@ -13,7 +13,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from . import formats, home
+from . import formats, home, remote
 from .formats import detect_format
 from .jobs import registry
 
@@ -55,6 +55,11 @@ def _hub(dataset: str, split: str, limit: int, config: str | None = None) -> tup
 
 
 def _rows(source: str, split: str, limit: int, config: str | None) -> tuple[list[dict], dict]:
+    if remote.is_remote(source):
+        try:
+            return remote.head_rows(source, limit), {}
+        except (ValueError, httpx.HTTPError) as e:
+            raise HTTPException(422, str(e)) from e
     path = Path(source).expanduser()
     return (_local(path, limit), {}) if path.is_file() else _hub(source, split, limit, config)
 

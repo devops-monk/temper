@@ -11,11 +11,13 @@ import json
 import sys
 from pathlib import Path
 
-from . import formats
+from . import formats, remote
 from .jobs import emit_from_worker as emit
 
 
 def read_rows(source: str, split: str, config: str | None = None) -> list[dict]:
+    if remote.is_remote(source):
+        source = str(remote.fetch(source, log=lambda line: emit("log", line=line)))
     path = Path(source).expanduser()
     suffix = path.suffix.lower()
     if path.is_file() and suffix in (".csv", ".json", ".jsonl"):

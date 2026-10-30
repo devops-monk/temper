@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, chat_render, formats
+from . import __version__, chat_render, formats, remote
 from .jobs import emit_from_worker
 
 RECORDED = {"phase", "dataset", "provenance", "metrics", "eval", "sample", "best", "result", "error", "checkpoint"}
@@ -66,6 +66,8 @@ def load_rows(cfg: dict, source: str | None = None) -> list[dict]:
     from datasets import load_dataset
 
     src = source or cfg["dataset"]
+    if remote.is_remote(src):
+        src = str(remote.fetch(src, log=lambda line: emit("log", line=line)))
     path = Path(src).expanduser()
     if path.exists():
         kind = {".csv": "csv", ".parquet": "parquet"}.get(path.suffix.lower(), "json")

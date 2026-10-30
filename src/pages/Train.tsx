@@ -407,7 +407,7 @@ export function TrainPage() {
 
           <Section title="Data">
             <div className="flex flex-col gap-3">
-              <Field label="Dataset" hint="A Hugging Face dataset id, or a local .jsonl, .json or .csv file.">
+              <Field label="Dataset" hint="A Hugging Face dataset id, a .jsonl, .json or .csv file, or a web address of one (https://, or a public s3:// or gs:// file).">
                 <div className="flex gap-2">
                   <Input value={form.dataset} onChange={(e) => set("dataset")(e.target.value)} spellCheck={false} />
                   {inTauri && (
@@ -429,7 +429,7 @@ export function TrainPage() {
                 </Field>
                 <NumberField label="Max rows" value={form.max_samples} onChange={set("max_samples")} />
               </div>
-              {!/^[~/]/.test(form.dataset) && !/^[A-Za-z]:\\/.test(form.dataset) && (
+              {!/^[~/]/.test(form.dataset) && !/^[A-Za-z]:\\/.test(form.dataset) && !/^(https?|s3|gs):\/\//i.test(form.dataset) && (
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Subset" hint="Only for datasets with several.">
                     <Input value={form.dataset_config} onChange={(e) => set("dataset_config")(e.target.value)} placeholder="default" spellCheck={false} />

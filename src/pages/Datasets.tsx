@@ -277,7 +277,7 @@ export function DatasetsPage() {
       />
       <div className="border-b border-line px-7 py-4">
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void open(); }}>
-          <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Hugging Face dataset id or a local file path" spellCheck={false} />
+          <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Hugging Face dataset id, a local file path, or a web address" spellCheck={false} />
           {inTauri && (
             <Button type="button" onClick={browse}>
               <FolderOpen className="size-4" /> Choose file
