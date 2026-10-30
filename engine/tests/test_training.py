@@ -181,3 +181,36 @@ def test_the_token_preview_masks_the_prompt_and_counts_tokens(tmp_path, monkeypa
         assert got["count"] == len(got["tokens"]) and got["format"] == "messages" and got["more"] is True
         text = c.post("/api/train/preview", headers={"Authorization": "Bearer t"}, json={"base_model": "m", "dataset": str(data), "dataset_format": "text", "row": 1}).json()
         assert text["masked"] == 0 and "".join(t["text"] for t in text["tokens"]) == "plain" and text["more"] is False
+
+
+def test_preference_rows_in_both_shapes_become_pairs():
+    from temper_engine import preference
+
+    flat = {"prompt": "Hi?", "chosen": "Hello!", "rejected": "Go away.", "system": "Be kind."}
+    turns = {"chosen": [{"from": "human", "value": "Hi?"}, {"from": "gpt", "value": "Hello!"}], "rejected": [{"role": "user", "content": "Hi?"}, {"role": "assistant", "content": "Go away."}]}
+    assert preference.to_pair(flat) == ([{"role": "system", "content": "Be kind."}, {"role": "user", "content": "Hi?"}], "Hello!", "Go away.")
+    assert preference.to_pair(turns) == ([{"role": "user", "content": "Hi?"}], "Hello!", "Go away.")
+    assert preference.is_preference(["prompt", "chosen", "rejected"]) and not preference.is_preference(["messages"])
+    same = {"prompt": "x", "chosen": "y", "rejected": "y"}
+    assert len(preference.pairs([flat, same, {"chosen": "a"}, turns])) == 2
+    with pytest.raises(ValueError):
+        preference.pairs([same])
+
+
+def test_preference_losses():
+    pytest.importorskip("mlx_lm")
+    import math
+
+    import mlx.core as mx
+
+    from temper_engine import mlx_pref
+
+    c, r, n = mx.array([-5.0]), mx.array([-5.0]), mx.array([5])
+    loss, margin = mlx_pref.objective_loss("dpo", 0.1, 0, c, r, n, n, mx.array([-5.0]), mx.array([-5.0]))
+    assert loss.item() == pytest.approx(math.log(2)) and margin.item() == 0  # no change from the start: no preference yet
+    better, _ = mlx_pref.objective_loss("dpo", 0.1, 0, mx.array([-3.0]), mx.array([-8.0]), n, n, mx.array([-5.0]), mx.array([-5.0]))
+    assert better.item() < math.log(2)
+    simpo, m = mlx_pref.objective_loss("simpo", 2.0, 0.5, mx.array([-2.0]), mx.array([-4.0]), mx.array([2]), mx.array([2]))
+    assert m.item() == pytest.approx(2.0 * (-1 + 2) - 0.5)
+    orpo, m = mlx_pref.objective_loss("orpo", 0.1, 0, mx.array([-1.0]), mx.array([-3.0]), mx.array([2]), mx.array([2]))
+    assert m.item() > 0 and orpo.item() > 0.5  # includes the chosen reply's own loss (0.5 a token)

@@ -105,7 +105,45 @@ def conversations(cfg: dict, rows: list[dict]) -> tuple[str, list]:
 # ---------------------------------------------------------------- PyTorch GPUs (CUDA / ROCm / XPU)
 
 
+def reporter():
+    """A trainer callback that turns the GPU trainer's logs into Temper's events."""
+    from transformers import TrainerCallback
+
+    class Reporter(TrainerCallback):
+        def __init__(self) -> None:
+            self.started = time.time()
+
+        def on_train_begin(self, args, state, control, **kw):
+            emit("phase", name="Training", total_steps=state.max_steps)
+
+        def on_log(self, args, state, control, logs=None, **kw):
+            if logs and "eval_loss" in logs:
+                emit("eval", step=state.global_step, val_loss=logs["eval_loss"])
+            if not logs or "loss" not in logs:
+                return
+            elapsed = time.time() - self.started
+            eta = elapsed / max(state.global_step, 1) * (state.max_steps - state.global_step)
+            emit(
+                "metrics",
+                step=state.global_step,
+                total_steps=state.max_steps,
+                loss=logs.get("loss"),
+                lr=logs.get("learning_rate"),
+                grad_norm=logs.get("grad_norm"),
+                epoch=logs.get("epoch"),
+                # Preference training: how often the chosen reply wins, and by how much.
+                reward_accuracy=logs.get("rewards/accuracies"),
+                margin=logs.get("rewards/margins"),
+                eta=eta,
+            )
+            emit("progress", value=state.global_step / max(state.max_steps, 1))
+
+    return Reporter()
+
+
 def train_gpu(cfg: dict, out: Path) -> None:
+    if cfg.get("objective", "sft") != "sft":
+        return train_gpu_preference(cfg, out)
     emit("phase", name="Loading model")
     from unsloth import FastLanguageModel  # must be imported before transformers/trl
 
@@ -162,32 +200,6 @@ def train_gpu(cfg: dict, out: Path) -> None:
     emit("dataset", rows=len(texts), format=fmt, sample=texts[0][:1500], eval_rows=len(eval_dataset) if eval_dataset else 0)
     provenance(cfg, texts=texts)
 
-    class Reporter(TrainerCallback):
-        def __init__(self) -> None:
-            self.started = time.time()
-
-        def on_train_begin(self, args, state, control, **kw):
-            emit("phase", name="Training", total_steps=state.max_steps)
-
-        def on_log(self, args, state, control, logs=None, **kw):
-            if logs and "eval_loss" in logs:
-                emit("eval", step=state.global_step, val_loss=logs["eval_loss"])
-            if not logs or "loss" not in logs:
-                return
-            elapsed = time.time() - self.started
-            eta = elapsed / max(state.global_step, 1) * (state.max_steps - state.global_step)
-            emit(
-                "metrics",
-                step=state.global_step,
-                total_steps=state.max_steps,
-                loss=logs.get("loss"),
-                lr=logs.get("learning_rate"),
-                grad_norm=logs.get("grad_norm"),
-                epoch=logs.get("epoch"),
-                eta=eta,
-            )
-            emit("progress", value=state.global_step / max(state.max_steps, 1))
-
     prompts = sample_prompts(eval_convs) if cfg.get("sample_replies", True) else []
 
     class Samples(TrainerCallback):
@@ -239,7 +251,7 @@ def train_gpu(cfg: dict, out: Path) -> None:
         # transformers renamed evaluation_strategy to eval_strategy.
         args["eval_strategy" if "eval_strategy" in params else "evaluation_strategy"] = "steps"
         args["eval_steps"] = eval_every(cfg["max_steps"] or 100)
-    callbacks = [Reporter(), Samples()]
+    callbacks = [reporter(), Samples()]
     if eval_dataset is not None and cfg.get("early_stopping"):
         from transformers import EarlyStoppingCallback
 
@@ -318,6 +330,8 @@ def save_every(cfg: dict, steps: int) -> int:
 
 
 def train_mlx(cfg: dict, out: Path) -> None:
+    if cfg.get("objective", "sft") != "sft":
+        return train_mlx_preference(cfg, out)
     emit("phase", name="Preparing dataset")
     fmt, convs = conversations(cfg, load_rows(cfg))
     records = [formats.record(c) for c in convs]
@@ -408,6 +422,121 @@ def train_mlx(cfg: dict, out: Path) -> None:
     if proc.wait() != 0:
         raise RuntimeError(f"mlx_lm lora failed: {last[:300]}")
     emit("result", adapter=str(adapter), base_model=cfg["base_model"])
+
+
+# ---------------------------------------------------------------- preference training (DPO, ORPO, SimPO)
+
+
+def preference_pairs(cfg: dict) -> tuple[list, list]:
+    """Training and held-out (prompt, chosen, rejected) pairs; 5% held out when there's no evaluation file."""
+    from .preference import pairs
+
+    train = pairs(load_rows(cfg))
+    random.Random(cfg["seed"]).shuffle(train)
+    if cfg.get("eval_dataset"):
+        valid = pairs(load_rows(cfg, cfg["eval_dataset"]))
+    else:
+        n = max(1, len(train) // 20) if len(train) > 1 else 0
+        valid, train = train[:n], train[n:]
+    first = {"prompt": train[0][0], "chosen": train[0][1], "rejected": train[0][2]}
+    emit("dataset", rows=len(train), format="preference", sample=json.dumps(first, ensure_ascii=False)[:1500], eval_rows=len(valid))
+    provenance(cfg, texts=[json.dumps(p, ensure_ascii=False) for p in train])
+    return train, valid
+
+
+def preference_steps(cfg: dict, pairs: int) -> int:
+    return cfg["max_steps"] or int(max(1, pairs // (cfg["batch_size"] * cfg["grad_accum"])) * cfg["epochs"])
+
+
+def train_mlx_preference(cfg: dict, out: Path) -> None:
+    from . import mlx_pref
+
+    emit("phase", name="Preparing dataset")
+    train, valid = preference_pairs(cfg)
+    steps = preference_steps(cfg, len(train))
+    mlx_pref.train(cfg, out, train, valid, emit, steps, eval_every(steps), save_every(cfg, steps))
+
+
+def _trl_trainer(name: str):
+    """TRL's `<name>Config` and `<name>Trainer`, wherever this version keeps them (some moved to trl.experimental)."""
+    import importlib
+
+    for module in ("trl", f"trl.experimental.{name.lower()}"):
+        try:
+            m = importlib.import_module(module)
+            return getattr(m, f"{name}Config"), getattr(m, f"{name}Trainer")
+        except (ImportError, AttributeError):
+            continue
+    raise RuntimeError(f"The installed TRL has no {name} trainer. Reinstall training support in Settings.")
+
+
+def train_gpu_preference(cfg: dict, out: Path) -> None:
+    emit("phase", name="Loading model")
+    from unsloth import FastLanguageModel  # must be imported before transformers/trl
+
+    import inspect
+
+    from datasets import Dataset
+
+    from .preference import OBJECTIVES
+
+    model, tokenizer = FastLanguageModel.from_pretrained(model_name=cfg["base_model"], max_seq_length=cfg["max_seq_length"], load_in_4bit=cfg["method"] == "qlora")
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=cfg["lora_r"],
+        lora_alpha=cfg["lora_alpha"],
+        lora_dropout=cfg["lora_dropout"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=cfg["seed"],
+    )
+    emit("phase", name="Preparing dataset")
+    train, valid = preference_pairs(cfg)
+
+    def rows(pairs: list) -> Dataset:
+        cols = {"prompt": [], "chosen": [], "rejected": []}
+        for prompt, chosen, rejected in pairs:
+            head, good = chat_render.render(tokenizer, prompt + [{"role": "assistant", "content": chosen}])
+            _, bad = chat_render.render(tokenizer, prompt + [{"role": "assistant", "content": rejected}])
+            cols["prompt"].append(head)
+            cols["chosen"].append(good)
+            cols["rejected"].append(bad)
+        return Dataset.from_dict(cols)
+
+    objective = cfg["objective"]
+    params = OBJECTIVES[objective]
+    beta = cfg.get("pref_beta") or params["beta"]
+    steps = preference_steps(cfg, len(train))
+    Config, Trainer = _trl_trainer({"dpo": "DPO", "orpo": "ORPO", "simpo": "CPO"}[objective])
+    args = dict(
+        output_dir=str(out / "checkpoints"), per_device_train_batch_size=cfg["batch_size"], gradient_accumulation_steps=cfg["grad_accum"],
+        warmup_steps=cfg["warmup_steps"], num_train_epochs=cfg["epochs"], max_steps=cfg["max_steps"] or -1, learning_rate=cfg["learning_rate"],
+        logging_steps=1, optim="adamw_8bit", lr_scheduler_type="linear", seed=cfg["seed"], report_to="none",
+        save_strategy="steps", save_steps=save_every(cfg, steps), save_total_limit=10, beta=beta, max_length=cfg["max_seq_length"],
+    )
+    if objective == "simpo":
+        args.update(loss_type="simpo", cpo_alpha=0.0, simpo_gamma=params["gamma"])  # SimPO is CPO without its NLL term
+    accepted = inspect.signature(Config.__init__).parameters  # only what this TRL version takes
+    if valid:
+        args["eval_strategy" if "eval_strategy" in accepted else "evaluation_strategy"] = "steps"
+        args["eval_steps"] = eval_every(steps)
+    extra = {"ref_model": None} if objective == "dpo" else {}  # a LoRA model's reference is itself with the adapter off
+    trainer = Trainer(
+        model=model,
+        args=Config(**{k: v for k, v in args.items() if k in accepted}),
+        train_dataset=rows(train),
+        eval_dataset=rows(valid) if valid else None,
+        processing_class=tokenizer,
+        callbacks=[reporter()],
+        **extra,
+    )
+    trainer.train(resume_from_checkpoint=cfg.get("resume_from") or None)
+    emit("phase", name="Saving")
+    target = out / "adapter"
+    model.save_pretrained(str(target))
+    tokenizer.save_pretrained(str(target))
+    emit("result", adapter=str(target), base_model=cfg["base_model"])
 
 
 def main() -> None:

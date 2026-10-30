@@ -21,6 +21,7 @@ interface Form {
   dataset_format: "auto" | "messages" | "sharegpt" | "alpaca" | "text";
   max_samples: number;
   method: "qlora" | "lora" | "full";
+  objective: keyof typeof OBJECTIVES;
   train_embeddings: boolean;
   max_seq_length: number;
   lora_r: number;
@@ -44,6 +45,7 @@ const DEFAULTS: Form = {
   dataset_format: "auto",
   max_samples: 2000,
   method: "qlora",
+  objective: "sft",
   train_embeddings: false,
   max_seq_length: 2048,
   lora_r: 16,
@@ -60,6 +62,16 @@ const DEFAULTS: Form = {
 
 /** On Apple Silicon, MLX needs MLX-format weights; these community conversions mirror the defaults. */
 const MLX_DEFAULT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit";
+
+/** What a run learns (engine preference.py for the last three). */
+const OBJECTIVES = {
+  sft: { label: "Supervised fine-tuning", note: "Learns to write the replies in the data." },
+  dpo: { label: "DPO", note: "Learns which of two replies is better, from rows with a prompt, a chosen and a rejected reply. Stays close to the starting model." },
+  orpo: { label: "ORPO", note: "Fine-tunes on the chosen replies while pushing away from the rejected ones, in one step. Same rows as DPO." },
+  simpo: { label: "SimPO", note: "Compares the two replies' average likelihood, with a margin. Same rows as DPO; uses less memory." },
+} as const;
+const SFT_LR = 0.0002;
+const PREFERENCE_LR = 0.00005; // preference objectives move further per step
 
 const METHODS = {
   qlora: { label: "QLoRA", note: "4-bit base weights plus small adapters. Uses the least memory." },
@@ -89,7 +101,7 @@ function RunPanel({ job }: { job: Job }) {
 
   const { points, last, phase, dataset, logs, totalSteps, val, samples, best } = useMemo(() => {
     const points: { step: number; loss: number }[] = [];
-    let val: { step: number; val_loss: number } | null = null;
+    let val: { step: number; val_loss: number; val_accuracy?: number } | null = null;
     let last: Record<string, number> | null = null;
     let phase = "Starting worker";
     let totalSteps: number | null = null;
@@ -105,7 +117,7 @@ function RunPanel({ job }: { job: Job }) {
       } else if (ev.event === "phase") {
         phase = ev.name as string;
         totalSteps = (ev.total_steps as number) ?? totalSteps;
-      } else if (ev.event === "eval" && typeof ev.val_loss === "number") val = { step: ev.step as number, val_loss: ev.val_loss };
+      } else if (ev.event === "eval" && typeof ev.val_loss === "number") val = { step: ev.step as number, val_loss: ev.val_loss, val_accuracy: ev.val_accuracy as number | undefined };
       else if (ev.event === "dataset") dataset = ev;
       else if (ev.event === "sample") samples.push(ev as unknown as Sample);
       else if (ev.event === "best") best = ev as unknown as Best;
@@ -147,7 +159,11 @@ function RunPanel({ job }: { job: Job }) {
         {[
           ["Step", last ? `${last.step} / ${totalSteps ?? "?"}` : "–"],
           ["Loss", last?.loss != null ? last.loss.toFixed(4) : "–"],
-          last?.lr != null ? ["Learning rate", last.lr.toExponential(2)] : ["Tokens/s", last?.tokens_per_sec != null ? Math.round(last.tokens_per_sec).toString() : "–"],
+          last?.reward_accuracy != null
+            ? ["Prefers chosen", `${Math.round(last.reward_accuracy * 100)}%`]
+            : last?.lr != null
+              ? ["Learning rate", last.lr.toExponential(2)]
+              : ["Tokens/s", last?.tokens_per_sec != null ? Math.round(last.tokens_per_sec).toString() : "–"],
           ["Time left", state === "running" ? duration(last?.eta) : "–"],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-line bg-surface px-3 py-2">
@@ -162,6 +178,7 @@ function RunPanel({ job }: { job: Job }) {
         {val && (
           <p className="mt-1 text-[12.5px] text-muted">
             Validation loss {val.val_loss.toFixed(3)} at step {val.step}
+            {val.val_accuracy != null && `; prefers the chosen reply in ${Math.round(val.val_accuracy * 100)}% of held-out pairs`}
           </p>
         )}
         {best && (
@@ -209,7 +226,9 @@ function useTrainEstimate(form: Form, enabled: boolean) {
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { base_model, method, lora_r, batch_size, max_seq_length } = form;
+  const { base_model, method, lora_r, max_seq_length } = form;
+  // A preference pair is two sequences, chosen and rejected.
+  const batch_size = form.batch_size * (form.objective === "sft" ? 1 : 2);
 
   useEffect(() => {
     if (!enabled || !base_model.trim()) {
@@ -257,7 +276,7 @@ type FitKey = "max_seq_length" | "lora_r" | "lora_alpha" | "batch_size" | "grad_
 
 /** Context length, LoRA rank and batch size that fit this computer (engine memory.training_fit), applied as the model or
  * method changes until they're edited by hand. */
-function useFit(base_model: string, method: Form["method"], enabled: boolean, apply: (fit: Pick<Form, FitKey>) => void) {
+function useFit(base_model: string, method: Form["method"], objective: Form["objective"], enabled: boolean, apply: (fit: Pick<Form, FitKey>) => void) {
   const [autoFit, setAutoFit] = useState(true);
   const [fitted, setFitted] = useState<string | null>(null);
   const applyRef = useRef(apply);
@@ -266,18 +285,18 @@ function useFit(base_model: string, method: Form["method"], enabled: boolean, ap
     if (!enabled || !autoFit || !base_model.trim()) return;
     let stale = false;
     const t = setTimeout(async () => {
-      const fit = await api<Pick<Form, FitKey> & { fits: boolean }>("/api/memory/train/fit", { json: { base_model, method } }).catch(() => null);
+      const fit = await api<Pick<Form, FitKey> & { fits: boolean }>("/api/memory/train/fit", { json: { base_model, method, objective } }).catch(() => null);
       if (stale || !fit) return;
       const { max_seq_length, lora_r, lora_alpha, batch_size, grad_accum } = fit;
       applyRef.current({ max_seq_length, lora_r, lora_alpha, batch_size, grad_accum });
-      setFitted(`${base_model} ${method}`);
+      setFitted(`${base_model} ${method} ${objective}`);
     }, 600);
     return () => {
       stale = true;
       clearTimeout(t);
     };
-  }, [enabled, autoFit, base_model, method]);
-  return { autoFit, setAutoFit, fitted: fitted === `${base_model} ${method}` };
+  }, [enabled, autoFit, base_model, method, objective]);
+  return { autoFit, setAutoFit, fitted: fitted === `${base_model} ${method} ${objective}` };
 }
 
 export function TrainPage() {
@@ -290,7 +309,7 @@ export function TrainPage() {
   const [tokens, setTokens] = useState(false);
   const set = <K extends keyof Form>(k: K) => (v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const memory = useTrainEstimate(form, !!trainer);
-  const { autoFit, setAutoFit, fitted } = useFit(form.base_model, form.method, !!trainer, (fit) => setForm((f) => ({ ...f, ...fit })));
+  const { autoFit, setAutoFit, fitted } = useFit(form.base_model, form.method, form.objective, !!trainer, (fit) => setForm((f) => ({ ...f, ...fit })));
   // Editing a fitted value by hand stops Temper fitting it again.
   const setByHand = <K extends FitKey>(k: K) => (v: Form[K]) => {
     setAutoFit(false);
@@ -430,6 +449,26 @@ export function TrainPage() {
 
           <Section title="Method">
             <div className="flex flex-col gap-2" role="radiogroup">
+              <Field label="Objective" hint={OBJECTIVES[form.objective].note}>
+                <Select
+                  value={form.objective}
+                  onChange={(e) => {
+                    const objective = e.target.value as Form["objective"];
+                    // Moves the learning rate to the objective's usual one, unless it was changed.
+                    setForm((f) => ({
+                      ...f,
+                      objective,
+                      learning_rate: objective === "sft" ? (f.learning_rate === PREFERENCE_LR ? SFT_LR : f.learning_rate) : f.learning_rate === SFT_LR ? PREFERENCE_LR : f.learning_rate,
+                    }));
+                  }}
+                >
+                  {(Object.keys(OBJECTIVES) as Form["objective"][]).map((o) => (
+                    <option key={o} value={o}>
+                      {o === "sft" ? OBJECTIVES[o].label : `Preference: ${OBJECTIVES[o].label}`}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               {(Object.keys(METHODS) as (keyof typeof METHODS)[]).map((m) => (
                 <button
                   key={m}
@@ -442,10 +481,15 @@ export function TrainPage() {
                   <span className="block text-[12.5px] text-muted">{METHODS[m].note}</span>
                 </button>
               ))}
-              <Toggle label="Also train the embeddings and output head" checked={form.train_embeddings} onChange={set("train_embeddings")} />
-              <p className="-mt-1.5 text-[12px] text-muted">
-                For continued pretraining on new words or a new language. Needs a 16-bit model, and more memory.
-              </p>
+              {form.objective === "sft" && (
+                <>
+                  <Toggle label="Also train the embeddings and output head" checked={form.train_embeddings} onChange={set("train_embeddings")} />
+                  <p className="-mt-1.5 text-[12px] text-muted">
+                    For continued pretraining on new words or a new language. Needs a 16-bit model, and more memory.
+                  </p>
+                </>
+              )}
+              {form.objective !== "sft" && form.method === "full" && <Notice>Preference training trains adapters: choose QLoRA or LoRA.</Notice>}
             </div>
           </Section>
 
@@ -479,6 +523,7 @@ export function TrainPage() {
             </div>
           </Section>
 
+          {form.objective === "sft" && (
           <Section title="Evaluation">
             <div className="flex flex-col gap-2.5">
               <Toggle label="Show sample replies while training" checked={form.sample_replies} onChange={set("sample_replies")} />
@@ -487,6 +532,7 @@ export function TrainPage() {
               <p className="-mt-1.5 text-[12px] text-muted">Stops after three evaluations without improvement, and keeps the adapter from the best one.</p>
             </div>
           </Section>
+          )}
           {trainer && (
             <Section title="Memory">
               {memory.error ? <p className="text-[13px] text-muted">{memory.error}</p> : <MemoryEstimate estimate={memory.estimate} loading={memory.loading} />}

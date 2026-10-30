@@ -95,7 +95,8 @@ def test_a_base_is_indexed_searched_and_kept_up_to_date(client, tmp_path):
     (docs / "garden.md").write_text("Tomato plants in the garden need sun.")
     client.post("/api/knowledge/my-notes/index", headers=AUTH)
     base = wait(client, "my-notes")
-    assert base["files"] == 2
+    job = max((j for j in knowledge.registry.jobs.values() if j.kind == "knowledge-index"), key=lambda j: j.created)
+    assert base["files"] == 2, (base, job.status, job.error, [e.get("line") for e in job.events if e["event"] == "log"])
     assert not any(r["path"].endswith("money.txt") for r in knowledge.search("my-notes", "invoice budget"))
 
     text = tools.run(Call("search_knowledge", {"query": "tomato garden"}), ["search_knowledge"])["result"]

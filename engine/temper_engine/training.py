@@ -19,7 +19,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from . import chat_render, home, sources
+from . import chat_render, home, preference, sources
 from .hardware import probe
 from .jobs import registry
 
@@ -50,6 +50,9 @@ class TrainConfig(BaseModel):
     dataset_format: Literal["auto", "messages", "sharegpt", "alpaca", "text"] = "auto"
     max_samples: int | None = Field(default=2000, ge=1)
     method: Literal["lora", "qlora", "full"] = "qlora"
+    # sft: learn to write the replies. dpo, orpo, simpo: learn which of two replies is better (preference.py).
+    objective: Literal["sft", "dpo", "orpo", "simpo"] = "sft"
+    pref_beta: float | None = Field(default=None, gt=0)  # the objective's beta; None for its usual value
     # Continued pretraining: train the token embeddings and output head too, for new vocabulary or a new language.
     train_embeddings: bool = False
     max_seq_length: int = Field(default=2048, ge=128, le=262144)
@@ -121,6 +124,8 @@ def start(cfg: TrainConfig):
     dataset = Path(cfg.dataset).expanduser()
     if cfg.eval_dataset is None and dataset.suffix == ".jsonl" and dataset.with_suffix(".eval.jsonl").is_file():
         cfg.eval_dataset = str(dataset.with_suffix(".eval.jsonl"))
+    if cfg.objective != "sft" and (cfg.method == "full" or cfg.train_embeddings):
+        raise HTTPException(400, "Preference training trains LoRA adapters. Choose LoRA or QLoRA, without training the embeddings.")
     if cfg.early_stopping and trainer != "mlx" and not cfg.eval_dataset:
         # MLX holds out a slice of the data by itself; the GPU trainer evaluates only on a separate set.
         raise HTTPException(400, "Stopping early needs a held-out set to measure against. Prepare the dataset on the Datasets page (it sets one aside), or give an evaluation file.")
@@ -197,6 +202,7 @@ def summary(d: Path) -> dict:
         "base_model": cfg.get("source_id") or cfg.get("base_model"),
         "dataset": cfg.get("dataset"),
         "method": cfg.get("method"),
+        "objective": cfg.get("objective") or "sft",
         "backend": cfg.get("backend"),
         "adapter": str(d / "adapter") if (d / "adapter").is_dir() else None,
         "path": str(d),
@@ -347,11 +353,18 @@ def preview_tokens(req: TokenPreview):
     if not rows:
         raise HTTPException(404, "The dataset has no rows.")
     row = rows[min(req.row, len(rows) - 1)]
-    fmt = req.dataset_format if req.dataset_format != "auto" else formats.detect_format(list(row))
+    if preference.is_preference(row):
+        fmt = "preference"  # shown with its chosen reply
+    else:
+        fmt = req.dataset_format if req.dataset_format != "auto" else formats.detect_format(list(row))
     if fmt is None:
         raise HTTPException(422, f"Couldn't tell the dataset's format from its columns ({', '.join(sorted(row))}). Prepare it on the Datasets page first.")
     try:
-        conv = formats.to_messages(row, fmt)
+        if fmt == "preference":
+            prompt, chosen, _ = preference.to_pair(row)
+            conv = prompt + [{"role": "assistant", "content": chosen}]
+        else:
+            conv = formats.to_messages(row, fmt)
     except (ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(422, f"Row {req.row + 1} can't be used: {e}") from e
     tok = _tokenizer(req.base_model)

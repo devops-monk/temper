@@ -14,6 +14,7 @@ interface Run {
   base_model: string | null;
   dataset: string | null;
   method: string | null;
+  objective: string;
   backend: "mlx" | "gpu" | null;
   adapter: string | null;
   path: string;
@@ -141,6 +142,7 @@ function RunDetail({ run, onAct, onChat }: { run: Run; onAct: (call: Promise<unk
         </dd>
         <dt className="text-muted">Method</dt>
         <dd>
+          {run.objective && run.objective !== "sft" ? `${run.objective.toUpperCase()} preference training, ` : ""}
           {run.method} on {run.backend === "mlx" ? "MLX" : "GPU"}
         </dd>
         {versions.length > 0 && (

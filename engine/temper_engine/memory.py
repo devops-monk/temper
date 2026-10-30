@@ -338,11 +338,12 @@ FIT_SHARE = 0.8  # of the memory budget a suggested training setup may use, leav
 EFFECTIVE_BATCH = 8  # rows per optimizer step; gradient accumulation makes up what the batch can't hold
 
 
-def training_fit(shape: Shape, bits: float, trainer: str, method: str, budget: dict) -> dict:
+def training_fit(shape: Shape, bits: float, trainer: str, method: str, budget: dict, per_row: int = 1) -> dict:
     """The longest context, then highest rank, then biggest batch whose estimate fits this computer.
 
     Context comes first because rows cut short train on less of their text; rank next, as it shapes
     what the adapter can learn; batch size last, since gradient accumulation stands in for it.
+    `per_row` is how many sequences a row is: 2 for preference pairs (chosen and rejected).
     """
     room = budget["total"] * FIT_SHARE
     seqs = [s for s in (4096, 2048, 1024, 512) if not shape.context_max or s <= shape.context_max] or [512]
@@ -350,13 +351,13 @@ def training_fit(shape: Shape, bits: float, trainer: str, method: str, budget: d
     for seq in seqs:
         for rank in ranks:
             for batch in (4, 2, 1):
-                est = training_estimate(shape, bits, trainer, method, rank, batch, seq)
+                est = training_estimate(shape, bits, trainer, method, rank, batch * per_row, seq)
                 # 4096 only when it fits at a batch of 2 or more: most rows are shorter, and speed matters.
                 if est["total"] <= room and not (seq == 4096 and batch < 2):
                     return _fit(seq, rank, batch, est, budget, True)
     # Nothing fits: the smallest setup, so the estimate shows how far off it is.
     seq, rank = seqs[-1], ranks[-1]
-    return _fit(seq, rank, 1, training_estimate(shape, bits, trainer, method, rank, 1, seq), budget, False)
+    return _fit(seq, rank, 1, training_estimate(shape, bits, trainer, method, rank, per_row, seq), budget, False)
 
 
 def _fit(seq: int, rank: int, batch: int, est: dict, budget: dict, fits: bool) -> dict:
@@ -517,6 +518,7 @@ def estimate_train(req: TrainEstimate):
 class TrainFit(BaseModel):
     base_model: str
     method: Literal["lora", "qlora", "full"] = "qlora"
+    objective: str = "sft"
 
 
 @router.post("/train/fit")
@@ -524,4 +526,4 @@ def fit_train(req: TrainFit):
     """Batch size, LoRA rank and context length that fit this computer's memory."""
     config, shape = _train_shape(req.base_model)
     trainer = "mlx" if hardware.probe_backend() == "metal" else "pytorch"
-    return training_fit(shape, weight_bits(config), trainer, req.method, memory_budget())
+    return training_fit(shape, weight_bits(config), trainer, req.method, memory_budget(), per_row=1 if req.objective == "sft" else 2)
