@@ -1,9 +1,16 @@
-"""Fine-tuning API: start runs, list past runs. The heavy lifting happens in train_worker."""
+"""Fine-tuning API: start runs, and keep their history. The heavy lifting happens in train_worker.
+
+Each run is a folder in runs/: config.json (what was asked), events.jsonl (metrics, evaluation,
+dataset and provenance as they happened), status.json (how it ended), and adapter/ with the
+result and its checkpoints. From these a run can be looked back on, compared with others, run again,
+resumed from a checkpoint, or chatted with at any checkpoint.
+"""
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Literal
@@ -58,6 +65,9 @@ class TrainConfig(BaseModel):
     name: str | None = None
     # Held-out rows for validation loss. A prepared `x.jsonl` with a sibling `x.eval.jsonl` uses it automatically.
     eval_dataset: str | None = None
+    save_every: int = Field(default=0, ge=0, description="steps between checkpoints; 0 saves five over the run")
+    resume_from: str | None = None  # a checkpoint to carry on from
+    start_step: int = 0  # the step of that checkpoint, so the run's steps line up with the run it carries on
     # Set by the engine.
     backend: str | None = None
     output_dir: str | None = None
@@ -120,20 +130,153 @@ def start(cfg: TrainConfig):
     return job.summary()
 
 
+def _run_dir(run_id: str) -> Path:
+    d = runs_dir() / run_id
+    if not re.fullmatch(r"[\w.-]+", run_id) or not (d / "config.json").is_file():
+        raise HTTPException(404, f"There's no training run {run_id}.")
+    return d
+
+
+def events(d: Path) -> list[dict]:
+    try:
+        lines = (d / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def checkpoints(d: Path) -> list[dict]:
+    """The checkpoints a run saved, by step: MLX's numbered adapter files, or the GPU trainer's checkpoint folders."""
+    found = []
+    for f in (d / "adapter").glob("[0-9]*_adapters.safetensors"):
+        found.append({"step": int(f.name.split("_")[0]), "path": str(f), "bytes": f.stat().st_size})
+    for c in (d / "checkpoints").glob("checkpoint-*"):
+        if c.is_dir() and c.name.split("-")[-1].isdigit():
+            found.append({"step": int(c.name.split("-")[-1]), "path": str(c), "bytes": sum(f.stat().st_size for f in c.rglob("*") if f.is_file())})
+    return sorted(found, key=lambda c: c["step"])
+
+
+def _status(d: Path) -> str:
+    running = any(j.kind == "train" and j.status == "running" and j.result.get("run_id") == d.name for j in registry.jobs.values())
+    if running:
+        return "running"
+    try:
+        return json.loads((d / "status.json").read_text())["status"]
+    except (OSError, ValueError, KeyError):
+        return "done" if (d / "adapter" / "adapters.safetensors").is_file() or (d / "adapter" / "adapter_config.json").is_file() else "stopped"
+
+
+def summary(d: Path) -> dict:
+    cfg = json.loads((d / "config.json").read_text())
+    evs = events(d)
+    metrics = [e for e in evs if e["event"] == "metrics"]
+    evals = [e for e in evs if e["event"] == "eval" and e.get("val_loss") is not None]
+    prov = next((e for e in evs if e["event"] == "provenance"), {})
+    return {
+        "id": d.name,
+        "name": cfg.get("name"),
+        "base_model": cfg.get("source_id") or cfg.get("base_model"),
+        "dataset": cfg.get("dataset"),
+        "method": cfg.get("method"),
+        "backend": cfg.get("backend"),
+        "adapter": str(d / "adapter") if (d / "adapter").is_dir() else None,
+        "path": str(d),
+        "created": (d / "config.json").stat().st_mtime,
+        "status": _status(d),
+        "steps": metrics[-1]["step"] if metrics else 0,
+        "total_steps": metrics[-1].get("total_steps") if metrics else None,
+        "loss": metrics[-1].get("loss") if metrics else None,
+        "val_loss": evals[-1]["val_loss"] if evals else None,
+        "dataset_sha256": prov.get("dataset_sha256"),
+        "checkpoints": len(checkpoints(d)),
+    }
+
+
 @router.get("/runs")
 def list_runs():
-    runs = []
-    for d in sorted(runs_dir().iterdir(), reverse=True):
-        cfg_file = d / "config.json"
-        if not cfg_file.is_file():
-            continue
-        cfg = json.loads(cfg_file.read_text())
-        runs.append({
-            "id": d.name,
-            "base_model": cfg.get("source_id") or cfg.get("base_model"),
-            "dataset": cfg.get("dataset"),
-            "backend": cfg.get("backend"),
-            "adapter": str(d / "adapter") if (d / "adapter").is_dir() else None,
-            "path": str(d),
-        })
-    return runs
+    return [summary(d) for d in sorted(runs_dir().iterdir(), reverse=True) if (d / "config.json").is_file()]
+
+
+@router.get("/runs/{run_id}")
+def get_run(run_id: str):
+    """A run in full: what it was asked, its metrics and evaluations step by step, where its data came from, its checkpoints."""
+    d = _run_dir(run_id)
+    evs = events(d)
+    offset = json.loads((d / "config.json").read_text()).get("start_step") or 0
+    return {
+        **summary(d),
+        "config": json.loads((d / "config.json").read_text()),
+        "start_step": offset,
+        "metrics": [{k: e.get(k) for k in ("loss", "lr", "tokens_per_sec", "grad_norm")} | {"step": (e.get("step") or 0) + offset} for e in evs if e["event"] == "metrics"],
+        "evals": [{"step": (e.get("step") or 0) + offset, "val_loss": e.get("val_loss")} for e in evs if e["event"] == "eval"],
+        "dataset_info": next(({k: v for k, v in e.items() if k not in ("event", "t", "sample")} for e in evs if e["event"] == "dataset"), None),
+        "provenance": next(({k: v for k, v in e.items() if k not in ("event", "t")} for e in evs if e["event"] == "provenance"), None),
+        "error": next((e.get("message") for e in evs if e["event"] == "error"), None),
+        "checkpoint_list": checkpoints(d),
+    }
+
+
+def _again(cfg: dict, **changes) -> TrainConfig:
+    """A run's config, ready to start once more (with `changes`)."""
+    keep = {k: v for k, v in cfg.items() if k not in ("backend", "output_dir")}
+    if keep.get("source_id"):
+        keep["base_model"], keep["source_id"] = keep["source_id"], None
+    return TrainConfig(**{**keep, **changes})
+
+
+@router.post("/runs/{run_id}/rerun")
+def rerun(run_id: str):
+    """Starts a new run with exactly the same settings."""
+    cfg = json.loads((_run_dir(run_id) / "config.json").read_text())
+    return start(_again(cfg, resume_from=None, start_step=0))
+
+
+class Resume(BaseModel):
+    step: int
+
+
+def _checkpoint(d: Path, step: int) -> dict:
+    found = next((c for c in checkpoints(d) if c["step"] == step), None)
+    if not found:
+        raise HTTPException(404, f"The run has no checkpoint at step {step}.")
+    return found
+
+
+@router.post("/runs/{run_id}/resume")
+def resume(run_id: str, req: Resume):
+    """Carries a run on from one of its checkpoints, as a new run, for the steps it had left."""
+    d = _run_dir(run_id)
+    cfg = json.loads((d / "config.json").read_text())
+    point = _checkpoint(d, req.step)
+    left = max((cfg.get("max_steps") or 0) - req.step, 1) if cfg.get("max_steps") else 0
+    name = f"{cfg.get('name') or d.name} from step {req.step}"
+    return start(_again(cfg, resume_from=point["path"], start_step=(cfg.get("start_step") or 0) + req.step, max_steps=left, name=name))
+
+
+@router.post("/runs/{run_id}/checkpoints/{step}/adapter")
+def checkpoint_adapter(run_id: str, step: int):
+    """An adapter folder for one checkpoint, to chat with it: GPU checkpoints are one already; MLX's get the run's adapter config beside them."""
+    d = _run_dir(run_id)
+    point = _checkpoint(d, step)
+    path = Path(point["path"])
+    if path.is_dir():
+        return {"adapter": str(path)}
+    folder = d / "checkpoints" / f"step-{step}"
+    folder.mkdir(parents=True, exist_ok=True)
+    config = d / "adapter" / "adapter_config.json"
+    if not config.is_file():
+        raise HTTPException(409, "The run hasn't written its adapter config yet; try again in a moment.")
+    shutil.copy2(config, folder / "adapter_config.json")
+    target = folder / "adapters.safetensors"
+    if not target.exists():
+        try:
+            target.hardlink_to(path)
+        except OSError:
+            shutil.copy2(path, target)
+    return {"adapter": str(folder)}

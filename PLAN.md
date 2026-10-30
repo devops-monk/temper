@@ -199,14 +199,17 @@ temper/
 - [ ] **6.16 Chat templates**: automatic template detection, `train_on_responses_only` masking, template override.
 - [ ] **6.17 Token preview**: show exactly what the model will see for a sample, with masked tokens dimmed.
 - [ ] **6.18 Evaluation**: held-out eval set, eval loss, early stopping, sample generations during training.
-- [ ] **6.19 Checkpoints and resume**: list checkpoints, resume from one, compare runs.
-- [ ] **6.20 Training history**: every run stored with config, metrics, dataset hash and provenance; re-run with one click.
+- [x] **6.19 Checkpoints and resume**: list checkpoints, resume from one, compare runs.
+  Runs save a checkpoint every N steps (five over the run by default). Past runs on the Train page list each one; "Carry on from here" starts a new run from it for the steps left, its curve lined up with the original's, and ticked runs share one loss chart. Tested on MLX: a resumed run picks up the checkpoint's weights. GPU runs use the trainer's own checkpoints and `resume_from_checkpoint`.
+- [x] **6.20 Training history**: every run stored with config, metrics, dataset hash and provenance; re-run with one click.
+  Each run keeps its events (metrics, evaluations, dataset summary, errors) in `events.jsonl` and its outcome in `status.json`, with the base model's revision, the dataset's SHA-256 and library versions. "Run again" starts it with the same settings.
 - [ ] **6.21 VRAM-aware defaults**: choose batch size, rank and context automatically from the hardware probe.
 - [ ] **6.22 Remote and cloud training**: launch the same job on a remote machine, Colab, Kaggle or a cloud GPU and stream its metrics back.
 - [ ] **6.23 Text-diffusion language models** *(audit)*: train and run diffusion LMs such as DiffusionGemma and Dream.
 - [ ] **6.24 Memory-saving optimizers** *(audit)*: 8-bit AdamW, Q-GaLore, FlashAdamW and optimizer-state CPU offload.
 - [ ] **6.25 Drafter and MTP-head fine-tuning** *(audit)*: fine-tune a model's multi-token-prediction head or a draft model so speculative decoding still works after fine-tuning.
-- [ ] **6.26 Checkpoint preview** *(audit)*: chat with any checkpoint during or after training through a per-checkpoint `/v1` endpoint.
+- [x] **6.26 Checkpoint preview** *(audit)*: chat with any checkpoint during or after training through a per-checkpoint `/v1` endpoint.
+  "Chat with it" on any checkpoint loads the base model with that checkpoint's adapter in chat, and so on Temper's `/v1` API, while the run goes on or after it ends. One checkpoint is served at a time, through the usual endpoint rather than one per checkpoint.
 - [x] **6.27 Raw-text continued pretraining** *(audit)*: chunk plain documents into training text, with no chat format needed. Datasets → *Or train on your own documents*: pick folders; Temper reads them with the knowledge-base readers (PDF, Word, PowerPoint, Excel, HTML, Markdown, text, code; scanned pages by OCR), cuts them into pieces of about 500, 1,000 or 2,000 tokens, drops duplicates and writes `{"text"}` rows with 5% held out, ready to train with no chat format. Tried live: README and PLAN became 42 rows, and a 6-step LoRA on Qwen3-0.6B (MLX) trained on them.
 
 ## Phase 7: Datasets and Data Recipes

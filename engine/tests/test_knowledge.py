@@ -34,7 +34,8 @@ def client(monkeypatch):
 def wait(c, name):
     import time
 
-    for _ in range(200):
+    deadline = time.monotonic() + 20  # generous: a busy computer can take a while
+    while time.monotonic() < deadline:
         b = next(b for b in c.get("/api/knowledge", headers=AUTH).json()["bases"] if b["name"] == name)
         if not b["job"]:
             return b

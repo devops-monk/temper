@@ -1,6 +1,8 @@
 """Training worker process: `python -m temper_engine.train_worker <config.json>`.
 
-Prints `@@{json}` lines (see jobs.emit_from_worker) that the engine turns into live UI events.
+Prints `@@{json}` lines (see jobs.emit_from_worker) that the engine turns into live UI events, and
+keeps the same events in the run's events.jsonl, so a run's metrics, dataset and outcome outlast the
+engine (training history, comparing runs). status.json says how the run ended.
 """
 
 from __future__ import annotations
@@ -14,8 +16,47 @@ import sys
 import time
 from pathlib import Path
 
-from . import chat_render, formats
-from .jobs import emit_from_worker as emit
+from . import __version__, chat_render, formats
+from .jobs import emit_from_worker
+
+RECORDED = {"phase", "dataset", "provenance", "metrics", "eval", "result", "error", "checkpoint"}
+RUN: Path | None = None  # the run's folder, once main() knows it
+
+
+def emit(event: str, **data) -> None:
+    emit_from_worker(event, **data)
+    if RUN is not None and event in RECORDED:
+        with open(RUN / "events.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": event, "t": time.time(), **data}, default=str) + "\n")
+
+
+def sha256(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def provenance(cfg: dict, data: Path | None = None, texts: list[str] | None = None) -> None:
+    """Where the run's model and data came from, exactly: the base model's revision and the training data's hash."""
+    import hashlib
+
+    from huggingface_hub import try_to_load_from_cache
+
+    base = cfg.get("source_id") or cfg["base_model"]
+    found = try_to_load_from_cache(cfg["base_model"], "config.json") if not Path(cfg["base_model"]).exists() else None
+    revision = re.search(r"snapshots[/\\]([0-9a-f]{40})", found).group(1) if isinstance(found, str) and "snapshots" in found else None
+    digest = sha256(data) if data else hashlib.sha256("\n".join(texts or []).encode()).hexdigest()
+    libraries = {}
+    for name in ("mlx_lm", "trl", "transformers", "peft", "torch"):
+        try:
+            libraries[name] = __import__(name).__version__
+        except (ImportError, AttributeError):
+            pass
+    emit("provenance", base_model=base, base_revision=revision, dataset=cfg["dataset"], dataset_split=cfg.get("dataset_split"), dataset_sha256=digest, temper=__version__, libraries=libraries)
 
 # ---------------------------------------------------------------- dataset helpers
 
@@ -109,6 +150,7 @@ def train_gpu(cfg: dict, out: Path) -> None:
         _, eval_convs = conversations(cfg, load_rows(cfg, cfg["eval_dataset"]))
         eval_dataset = Dataset.from_dict({"text": render(eval_convs)})
     emit("dataset", rows=len(texts), format=fmt, sample=texts[0][:1500], eval_rows=len(eval_dataset) if eval_dataset else 0)
+    provenance(cfg, texts=texts)
 
     class Reporter(TrainerCallback):
         def __init__(self) -> None:
@@ -151,7 +193,9 @@ def train_gpu(cfg: dict, out: Path) -> None:
         lr_scheduler_type="linear",
         seed=cfg["seed"],
         report_to="none",
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=save_every(cfg, cfg["max_steps"] or 500),
+        save_total_limit=10,
     )
     # TRL renamed max_seq_length to max_length; pass whichever this version accepts.
     params = inspect.signature(SFTConfig.__init__).parameters
@@ -169,7 +213,7 @@ def train_gpu(cfg: dict, out: Path) -> None:
         args=SFTConfig(**args),
         callbacks=[Reporter()],
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=cfg.get("resume_from") or None)
 
     emit("phase", name="Saving")
     target = out / ("model" if full else "adapter")
@@ -206,6 +250,11 @@ def parse_mlx_line(line: str) -> dict | None:
     return None
 
 
+def save_every(cfg: dict, steps: int) -> int:
+    """Steps between checkpoints: as set, or five over the run (at least every 10 steps)."""
+    return cfg.get("save_every") or max(10, steps // 5)
+
+
 def train_mlx(cfg: dict, out: Path) -> None:
     emit("phase", name="Preparing dataset")
     fmt, convs = conversations(cfg, load_rows(cfg))
@@ -223,6 +272,7 @@ def train_mlx(cfg: dict, out: Path) -> None:
         with open(data_dir / f"{name}.jsonl", "w", encoding="utf-8") as f:
             f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in chunk)
     emit("dataset", rows=len(records) - n_valid, format=fmt, sample=json.dumps(records[0], ensure_ascii=False)[:1500], eval_rows=len(valid))
+    provenance(cfg, data=data_dir / "train.jsonl")
 
     steps_per_epoch = max(1, (len(records) - n_valid) // cfg["batch_size"])
     iters = cfg["max_steps"] or int(steps_per_epoch * cfg["epochs"])
@@ -249,8 +299,11 @@ def train_mlx(cfg: dict, out: Path) -> None:
         "--max-seq-length", str(cfg["max_seq_length"]),
         "--adapter-path", str(adapter),
         "--steps-per-report", "1",
+        "--save-every", str(save_every(cfg, iters)),
         "--seed", str(cfg["seed"]),
     ]
+    if cfg.get("resume_from"):
+        cmd += ["--resume-adapter-file", str(cfg["resume_from"])]
     if fmt != "text":
         cmd.append("--mask-prompt")  # loss on the replies only, not on the prompts
     if cfg["method"] == "full":
@@ -279,14 +332,22 @@ def train_mlx(cfg: dict, out: Path) -> None:
 
 
 def main() -> None:
+    global RUN
     cfg_path = Path(sys.argv[1])
     cfg = json.loads(cfg_path.read_text())
-    out = cfg_path.parent
+    out = RUN = cfg_path.parent
+    started = time.time()
+
+    def ended(status: str, error: str | None = None) -> None:
+        (out / "status.json").write_text(json.dumps({"status": status, "error": error, "started": started, "finished": time.time()}))
+
     try:
         (train_mlx if cfg["backend"] == "mlx" else train_gpu)(cfg, out)
     except Exception as exc:
         emit("error", message=f"{type(exc).__name__}: {exc}")
+        ended("failed", f"{type(exc).__name__}: {exc}")
         raise
+    ended("done")
 
 
 if __name__ == "__main__":

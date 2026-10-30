@@ -1,6 +1,7 @@
 import { FolderOpen, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LossChart } from "../components/LossChart";
+import { RunHistory } from "../components/RunHistory";
 import { MemoryEstimate, type Budget, type Estimate, type Verdict } from "../components/MemoryEstimate";
 import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
@@ -260,6 +261,8 @@ export function TrainPage() {
   const trainJobs = jobs.filter((j) => j.kind === "train");
   const current = trainJobs.find((j) => j.id === selected) ?? trainJobs[0] ?? null;
   const running = trainJobs.some((j) => j.status === "running");
+  // Past runs are listed again whenever a run ends.
+  const finished = trainJobs.filter((j) => j.status !== "running").length;
 
   async function start() {
     if (memory.estimate?.verdict === "too_large" && !confirm("This run probably needs more memory than this computer has, and may fail or slow your computer to a crawl. Start anyway?")) return;
@@ -424,7 +427,7 @@ export function TrainPage() {
           {current ? (
             <RunPanel key={current.id} job={current} />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="flex min-h-[50%] flex-col items-center justify-center text-center">
               <div className="bg-temper mb-5 h-1.5 w-40 rounded-full opacity-80" />
               <p className="font-semibold">No training runs yet</p>
               <p className="mt-1 max-w-[46ch] text-muted">
@@ -432,6 +435,9 @@ export function TrainPage() {
               </p>
             </div>
           )}
+          <div className="mt-6">
+            <RunHistory tick={finished} />
+          </div>
         </div>
       </div>
     </div>
