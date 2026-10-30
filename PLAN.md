@@ -224,7 +224,8 @@ temper/
 - [x] **7.3 Format conversion and cleaning**: deduplicate (case- and whitespace-insensitive), filter by length, cap rows, shuffle, split train/eval. Writes standard `messages` JSONL plus `.eval.jsonl`, which training uses for validation loss automatically.
 - [x] **7.4 Data Recipes**: build datasets from PDFs, DOCX, text files, folders, web pages and GitHub repos using a pipeline of steps (Recipes page). Built on NVIDIA data-designer (Apache-2.0) in its own uv environment; six templates (document Q&A, topic Q&A, graded answers, text to SQL, Python tasks, instructions for existing text); save, preview 3 rows, generate, then train on the result in one click.
 - [~] **7.5 Synthetic data generation**: use a local or cloud model to generate Q&A, conversations or reasoning traces from source documents, with validators. Generated text, fields, code and grades, random-choice and template columns, and code checks all work with the local chat model; OpenAI-compatible cloud providers are wired up but not yet tested against a live service.
-- [ ] **7.6 Push to Hub**: upload finished datasets to Hugging Face.
+- [x] **7.6 Push to Hub**: upload finished datasets to Hugging Face.
+  The upload icon on a prepared dataset in the Library publishes it (private unless unticked) as `data/train.jsonl` plus its held-out `data/test.jsonl`, with a dataset card naming the splits so the Hub's viewer and `load_dataset` read it. Tested against a stand-in for the Hub; nothing was uploaded to a real account.
 - [ ] **7.7 S3 and remote sources.**
 
 ## Phase 8: Export and deploy
@@ -236,7 +237,8 @@ temper/
 - [ ] **8.5 FP8, NVFP4, TorchAO, OpenVINO and MLX exports.**
 - [x] **8.6 Ollama export**: write a Modelfile with the right template and `ollama create`.
   *Add to Ollama* on an export (Export page and Library) writes a Modelfile beside the GGUF and runs `ollama create` as a job, under a name taken from the run and quant (e.g. `gsm8k-math-tutor:q4_k_m`). Ollama picks the matching chat template and stop tokens from the template the GGUF carries, which is more reliable than translating Jinja to Go templates. Says so when Ollama isn't installed or isn't running. Tested with Ollama 0.40: it recognised a ChatML GGUF's template.
-- [ ] **8.7 Push to Hugging Face**: model card generated from the training run.
+- [x] **8.7 Push to Hugging Face**: model card generated from the training run.
+  The upload icon on a fine-tune (its adapter) or an export (its GGUF or merged files) in the Library publishes it, private unless unticked, leaving Temper's bookkeeping and intermediate checkpoints behind. The card is written from the run: base model and revision, training data and its SHA-256, objective, method and settings, final losses and library versions, with how to run it. Tested against a stand-in for the Hub; nothing was uploaded to a real account.
 - [x] **8.8 Load the exported model in Chat** in one click, to try it right away.
 - [ ] **8.9 MoE expert pruning (REAP)** *(audit)*: drop rarely used experts from mixture-of-experts models to shrink them before export.
 

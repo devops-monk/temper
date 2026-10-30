@@ -46,7 +46,9 @@ export function AddToOllama({ path }: { path: string }) {
     <span className="inline-flex flex-wrap items-center gap-2">
       {open ? (
         <>
-          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-7 w-48 text-[12.5px]" aria-label="Name in Ollama" spellCheck={false} />
+          <span className="w-48">
+            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-7 text-[12.5px]" aria-label="Name in Ollama" spellCheck={false} />
+          </span>
           <Button size="sm" onClick={() => void add()} disabled={!name.trim()}>
             Add
           </Button>

@@ -2,6 +2,7 @@ import { Check, Folder, FolderOpen, FolderPlus, Pencil, Plus, Search, Star, Tras
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddToOllama } from "../components/AddToOllama";
 import { LoadButton, useEngines } from "../components/LoadButton";
+import { PublishToHub } from "../components/PublishToHub";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, Select, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
@@ -345,6 +346,9 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
         {item.kind === "fine-tune" && item.adapter && item.base_model && <ChatWithRun item={item} />}
         {gguf && <LoadButton path={gguf} name={gguf.split(/[\\/]/).pop()!} />}
         {gguf && item.kind === "export" && <AddToOllama path={gguf} />}
+        {item.kind === "fine-tune" && item.adapter && <PublishToHub what={{ run_id: item.path.split(/[\\/]/).pop()! }} name={item.original} />}
+        {item.kind === "export" && <PublishToHub what={{ export: item.path }} name={item.original} />}
+        {item.kind === "dataset" && item.path.endsWith(".jsonl") && <PublishToHub what={{ dataset: item.path }} name={item.original} />}
         {folders.length > 0 && (
           <Select value={item.folder ?? ""} onChange={(e) => void patch({ folder: e.target.value })} className="h-7 w-auto max-w-36 text-[12.5px]" aria-label={`Folder for ${item.name}`} title="Move to a folder">
             <option value="">No folder</option>
