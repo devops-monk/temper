@@ -143,3 +143,33 @@ def test_a_synced_base_is_reindexed_when_its_folder_changes(client, tmp_path):
     assert wait(client, "sync")["files"] == 2
     (docs / "a.md").unlink()
     assert knowledge.changed("sync")
+
+
+def test_web_pages_and_videos_are_fetched_into_a_base(client, monkeypatch):
+    from temper_engine import web
+
+    fetched = []
+    monkeypatch.setattr(web, "page_text", lambda url, client=None: fetched.append(url) or (url, "Budget page", "# March\nThe budget is 1200.", []))
+    monkeypatch.setattr(web, "transcript", lambda video, every=60: ("Rocket talk", [("0:00", "rocket rocket launch"), ("2:00", "the rocket lands")]))
+    assert client.post("/api/knowledge", headers=AUTH, json={"name": "web", "urls": ["ftp://x"]}).status_code == 422
+    assert client.post("/api/knowledge", headers=AUTH, json={"name": "web"}).status_code == 422
+    client.post("/api/knowledge", headers=AUTH, json={"name": "web", "urls": ["https://example.org/budget", "https://youtu.be/jNQXAC9IVRw"]})
+    assert wait(client, "web")["files"] == 2
+    found = knowledge.search("web", "rocket launch")
+    assert found[0]["path"] == "https://youtu.be/jNQXAC9IVRw" and found[0]["heading"] == "Rocket talk · 0:00"
+    assert knowledge.search("web", "budget 1200")[0]["heading"] == "Budget page · March"
+    assert not knowledge.changed("web") and fetched == ["https://example.org/budget"]
+    client.post("/api/knowledge/web/index", headers=AUTH)  # by hand: fetched again
+    wait(client, "web")
+    assert fetched == ["https://example.org/budget"] * 2
+    client.put("/api/knowledge/web", headers=AUTH, json={"urls": ["https://youtu.be/jNQXAC9IVRw"]})
+    assert wait(client, "web")["files"] == 1
+
+
+def test_youtube_addresses_are_recognised():
+    from temper_engine import web
+
+    for url in ["https://www.youtube.com/watch?v=jNQXAC9IVRw", "https://youtube.com/watch?feature=x&v=jNQXAC9IVRw", "https://youtu.be/jNQXAC9IVRw?t=3", "https://www.youtube.com/shorts/jNQXAC9IVRw"]:
+        assert web.youtube_id(url) == "jNQXAC9IVRw"
+    assert web.youtube_id("https://example.org/watch?v=x") is None
+    assert web._clock(3725) == "1:02:05" and web._clock(65) == "1:05"

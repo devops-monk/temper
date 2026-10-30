@@ -18,6 +18,8 @@ dependencies = [
   "numpy>=1.26",
   # .gitignore rules, which knowledge bases honour.
   "pathspec>=0.12",
+  # Transcripts of YouTube videos, for read_web_page and knowledge bases.
+  "youtube-transcript-api>=1.2",
   # Windows has no time-zone database of its own; zoneinfo reads this one (the clock tool).
   "tzdata>=2024.1; sys_platform == 'win32'",
 ]

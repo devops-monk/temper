@@ -362,5 +362,9 @@
   "kb.sync_off": "Index changes by hand with the refresh button.",
   "kb.ocr_vision": "Scanned PDF pages are read by the vision model loaded for chat.",
   "kb.ocr_tesseract": "Scanned PDF pages are read with Tesseract (a vision model loaded for chat reads them better).",
-  "kb.ocr_none": "Scanned PDF pages are skipped: load a vision model for chat, or install Tesseract, to read them."
+  "kb.ocr_none": "Scanned PDF pages are skipped: load a vision model for chat, or install Tesseract, to read them.",
+  "kb.urls": "Web pages and videos",
+  "kb.urls_hint": "One address per line. Web pages are read as text, YouTube videos as their transcript.",
+  "kb.add_url": "Add a web page or YouTube link",
+  "kb.add_url_button": "Add"
 }

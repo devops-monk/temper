@@ -362,5 +362,9 @@
   "kb.sync_off": "Indexa los cambios a mano con el botón de actualizar.",
   "kb.ocr_vision": "Las páginas escaneadas de los PDF las lee el modelo de visión cargado para el chat.",
   "kb.ocr_tesseract": "Las páginas escaneadas de los PDF se leen con Tesseract (un modelo de visión cargado para el chat las lee mejor).",
-  "kb.ocr_none": "Las páginas escaneadas de los PDF se omiten: carga un modelo de visión para el chat o instala Tesseract para leerlas."
+  "kb.ocr_none": "Las páginas escaneadas de los PDF se omiten: carga un modelo de visión para el chat o instala Tesseract para leerlas.",
+  "kb.urls": "Páginas web y vídeos",
+  "kb.urls_hint": "Una dirección por línea. Las páginas se leen como texto y los vídeos de YouTube por su transcripción.",
+  "kb.add_url": "Añadir una página web o un enlace de YouTube",
+  "kb.add_url_button": "Añadir"
 }

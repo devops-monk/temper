@@ -4,6 +4,9 @@ A page is fetched and turned into readable text: headings, paragraphs, lists and
 scripts, styles, navigation and footers dropped, and its links numbered at the end so the model can
 follow one. Long pages come in parts (`part`); PDFs are read as text; plain text and JSON as they are.
 
+A YouTube video's address gives its transcript instead (captions in the video's own language,
+or YouTube's automatic ones), marked with times so the model can point into it.
+
 What a page says is the page's, not the person's: it's marked as such, since pages can carry
 instructions meant to steer the model. Addresses on this computer or the local network are refused,
 so a page can't be used to reach the engine or other local services.
@@ -101,6 +104,59 @@ class _Text(HTMLParser):
         return re.sub(r"\n{3,}", "\n\n", "".join(pieces)).strip()
 
 
+YOUTUBE = re.compile(r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|live/|embed/)|youtu\.be/)([\w-]{11})")
+
+
+def youtube_id(url: str) -> str | None:
+    m = YOUTUBE.search(url)
+    return m.group(1) if m else None
+
+
+def _clock(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+
+
+def transcript(video: str, every: float = 60) -> tuple[str, list[tuple[str, str]]]:
+    """A YouTube video's title and transcript, in sections of about `every` seconds headed by their start time."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import CouldNotRetrieveTranscript
+
+    url = f"https://www.youtube.com/watch?v={video}"
+    try:
+        fetched = YouTubeTranscriptApi().fetch(video, languages=_languages(video))
+    except CouldNotRetrieveTranscript as e:
+        reason = str(e).split("This is most likely caused by:")[-1].strip().splitlines()[0] if "caused by" in str(e) else "it has no captions"
+        raise ValueError(f"Couldn't get a transcript of {url}: {reason}") from None
+    try:
+        title = httpx.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"}, timeout=10).json().get("title") or ""
+    except (httpx.HTTPError, ValueError):
+        title = ""
+    sections: list[tuple[str, str]] = []
+    start, words = None, []
+    for snippet in fetched:
+        if start is None:
+            start = snippet.start
+        words.append(snippet.text.replace("\n", " "))
+        if snippet.start - start >= every:
+            sections.append((_clock(start), " ".join(words)))
+            start, words = None, []
+    if words:
+        sections.append((_clock(start or 0), " ".join(words)))
+    return title, sections
+
+
+def _languages(video: str) -> list[str]:
+    """The video's own captions first (made by a person, then automatic), whatever their language."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    try:
+        tracks = list(YouTubeTranscriptApi().list(video))
+    except Exception:  # noqa: BLE001 — fetch() reports the real problem
+        return ["en"]
+    return [t.language_code for t in sorted(tracks, key=lambda t: t.is_generated)] or ["en"]
+
+
 def readable(html: str, base: str) -> tuple[str, str, list[str]]:
     """A page's title, its text, and its links (numbered in the text as [n])."""
     parser = _Text(base)
@@ -153,24 +209,31 @@ def fetch(url: str, client: httpx.Client | None = None) -> tuple[str, str, bytes
             client.close()
 
 
-def read(url: str, part: int = 1, client: httpx.Client | None = None) -> str:
-    """The tool's result: the page as text, part `part` of it, with its links."""
+def page_text(url: str, client: httpx.Client | None = None) -> tuple[str, str, str, list[str]]:
+    """A page's final address, title, text and links: a web page, a PDF, plain text, or a video's transcript."""
+    if video := youtube_id(url):
+        title, sections = transcript(video)
+        return url.strip(), title, "\n\n".join(f"[{at}] {words}" for at, words in sections), []
     final, kind, body = fetch(url.strip(), client)
-    title, links = "", []
     if "pdf" in kind or body[:5] == b"%PDF-":
         from pypdf import PdfReader
 
         try:
-            text = "\n\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(body)).pages)
+            return final, "", "\n\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(body)).pages), []
         except Exception:  # noqa: BLE001 — a broken PDF is a page that can't be read
             raise ValueError(f"{final} is a PDF Temper couldn't read.") from None
-    elif "html" in kind or body.lstrip()[:15].lower().startswith((b"<!doctype html", b"<html")):
+    if "html" in kind or body.lstrip()[:15].lower().startswith((b"<!doctype html", b"<html")):
         charset = re.search(r"charset=([\w-]+)", kind)
         title, text, links = readable(body.decode(charset.group(1) if charset else "utf-8", errors="replace"), final)
-    elif kind.startswith(("text/", "application/json", "application/xml")) or not kind:
-        text = body.decode(errors="replace")
-    else:
-        raise ValueError(f"{final} is {kind.split(';')[0]}, not a page Temper can read.")
+        return final, title, text, links
+    if kind.startswith(("text/", "application/json", "application/xml")) or not kind:
+        return final, "", body.decode(errors="replace"), []
+    raise ValueError(f"{final} is {kind.split(';')[0]}, not a page Temper can read.")
+
+
+def read(url: str, part: int = 1, client: httpx.Client | None = None) -> str:
+    """The tool's result: the page as text, part `part` of it, with its links."""
+    final, title, text, links = page_text(url, client)
     parts = max((len(text) + PART - 1) // PART, 1)
     part = min(max(part, 1), parts)
     piece = text[(part - 1) * PART : part * PART]

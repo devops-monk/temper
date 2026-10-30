@@ -362,5 +362,9 @@
   "kb.sync_off": "用刷新按钮手动索引更改。",
   "kb.ocr_vision": "PDF 中的扫描页由为聊天加载的视觉模型读取。",
   "kb.ocr_tesseract": "PDF 中的扫描页用 Tesseract 读取（为聊天加载视觉模型读得更好）。",
-  "kb.ocr_none": "PDF 中的扫描页会被跳过：为聊天加载视觉模型或安装 Tesseract 即可读取。"
+  "kb.ocr_none": "PDF 中的扫描页会被跳过：为聊天加载视觉模型或安装 Tesseract 即可读取。",
+  "kb.urls": "网页和视频",
+  "kb.urls_hint": "每行一个地址。网页按文本读取，YouTube 视频读取其字幕文稿。",
+  "kb.add_url": "添加网页或 YouTube 链接",
+  "kb.add_url_button": "添加"
 }

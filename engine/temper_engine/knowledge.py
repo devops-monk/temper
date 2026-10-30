@@ -9,6 +9,9 @@ two, and keeps them in knowledge/<base>/index.db (SQLite) with
 A search runs both and merges the rankings (reciprocal rank fusion), so a passage that matches on
 either rises. Re-indexing reads only files that changed since last time.
 
+A base can also hold web pages and YouTube videos by their address: a page's text or a video's
+transcript is fetched when it's added, and again when the base is re-indexed by hand.
+
 Folders honour .gitignore files (and skip hidden and build folders). A base kept in sync is checked
 for changes every minute while the engine runs, and re-indexed when anything was added, changed or
 removed.
@@ -35,7 +38,7 @@ from xml.etree import ElementTree
 import httpx
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from . import home, prefs
 from .jobs import Job, registry
@@ -392,13 +395,29 @@ def files_in(paths: list[str]) -> list[Path]:
     return out
 
 
+def read_url(url: str) -> list[tuple[str, str]]:
+    """A web page's or video's text as (heading, text) sections, each heading led by the page's title."""
+    from . import web
+
+    if video := web.youtube_id(url):
+        title, sections = web.transcript(video, every=120)
+    else:
+        _, title, text, _ = web.page_text(url)
+        sections = _markdown_sections(text) or [("", text)]
+    return [(" · ".join(x for x in (title, h) if x), t) for h, t in sections]
+
+
 def changed(name: str) -> bool:
-    """Whether a base's folders hold files added, changed or removed since it was last indexed."""
+    """Whether a base's folders hold files added, changed or removed since it was last indexed, or it has new addresses."""
     conn = db(name)
     try:
         known = {row[0]: (row[1], row[2]) for row in conn.execute("SELECT path, mtime, size FROM files")}
     finally:
         conn.close()
+    urls = config(name).get("urls", [])
+    if any(u not in known for u in urls):
+        return True
+    known = {k: v for k, v in known.items() if k not in urls}
     seen = 0
     for p in files_in(config(name)["paths"]):
         try:
@@ -452,14 +471,28 @@ class Watcher:
 watcher = Watcher()
 
 
-def index(job: Job, name: str) -> None:
+def _store(conn: sqlite3.Connection, eid: str, path: str, mtime: float, size: int, pieces: list[tuple[str, str]], error: str | None) -> None:
+    vectors = embedder.embed([f"{h}\n{t}" if h else t for h, t in pieces], eid) if pieces else None
+    conn.execute("DELETE FROM passages WHERE file = (SELECT id FROM files WHERE path = ?)", (path,))
+    conn.execute(
+        "INSERT INTO files (path, mtime, size, passages, error) VALUES (?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, size=excluded.size, passages=excluded.passages, error=excluded.error",
+        (path, mtime, size, len(pieces), error),
+    )
+    fid = conn.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()[0]
+    conn.executemany("INSERT INTO passages (file, ord, heading, text, vector) VALUES (?, ?, ?, ?, ?)", [(fid, j, h, t, vectors[j].tobytes()) for j, (h, t) in enumerate(pieces)])
+    conn.commit()
+
+
+def index(job: Job, name: str, refresh: bool = False) -> None:
+    """Reads what's new or changed into the index; `refresh` fetches the base's web addresses again too."""
     cfg = config(name)
     eid = cfg["embedder"]
     conn = db(name)
     try:
         known = {row[0]: (row[1], row[2], row[3]) for row in conn.execute("SELECT path, mtime, size, id FROM files")}
         found = files_in(cfg["paths"])
-        present = {str(p) for p in found}
+        urls = cfg.get("urls", [])
+        present = {str(p) for p in found} | set(urls)
         gone = [fid for path, (_, _, fid) in known.items() if path not in present]
         for fid in gone:
             conn.execute("DELETE FROM passages WHERE file = ?", (fid,))
@@ -467,6 +500,7 @@ def index(job: Job, name: str) -> None:
         conn.commit()
         if gone:
             job.log(f"Removed {len(gone)} files that are gone")
+        fetch = [u for u in urls if refresh or u not in known]
         todo = []
         for p in found:
             try:
@@ -476,11 +510,23 @@ def index(job: Job, name: str) -> None:
             old = known.get(str(p))
             if not old or old[0] != st.st_mtime or old[1] != st.st_size:
                 todo.append((p, st))
-        job.log(f"{len(found)} files, {len(todo)} to read")
-        for i, (p, st) in enumerate(todo):
+        job.log(f"{len(found)} files, {len(todo)} to read" + (f", {len(fetch)} web addresses to fetch" if fetch else ""))
+        steps = len(todo) + len(fetch)
+        for i, url in enumerate(fetch):
             if job.cancel_requested:
                 return
-            job.progress = i / max(len(todo), 1)
+            job.progress = i / max(steps, 1)
+            job.emit("progress", value=job.progress, file=url)
+            try:
+                pieces, error = chunks(read_url(url)), None
+            except Exception as e:  # noqa: BLE001 — one unreachable page doesn't stop the index
+                pieces, error = [], str(e)[:300]
+                job.log(f"Skipped {url}: {error}")
+            _store(conn, eid, url, time.time(), sum(len(t) for _, t in pieces), pieces, error)
+        for i, (p, st) in enumerate(todo, len(fetch)):
+            if job.cancel_requested:
+                return
+            job.progress = i / max(steps, 1)
             job.emit("progress", value=job.progress, file=str(p))
             error, pieces = None, []
             if st.st_size > MAX_FILE:
@@ -490,18 +536,7 @@ def index(job: Job, name: str) -> None:
                     pieces = chunks(read_document(p))
                 except Exception as e:  # noqa: BLE001 — one unreadable file doesn't stop the index
                     error = f"couldn't read it: {e}"[:300]
-            vectors = embedder.embed([f"{h}\n{t}" if h else t for h, t in pieces], eid) if pieces else None
-            conn.execute("DELETE FROM passages WHERE file = (SELECT id FROM files WHERE path = ?)", (str(p),))
-            conn.execute(
-                "INSERT INTO files (path, mtime, size, passages, error) VALUES (?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, size=excluded.size, passages=excluded.passages, error=excluded.error",
-                (str(p), st.st_mtime, st.st_size, len(pieces), error),
-            )
-            fid = conn.execute("SELECT id FROM files WHERE path = ?", (str(p),)).fetchone()[0]
-            conn.executemany(
-                "INSERT INTO passages (file, ord, heading, text, vector) VALUES (?, ?, ?, ?, ?)",
-                [(fid, j, h, t, vectors[j].tobytes()) for j, (h, t) in enumerate(pieces)],
-            )
-            conn.commit()
+            _store(conn, eid, str(p), st.st_mtime, st.st_size, pieces, error)
             if error:
                 job.log(f"Skipped {p.name}: {error}")
         conn.execute("INSERT OR REPLACE INTO meta VALUES ('indexed', ?), ('embedder', ?)", (str(time.time()), eid))
@@ -620,14 +655,26 @@ def _llama_ready() -> bool:
 
 class NewBase(BaseModel):
     name: str
-    paths: list[str] = Field(min_length=1)
+    paths: list[str] = []
+    urls: list[str] = []  # web pages and YouTube videos
 
 
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")[:48]
 
 
-def _start_index(name: str) -> str:
+def _urls(urls: list[str]) -> list[str]:
+    out = []
+    for u in urls:
+        u = u.strip()
+        if not re.match(r"^https?://[^\s/]+", u):
+            raise HTTPException(422, f"{u!r} isn't a web address: give it with http:// or https://.")
+        if u not in out:
+            out.append(u)
+    return out
+
+
+def _start_index(name: str, refresh: bool = False) -> str:
     running = next((j for j in registry.jobs.values() if j.kind == "knowledge-index" and j.status == "running" and j.result.get("base") == name), None)
     if running:
         return running.id
@@ -635,7 +682,7 @@ def _start_index(name: str) -> str:
         raise HTTPException(409, "Download the embedding model first (Settings → Knowledge bases).")
     job = registry.create("knowledge-index", f"Index {name}")
     job.result["base"] = name
-    registry.run_thread(job, lambda j: index(j, name))
+    registry.run_thread(job, lambda j: index(j, name, refresh))
     return job.id
 
 
@@ -650,13 +697,17 @@ def create_base(req: NewBase):
     missing = [p for p in paths if not Path(p).exists()]
     if missing:
         raise HTTPException(422, f"{missing[0]} doesn't exist.")
+    urls = _urls(req.urls)
+    if not paths and not urls:
+        raise HTTPException(422, "Add a folder, a file or a web address to the knowledge base.")
     (root() / name).mkdir()
-    _save_config(name, {"title": req.name.strip(), "paths": paths, "embedder": embedder_id(), "enabled": True, "created": time.time()})
+    _save_config(name, {"title": req.name.strip(), "paths": paths, "urls": urls, "embedder": embedder_id(), "enabled": True, "created": time.time()})
     return {"base": name, "job": _start_index(name)}
 
 
 class EditBase(BaseModel):
     paths: list[str] | None = None
+    urls: list[str] | None = None
     enabled: bool | None = None
     sync: bool | None = None  # re-index by itself when the folders change
 
@@ -666,17 +717,20 @@ def edit_base(name: str, req: EditBase):
     cfg = config(name)
     if req.paths is not None:
         cfg["paths"] = [str(Path(p).expanduser().resolve()) for p in req.paths]
+    if req.urls is not None:
+        cfg["urls"] = _urls(req.urls)
     if req.enabled is not None:
         cfg["enabled"] = req.enabled
     if req.sync is not None:
         cfg["sync"] = req.sync
     _save_config(name, cfg)
-    return {"base": name, "job": _start_index(name) if req.paths is not None else None}
+    return {"base": name, "job": _start_index(name) if req.paths is not None or req.urls is not None else None}
 
 
 @router.post("/{name}/index")
 def reindex(name: str):
-    return {"job": _start_index(name)}
+    """Reads changed files, and fetches the base's web addresses again."""
+    return {"job": _start_index(name, refresh=True)}
 
 
 @router.delete("/{name}")

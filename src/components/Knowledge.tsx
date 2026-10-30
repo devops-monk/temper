@@ -12,6 +12,7 @@ interface Base {
   name: string;
   title: string;
   paths: string[];
+  urls?: string[];
   embedder: string;
   enabled: boolean;
   sync: boolean;
@@ -118,7 +119,9 @@ function NewBase({ onDone }: { onDone: (made: boolean) => void }) {
   const t = useT();
   const [name, setName] = useState("");
   const [paths, setPaths] = useState<string[]>([]);
+  const [urls, setUrls] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const addresses = urls.split("\n").map((u) => u.trim()).filter(Boolean);
   async function add() {
     const folder = await pickFolder(t("kb.pick"));
     if (folder) setPaths((p) => [...new Set([...p, folder])]);
@@ -126,7 +129,7 @@ function NewBase({ onDone }: { onDone: (made: boolean) => void }) {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    await api("/api/knowledge", { json: { name, paths } }).then(() => onDone(true), (err: Error) => setError(err.message));
+    await api("/api/knowledge", { json: { name, paths, urls: addresses } }).then(() => onDone(true), (err: Error) => setError(err.message));
   }
   return (
     <form onSubmit={(e) => void save(e)} className="mb-3 flex flex-col gap-3 rounded-lg border border-line bg-surface p-3 text-[13px]">
@@ -147,9 +150,18 @@ function NewBase({ onDone }: { onDone: (made: boolean) => void }) {
           <FolderPlus className="size-3.5" /> {t("kb.add_folder")}
         </Button>
       </div>
+      <Field label={t("kb.urls")} hint={t("kb.urls_hint")}>
+        <textarea
+          value={urls}
+          onChange={(e) => setUrls(e.target.value)}
+          rows={2}
+          placeholder="https://www.youtube.com/watch?v=…"
+          className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 font-mono text-[12.5px] placeholder:text-muted/70 focus:border-accent focus:outline-none"
+        />
+      </Field>
       {error && <p className="text-[12px] text-danger">{error}</p>}
       <div className="flex gap-2">
-        <Button size="sm" variant="primary" type="submit" disabled={!name.trim() || !paths.length}>
+        <Button size="sm" variant="primary" type="submit" disabled={!name.trim() || (!paths.length && !addresses.length)}>
           {t("kb.create")}
         </Button>
         <Button size="sm" variant="ghost" type="button" onClick={() => onDone(false)}>
@@ -165,6 +177,7 @@ function BaseRow({ base: b, onChange }: { base: Base; onChange: () => void }) {
   const { refreshJobs } = useApp();
   const { status, events } = useJob(b.job);
   const [query, setQuery] = useState("");
+  const [address, setAddress] = useState("");
   const [found, setFound] = useState<Passage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const indexing = !!b.job && (status === null || status === "running");
@@ -195,9 +208,23 @@ function BaseRow({ base: b, onChange }: { base: Base; onChange: () => void }) {
           <Trash2 className="size-3.5" />
         </Button>
       </div>
-      <p className="mt-1 truncate font-mono text-[11.5px] text-muted" title={b.paths.join("\n")}>
-        {b.paths.join(" · ")}
+      <p className="mt-1 truncate font-mono text-[11.5px] text-muted" title={[...b.paths, ...(b.urls ?? [])].join("\n")}>
+        {[...b.paths, ...(b.urls ?? [])].join(" · ")}
       </p>
+      {!indexing && (
+        <form
+          className="mt-1.5 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void api(path, { method: "PUT", json: { urls: [...(b.urls ?? []), address.trim()] } }).then(() => (setAddress(""), onChange(), void refreshJobs()), (err: Error) => setError(err.message));
+          }}
+        >
+          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t("kb.add_url")} aria-label={t("kb.add_url")} />
+          <Button size="sm" variant="ghost" type="submit" disabled={!address.trim()}>
+            {t("kb.add_url_button")}
+          </Button>
+        </form>
+      )}
       <div className="mt-1.5 flex items-center gap-2 text-[12px] text-muted">
         <Toggle label={t("kb.sync")} checked={b.sync} onChange={(sync) => void api(path, { method: "PUT", json: { sync } }).then(onChange)} />
         <span>{b.sync ? t("kb.sync_on") : t("kb.sync_off")}</span>

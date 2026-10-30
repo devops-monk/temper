@@ -36,6 +36,9 @@ const DOWNLOADED = [
   ["pypdfium2 and PDFium", "BSD-3-Clause, Apache-2.0", "https://github.com/pypdfium2-team/pypdfium2"],
   ["NumPy", "BSD-3-Clause", "https://github.com/numpy/numpy"],
   ["pathspec", "MPL-2.0", "https://github.com/cpburnz/python-pathspec"],
+  ["youtube-transcript-api", "MIT", "https://github.com/jdepoix/youtube-transcript-api"],
+  ["Requests", "Apache-2.0", "https://github.com/psf/requests"],
+  ["defusedxml", "PSF-2.0", "https://github.com/tiran/defusedxml"],
   ["tzdata (Windows)", "Apache-2.0", "https://github.com/python/tzdata"],
   ["python-docx", "MIT", "https://github.com/python-openxml/python-docx"],
 ] as const;

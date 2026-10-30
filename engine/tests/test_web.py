@@ -84,3 +84,9 @@ def test_pdfs_and_plain_text_are_read_and_errors_say_why():
 def test_the_tool_asks_first():
     assert tools.TOOLS["read_web_page"].mode == "ask"
     assert "Give the page's" in tools.run(tools.Call("read_web_page", {}), ["read_web_page"])["result"]
+
+
+def test_a_youtube_address_reads_as_its_transcript(monkeypatch):
+    monkeypatch.setattr(web, "transcript", lambda video: ("Me at the zoo", [("0:01", "here we are"), ("1:00", "long trunks")]))
+    out = web.read("https://youtu.be/jNQXAC9IVRw")
+    assert out.startswith("Page: Me at the zoo\nAddress: https://youtu.be/jNQXAC9IVRw") and "[0:01] here we are\n\n[1:00] long trunks" in out
