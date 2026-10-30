@@ -590,6 +590,8 @@ def bases() -> list[dict]:
         if not (d / "base.json").is_file():
             continue
         cfg = json.loads((d / "base.json").read_text(encoding="utf-8"))
+        # The job first, then the counts: a job that ends in between then shows its finished counts, never stale ones.
+        running = next((j for j in list(registry.jobs.values()) if j.kind == "knowledge-index" and j.status == "running" and j.result.get("base") == d.name), None)
         stats = {"files": 0, "passages": 0, "skipped": 0, "indexed": None}
         if (d / "index.db").is_file():
             conn = db(d.name)
@@ -600,7 +602,6 @@ def bases() -> list[dict]:
                 stats["indexed"] = float(indexed[0]) if indexed else None
             finally:
                 conn.close()
-        running = next((j for j in registry.jobs.values() if j.kind == "knowledge-index" and j.status == "running" and j.result.get("base") == d.name), None)
         out.append({"name": d.name, **cfg, **stats, "job": running.id if running else None, "enabled": cfg.get("enabled", True), "sync": cfg.get("sync", True)})
     return out
 

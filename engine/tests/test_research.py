@@ -41,7 +41,8 @@ def client(monkeypatch):
 
 
 def wait(c, rid):
-    for _ in range(100):
+    deadline = time.monotonic() + 20  # generous: a busy computer can take a while
+    while time.monotonic() < deadline:
         run = c.get(f"/api/research/{rid}", headers=AUTH).json()
         if run["status"] not in ("running", "writing"):
             return run
@@ -63,9 +64,10 @@ def test_a_run_searches_reads_and_writes_a_cited_report(client):
 def test_review_leaves_sources_out_of_the_rewritten_report(client, monkeypatch):
     rid = client.post("/api/research", headers=AUTH, json={"question": "How long do llamas live?", "depth": "quick"}).json()["id"]
     wait(client, rid)
-    client.post(f"/api/research/{rid}/write", headers=AUTH, json={"excluded": [1]})
+    r = client.post(f"/api/research/{rid}/write", headers=AUTH, json={"excluded": [1]})
+    assert r.status_code == 200, r.text
     run = wait(client, rid)
-    assert run["sources"][0]["included"] is False and run["report"].startswith("None of the sources")
+    assert run["sources"][0]["included"] is False and run["report"].startswith("None of the sources"), (run["status"], run.get("error"), run["report"])
     assert client.delete(f"/api/research/{rid}", headers=AUTH).json() == {"runs": []}
 
 
