@@ -85,15 +85,76 @@ print(reply.choices[0].message.content)`,
   },
 ];
 
+/** Configs for agents that use Temper as an MCP server (engine mcp_server.py). */
+const MCP_RECIPES: Recipe[] = [
+  {
+    id: "json",
+    name: "Cursor, Claude Desktop, VS Code",
+    where: "mcp.json (mcpServers)",
+    body: (url, token) => `{
+  "mcpServers": {
+    "temper": {
+      "url": "${url}/mcp",
+      "headers": { "Authorization": "Bearer ${token}" }
+    }
+  }
+}`,
+  },
+  {
+    id: "claude",
+    name: "Claude Code",
+    where: "terminal",
+    body: (url, token) => `claude mcp add --transport http temper ${url}/mcp \\
+  --header "Authorization: Bearer ${token}"`,
+  },
+  {
+    id: "codex",
+    name: "Codex CLI",
+    where: "~/.codex/config.toml",
+    body: (url) => `[mcp_servers.temper]
+url = "${url}/mcp"
+bearer_token_env_var = "TEMPER_API_KEY"
+# then run:  TEMPER_API_KEY=<token> codex`,
+  },
+];
+
+function Tabs({ recipes, active, onChange, url, token, model }: { recipes: Recipe[]; active: string; onChange: (id: string) => void; url: string; token: string; model: string }) {
+  const recipe = recipes.find((r) => r.id === active) ?? recipes[0];
+  const snippet = recipe.body(url, token, model);
+  return (
+    <>
+      <div className="flex flex-wrap gap-1 border-b border-line" role="tablist">
+        {recipes.map((r) => (
+          <button
+            key={r.id}
+            role="tab"
+            aria-selected={r.id === recipe.id}
+            onClick={() => onChange(r.id)}
+            className={cx("-mb-px border-b-2 px-3 py-2 text-[13px] font-medium", r.id === recipe.id ? "border-accent" : "border-transparent text-muted hover:text-text")}
+          >
+            {r.name}
+          </button>
+        ))}
+      </div>
+      <div className="relative mt-3 rounded-lg border border-line bg-surface">
+        <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[12px] text-muted">
+          <span className="font-mono">{recipe.where}</span>
+          <CopyButton text={snippet} />
+        </div>
+        <pre className="overflow-x-auto p-4 font-mono text-[12.5px] leading-relaxed">{snippet}</pre>
+      </div>
+    </>
+  );
+}
+
 export function ConnectPage() {
   const { engine, runtime } = useApp();
   const [active, setActive] = useState(RECIPES[0].id);
+  const [activeMcp, setActiveMcp] = useState(MCP_RECIPES[0].id);
   const [reveal, setReveal] = useState(false);
   const url = engine?.url ?? "";
   const token = engine?.token ?? "";
   const model = runtime?.state === "ready" && runtime.model ? runtime.model : "local-model";
-  const recipe = RECIPES.find((r) => r.id === active)!;
-  const snippet = recipe.body(url, token, model);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -123,29 +184,20 @@ export function ConnectPage() {
         )}
 
         <div className="max-w-[760px]">
-          <div className="flex flex-wrap gap-1 border-b border-line" role="tablist">
-            {RECIPES.map((r) => (
-              <button
-                key={r.id}
-                role="tab"
-                aria-selected={r.id === active}
-                onClick={() => setActive(r.id)}
-                className={cx("-mb-px border-b-2 px-3 py-2 text-[13px] font-medium", r.id === active ? "border-accent" : "border-transparent text-muted hover:text-text")}
-              >
-                {r.name}
-              </button>
-            ))}
-          </div>
-          <div className="relative mt-3 rounded-lg border border-line bg-surface">
-            <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[12px] text-muted">
-              <span className="font-mono">{recipe.where}</span>
-              <CopyButton text={snippet} />
-            </div>
-            <pre className="overflow-x-auto p-4 font-mono text-[12.5px] leading-relaxed">{snippet}</pre>
-          </div>
+          <Tabs recipes={RECIPES} active={active} onChange={setActive} url={url} token={token} model={model} />
           <p className="mt-4 text-[13px] text-muted">
             The key changes every time Temper starts. Claude Code needs an Anthropic-compatible endpoint, which is on the roadmap (PLAN.md, item 10.2).
           </p>
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">MCP server</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">
+            Agents that speak the Model Context Protocol can use Temper as a server at <span className="font-mono text-[12.5px]">{url}/mcp</span>: list and load this computer's models, ask
+            them questions, and follow or cancel downloads, training and exports. It uses the same key.
+          </p>
+          <Tabs recipes={MCP_RECIPES} active={activeMcp} onChange={setActiveMcp} url={url} token={token} model={model} />
+          <p className="mt-4 text-[13px] text-muted">Because the key changes when Temper restarts, update it in the agent's config after a restart.</p>
         </div>
       </div>
     </div>
