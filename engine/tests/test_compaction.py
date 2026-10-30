@@ -104,3 +104,14 @@ def test_failed_replies_are_not_sent(model):
     thread = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "The model ended its reply without writing anything.", "error": True}, {"role": "user", "content": "hello?"}]
     out = call("POST", "/api/chat/prepare", json={"messages": thread, "max_tokens": 40})
     assert out["messages"] == [{"role": "user", "content": "hi"}, {"role": "user", "content": "hello?"}]
+
+
+def test_a_mentioned_skill_joins_the_system_prompt(model, tmp_path, monkeypatch):
+    from temper_engine import skills
+
+    monkeypatch.setenv("TEMPER_HOME", str(tmp_path))
+    (skills.global_dir() / "terse").mkdir()
+    (skills.global_dir() / "terse" / "SKILL.md").write_text("---\nname: terse\ndescription: Short answers\n---\nAnswer in five words.")
+    out = call("POST", "/api/chat/prepare", json={"messages": [{"role": "user", "content": "@terse why sky blue"}], "system": "Be kind.", "max_tokens": 40})
+    system = out["messages"][0]["content"]
+    assert system.startswith("Be kind.") and '<skill name="terse">\nAnswer in five words.' in system

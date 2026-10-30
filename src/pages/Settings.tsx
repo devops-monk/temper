@@ -4,6 +4,7 @@ import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
 import { CodeSandbox } from "../components/Tools";
 import { McpServers } from "../components/McpServers";
+import { SkillsSettings } from "../components/Skills";
 import { GlobalInstructions } from "../components/Instructions";
 import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
@@ -230,6 +231,8 @@ export function SettingsPage() {
           </Section>
 
           {engine?.status === "running" && <GlobalInstructions />}
+
+          {engine?.status === "running" && <SkillsSettings />}
 
           {engine?.status === "running" && <CodeSandbox />}
 

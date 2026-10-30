@@ -7,6 +7,7 @@ import { ContextFit, type Fit, type FitFix } from "../components/ContextFit";
 import { FindBar } from "../components/FindBar";
 import { ProjectFolder } from "../components/Instructions";
 import { PromptLibrary } from "../components/PromptLibrary";
+import { SkillPicker, mentionAt } from "../components/Skills";
 import { useT } from "../lib/i18n";
 import { CHAT_CONTEXT } from "../components/LoadButton";
 import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
@@ -226,6 +227,9 @@ export function ChatPage() {
   // Typing / and a few letters in an empty message searches the prompt library; Esc leaves it as typed.
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
   const slash = /^\/([^\s/]*)$/.exec(draft) && draft !== slashDismissed ? draft.slice(1) : null;
+  // An @skill being typed at the end of the message (Skills.tsx); Escape leaves it as text.
+  const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
+  const mention = draft !== mentionDismissed ? mentionAt(draft) : null;
   const ready = runtime?.state === "ready";
   // The saved thread on screen; null until the first message of a new chat is sent.
   const [chat, setChat] = useState<{ id: string; title: string; source: string | null } | null>(null);
@@ -777,7 +781,18 @@ export function ChatPage() {
                     {attaching && <span className="animate-pulse-dot self-center px-1 text-[12px] text-muted">{t("chat.reading")}</span>}
                   </div>
                 )}
-                <div className="flex items-end gap-2">
+                <div className="relative flex items-end gap-2">
+                  {mention !== null && (
+                    <SkillPicker
+                      query={mention}
+                      project={project}
+                      onPick={(name) => {
+                        setDraft((d) => d.replace(/@[a-z0-9-]*$/i, `@${name} `));
+                        input.current?.focus();
+                      }}
+                      onDismiss={() => setMentionDismissed(draft)}
+                    />
+                  )}
                   <Button variant="ghost" onClick={() => void pickFiles().then(addFiles)} disabled={!ready} aria-label={t("chat.attach")} title={t("chat.attach_hint")} className="size-9 rounded-xl px-0 text-muted">
                     <Paperclip className="size-[18px]" />
                   </Button>

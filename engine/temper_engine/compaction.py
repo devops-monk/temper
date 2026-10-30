@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import attachments, tools
+from . import attachments, skills, tools
 from .engines import translate
 from .instructions import with_instructions
 from .runtime import RuntimeManager, manager
@@ -238,6 +238,9 @@ def prepare(req: Prepare):
     upto = summary.upto if summary else 0
 
     system = with_instructions(req.system, req.project) if req.instructions else req.system
+    # Skills mentioned as @name anywhere in the chat (skills.py).
+    if used := skills.mentioned(req.messages, req.project):
+        system = "\n\n".join(t for t in (system, skills.prompt(used)) if t)
     # llama-server takes tools natively; other engines are offered them in the system prompt.
     native = server.engine == "llama.cpp"
     offered = tools.offer(req.tools) if req.tools else None
