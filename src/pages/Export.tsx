@@ -3,31 +3,34 @@ import { useEffect, useMemo, useState } from "react";
 import { AddToOllama } from "../components/AddToOllama";
 import { Badge, Button, EmptyState, Notice, PageHeader, ProgressBar, Section, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { useJob } from "../lib/useJob";
 import type { Job, Run } from "../lib/types";
 
-const FORMATS = [
-  { id: "gguf", label: "GGUF", note: "For llama.cpp, Ollama, LM Studio and Temper's chat." },
-  { id: "lora", label: "LoRA adapter", note: "Just the trained adapter. Small; needs the base model to run." },
-  { id: "merged_16bit", label: "Merged 16-bit", note: "Full safetensors model for vLLM, SGLang or transformers." },
-  { id: "merged_4bit", label: "Merged 4-bit", note: "Bitsandbytes 4-bit weights. NVIDIA only." },
-  { id: "mlx", label: "MLX", note: "The merged model in MLX format, quantized like its base. For mlx-lm and LM Studio on Apple Silicon." },
+/** Formats without a label go by their id: GGUF, MLX. */
+const FORMATS: { id: string; label?: Key; note: Key }[] = [
+  { id: "gguf", note: "export.gguf_note" },
+  { id: "lora", label: "export.lora", note: "export.lora_note" },
+  { id: "merged_16bit", label: "export.merged16", note: "export.merged16_note" },
+  { id: "merged_4bit", label: "export.merged4", note: "export.merged4_note" },
+  { id: "mlx", note: "export.mlx_note" },
 ];
-const QUANTS = [
-  { id: "q4_k_m", note: "Recommended balance" },
-  { id: "q5_k_m", note: "Higher quality" },
-  { id: "q8_0", note: "Near lossless" },
-  { id: "f16", note: "Unquantized" },
-  { id: "q3_k_m", note: "Smaller" },
-  { id: "q2_k", note: "Smallest" },
+const QUANTS: { id: string; note: Key }[] = [
+  { id: "q4_k_m", note: "export.q_recommended" },
+  { id: "q5_k_m", note: "export.q_higher" },
+  { id: "q8_0", note: "export.q_lossless" },
+  { id: "f16", note: "export.q_unquantized" },
+  { id: "q3_k_m", note: "export.q_smaller" },
+  { id: "q2_k", note: "export.q_smallest" },
 ];
 /** I-quants: better than K quants at the same size, but only with an importance matrix. */
-const IQUANTS = [
-  { id: "iq4_xs", note: "Smaller than Q4_K_M, close in quality" },
-  { id: "iq3_m", note: "Small, still usable" },
-  { id: "iq2_m", note: "Tiny" },
+const IQUANTS: { id: string; note: Key }[] = [
+  { id: "iq4_xs", note: "export.iq4" },
+  { id: "iq3_m", note: "export.iq3" },
+  { id: "iq2_m", note: "export.iq2" },
 ];
+const STATE: Record<string, Key> = { done: "export.state_done", failed: "export.state_failed", cancelled: "export.state_cancelled" };
 
 async function reveal(path: string) {
   if (!inTauri) return;
@@ -38,6 +41,7 @@ async function reveal(path: string) {
 /** Loads an exported GGUF into the chat runtime and opens Chat. */
 function ChatButton({ path }: { path: string }) {
   const { refreshRuntime, go } = useApp();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const quant = path.match(/-([A-Z0-9_]+)\.gguf$/)?.[1];
   return (
@@ -56,7 +60,7 @@ function ChatButton({ path }: { path: string }) {
           }
         }}
       >
-        <MessageSquare className="size-3.5" /> Chat with {quant ?? "it"}
+        <MessageSquare className="size-3.5" /> {quant ? t("export.chat_with", { quant }) : t("export.chat_with_it")}
       </Button>
       {error && <span className="text-[12px] text-danger">{error}</span>}
     </>
@@ -65,6 +69,7 @@ function ChatButton({ path }: { path: string }) {
 
 function ExportJob({ job }: { job: Job }) {
   const { events, status } = useJob(job.id);
+  const t = useT();
   const phase = [...events].reverse().find((e) => e.event === "phase")?.name as string | undefined;
   const logs = events.filter((e) => e.event === "log").map((e) => e.line as string);
   const state = status ?? job.status;
@@ -75,7 +80,7 @@ function ExportJob({ job }: { job: Job }) {
     <div className="rounded-lg border border-line bg-surface p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="truncate font-medium">{job.title}</span>
-        <Badge tone={state === "done" ? "ok" : state === "failed" ? "warn" : "neutral"}>{state === "running" ? (phase ?? "Starting") : state}</Badge>
+        <Badge tone={state === "done" ? "ok" : state === "failed" ? "warn" : "neutral"}>{state === "running" ? (phase ?? t("export.starting")) : STATE[state] ? t(STATE[state]) : state}</Badge>
       </div>
       {state === "running" && <ProgressBar value={job.progress} />}
       {state === "failed" && job.error && <Notice tone="error">{job.error}</Notice>}
@@ -89,14 +94,14 @@ function ExportJob({ job }: { job: Job }) {
           ))}
           {inTauri && (
             <Button size="sm" onClick={() => reveal(out)}>
-              <FolderOpen className="size-3.5" /> Show in folder
+              <FolderOpen className="size-3.5" /> {t("export.show_in_folder")}
             </Button>
           )}
         </div>
       )}
       {logs.length > 0 && (
         <details className="mt-2 text-[12.5px]">
-          <summary className="cursor-pointer text-muted">Output</summary>
+          <summary className="cursor-pointer text-muted">{t("export.output")}</summary>
           <pre className="mt-2 max-h-48 overflow-auto font-mono text-[11.5px] whitespace-pre-wrap text-muted">{logs.slice(-200).join("\n")}</pre>
         </details>
       )}
@@ -106,6 +111,7 @@ function ExportJob({ job }: { job: Job }) {
 
 export function ExportPage() {
   const { jobs, refreshJobs, go } = useApp();
+  const t = useT();
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [formats, setFormats] = useState<string[]>(["gguf"]);
@@ -141,11 +147,11 @@ export function ExportPage() {
   if (runs && !runs.some((r) => r.adapter)) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Export" description="Package a trained model for other tools." />
-        <EmptyState icon={<PackageOpen className="size-8" />} title="Nothing to export yet">
-          <p>Finish a training run first; its adapter shows up here.</p>
+        <PageHeader title={t("nav.export")} description={t("export.description")} />
+        <EmptyState icon={<PackageOpen className="size-8" />} title={t("export.nothing")}>
+          <p>{t("export.nothing_hint")}</p>
           <Button variant="primary" className="mt-4" onClick={() => go("train")}>
-            Go to Train
+            {t("export.go_train")}
           </Button>
         </EmptyState>
       </div>
@@ -155,17 +161,17 @@ export function ExportPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Export"
-        description="Package a trained model for other tools."
+        title={t("nav.export")}
+        description={t("export.description")}
         actions={
           <Button variant="primary" onClick={start} disabled={!runId || !formats.length || (formats.includes("gguf") && !quants.length)}>
-            <PackageOpen className="size-4" /> Export
+            <PackageOpen className="size-4" /> {t("export.export")}
           </Button>
         }
       />
       <div className="flex min-h-0 flex-1">
         <div className="w-[420px] shrink-0 overflow-y-auto border-r border-line px-7 pb-8">
-          <Section title="Run">
+          <Section title={t("export.run")}>
             <div className="flex flex-col gap-1.5">
               {runs?.filter((r) => r.adapter).map((r) => (
                 <button
@@ -175,13 +181,13 @@ export function ExportPage() {
                 >
                   <span className="block truncate font-medium">{r.id}</span>
                   <span className="block truncate text-[12.5px] text-muted">
-                    {r.base_model} on {r.dataset}
+                    {t("export.run_on", { model: r.base_model, dataset: r.dataset })}
                   </span>
                 </button>
               ))}
             </div>
           </Section>
-          <Section title="Formats">
+          <Section title={t("export.formats")}>
             <div className="flex flex-col gap-1.5">
               {FORMATS.map((f) => {
                 const disabled = (mlx && f.id === "merged_4bit") || (!mlx && f.id === "mlx");
@@ -189,8 +195,8 @@ export function ExportPage() {
                   <label key={f.id} className={cx("flex cursor-pointer gap-3 rounded-lg border border-line bg-surface px-3 py-2", disabled && "opacity-40")}>
                     <input type="checkbox" disabled={disabled} checked={formats.includes(f.id)} onChange={() => toggle(formats, setFormats, f.id)} className="mt-1 accent-[var(--accent)]" />
                     <span>
-                      <span className="font-medium">{f.label}</span>
-                      <span className="block text-[12.5px] text-muted">{f.note}</span>
+                      <span className="font-medium">{f.label ? t(f.label) : f.id.toUpperCase()}</span>
+                      <span className="block text-[12.5px] text-muted">{t(f.note)}</span>
                     </span>
                   </label>
                 );
@@ -198,23 +204,23 @@ export function ExportPage() {
             </div>
           </Section>
           {formats.includes("gguf") && (
-            <Section title="GGUF quantization">
+            <Section title={t("export.quantization")}>
               <div className="grid grid-cols-2 gap-1.5">
                 {[...QUANTS, ...(imatrix ? IQUANTS : [])].map((q) => (
                   <label key={q.id} className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px]">
                     <input type="checkbox" checked={quants.includes(q.id)} onChange={() => toggle(quants, setQuants, q.id)} className="accent-[var(--accent)]" />
                     <span className="font-mono text-[12px]">{q.id.toUpperCase()}</span>
-                    <span className="truncate text-muted">{q.note}</span>
+                    <span className="truncate text-muted">{t(q.note)}</span>
                   </label>
                 ))}
               </div>
               <div className="mt-3">
-                <Toggle label="Calibrate on the training data (importance matrix)" checked={imatrix} onChange={setImatrix} />
+                <Toggle label={t("export.imatrix")} checked={imatrix} onChange={setImatrix} />
                 <p className="mt-1 text-[12.5px] text-muted">
-                  Measures which weights matter most for what this model learnt, and keeps them more precise. Adds a minute or two, and makes the IQ quants available.
+                  {t("export.imatrix_hint")}
                 </p>
               </div>
-              <p className="mt-2 text-[12.5px] text-muted">The first GGUF export also downloads llama.cpp's converter and PyTorch, which takes a few minutes.</p>
+              <p className="mt-2 text-[12.5px] text-muted">{t("export.first_gguf")}</p>
             </Section>
           )}
           {error && <Notice tone="error">{error}</Notice>}
@@ -227,7 +233,7 @@ export function ExportPage() {
               ))}
             </div>
           ) : (
-            <EmptyState icon={<PackageOpen className="size-8" />} title="Exports you start appear here" />
+            <EmptyState icon={<PackageOpen className="size-8" />} title={t("export.empty")} />
           )}
         </div>
       </div>
