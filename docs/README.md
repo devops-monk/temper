@@ -8,7 +8,7 @@ installing it to serving a model you trained to your editor.
 3. [Training](training.md): every training method, and which to pick
 4. [Export](export.md): GGUF, MLX, adapters, Ollama and Hugging Face
 5. [Connect](connect.md): use a model from Claude Code, Codex, editors and your own code
-6. [Speech to text](speech.md): dictation, transcripts and subtitles
+6. [Speech](speech.md): dictation, transcripts and subtitles, and reading text aloud
 7. [Command line](cli.md): the `temper` commands, and running without the window
 8. [Troubleshooting](troubleshooting.md)
 

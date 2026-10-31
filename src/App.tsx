@@ -11,6 +11,7 @@ import { useApp } from "./lib/store";
 import { useUpdates } from "./lib/updates";
 import { ChatPage } from "./pages/Chat";
 import { ConnectPage } from "./pages/Connect";
+import { VoicePage } from "./pages/Voice";
 import { DatasetsPage } from "./pages/Datasets";
 import { ExportPage } from "./pages/Export";
 import { LibraryPage } from "./pages/Library";
@@ -77,6 +78,7 @@ export function App() {
                 {page === "datasets" && <DatasetsPage />}
                 {page === "recipes" && <RecipesPage />}
                 {page === "export" && <ExportPage />}
+                {page === "voice" && <VoicePage />}
                 {page === "connect" && <ConnectPage />}
               </>
             )}

@@ -25,6 +25,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import sys
 import time
 import uuid
@@ -1253,7 +1254,7 @@ def speech_cmd(args: list[str]) -> int:
                 raise CliError(f"Pick one of: {', '.join(m['id'] for m in st['models'])} (or turbo, small, large).")
             if not m["downloaded"]:
                 print(f"Downloading {m['id']} ({_size(m['size'])})…", file=sys.stderr)
-                end = follow(c, _check(c.post("/api/hub/download", json={"repo_id": m["id"]}))["id"], logs=False)
+                end = follow(c, _check(c.post("/api/models/download", json={"repo_id": m["id"]}))["id"], logs=False)
                 if end.get("status") != "done":
                     raise CliError(end.get("error") or f"The download ended {end.get('status')}.")
             _check(c.put("/api/speech/model", json={"model": m["id"]}))
@@ -1265,6 +1266,61 @@ def speech_cmd(args: list[str]) -> int:
             ])
             print()
             _table([["MODEL", "SIZE", ""], *[[m["id"], _size(m["size"]), "downloaded" if m["downloaded"] else ""] for m in st["models"]]])
+    return 0
+
+
+def say_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper say", description="Read text aloud with Kokoro, on this computer.")
+    p.add_argument("text", nargs="?", help="what to say (default: read from stdin)")
+    p.add_argument("--voice", "-v", help="a voice id, like af_heart or bm_george (default: the one picked on the Voice page)")
+    p.add_argument("--speed", type=float, default=1.0, help="0.5 to 2 (default 1)")
+    p.add_argument("--output", "-o", help="write the audio here (.wav, .mp3, .opus, .flac or .aac) instead of playing it")
+    p.add_argument("--voices", action="store_true", help="list the voices")
+    p.add_argument("--install", action="store_true", help="install text to speech and download Kokoro")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        if a.install:
+            st = _check(c.get("/api/tts"))
+            steps = [(not st["installed"], "/api/tts/install", None, "text to speech"), (not st["downloaded"], "/api/models/download", {"repo_id": st["repo"]}, f"Kokoro ({_size(st['size'])})")]
+            for needed, path, body, what in steps:
+                if needed:
+                    print(f"Installing {what}…", file=sys.stderr)
+                    end = follow(c, _check(c.post(path, json=body))["id"], logs=False)
+                    if end.get("status") != "done":
+                        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+            print('Text to speech is ready. Try: temper say "Hello there"')
+            return 0
+        if a.voices:
+            listed = _check(c.get("/api/tts/voices"))
+            _table([["VOICE", "NAME", "LANGUAGE", ""], *[[v["id"], v["name"], v["language"], "picked" if v["id"] == listed["voice"] else ""] for v in listed["voices"]]])
+            return 0
+        text = a.text if a.text is not None else sys.stdin.read()
+        if a.output:
+            fmt = Path(a.output).suffix.lstrip(".").lower() or "wav"
+            fmt = {"ogg": "opus", "m4a": "aac"}.get(fmt, fmt)
+            r = c.post("/v1/audio/speech", json={"input": text, "voice": a.voice or "", "speed": a.speed, "response_format": fmt})
+            if r.status_code != 200:
+                _check(r)
+            Path(a.output).write_bytes(r.content)
+            print(f"Wrote {a.output} ({r.headers.get('x-duration', '?')} s).", file=sys.stderr)
+            return 0
+        r = c.post("/api/tts/speak", json={"text": text, "voice": a.voice, "speed": a.speed})
+        if r.status_code != 200:
+            _check(r)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        f.write(r.content)
+    if sys.platform == "darwin":
+        player = ["afplay", f.name]
+    elif os.name == "nt":
+        player = ["powershell", "-c", f"(New-Object Media.SoundPlayer '{f.name}').PlaySync()"]
+    else:
+        player = ["aplay", "-q", f.name]
+    try:
+        subprocess.run(player, check=False)
+    except FileNotFoundError:
+        raise CliError(f"Nothing here plays audio ({player[0]}); use -o to save it to a file.") from None
+    finally:
+        os.unlink(f.name)
     return 0
 
 
@@ -1344,7 +1400,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1365,6 +1421,7 @@ USAGE = """usage:
   temper daemon up|down|status|install|uninstall
   temper create <folder> [--template chat|tools|rag] [--lang python|typescript] [--model M]
   temper transcribe <file> [--format txt|srt|vtt|json] [--language xx] [--translate] [-o out]
+  temper say ["text"] [--voice V] [--speed S] [-o out.mp3] | --voices | --install
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey

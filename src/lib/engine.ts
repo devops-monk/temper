@@ -64,7 +64,7 @@ export class EngineError extends Error {
   }
 }
 
-function connection(): EngineInfo {
+export function connection(): EngineInfo {
   if (!current || current.status !== "running") throw new EngineError("The engine is not running yet.", 0);
   return current;
 }

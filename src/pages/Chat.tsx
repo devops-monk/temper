@@ -13,6 +13,7 @@ import { CHAT_CONTEXT } from "../components/LoadButton";
 import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
 import { Compare } from "../components/Compare";
 import { Dictate } from "../components/Dictate";
+import { ReadAloud } from "../components/ReadAloud";
 import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
@@ -744,6 +745,7 @@ export function ChatPage() {
                         {m.role === "assistant" && (m.content || m.reasoning) && !(busy && i === messages.length - 1) && (
                           <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                             <CopyButton text={m.content} />
+                            {m.content && <ReadAloud text={m.content} />}
                             {i === messages.length - 1 && (
                               <Button size="sm" variant="ghost" onClick={() => void run(messages.slice(0, -1))}>
                                 <RotateCcw className="size-3.5" /> {t("chat.regenerate")}

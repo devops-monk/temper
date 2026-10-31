@@ -84,7 +84,7 @@ def status() -> dict:
         "model": chosen,
         "ready": python() is not None and _folder(chosen) is not None,
         "models": [{**m, "downloaded": _folder(m["id"]) is not None} for m in MODELS],
-        "running": worker.proc is not None and worker.proc.poll() is None,
+        "running": worker.running(),
     }
 
 
@@ -100,22 +100,26 @@ def _not_ready(model: str) -> HTTPException | None:
 
 
 class Worker:
-    """speech_worker.py in the speech environment, started on first use and stopped when idle."""
+    """A worker script in its own environment, answering JSON-line requests one at a time; started on first
+    use and stopped after IDLE seconds unused. `command()` gives its command line. Also used by tts.py."""
 
-    def __init__(self) -> None:
+    def __init__(self, name: str, command) -> None:
+        self.name, self.command = name, command
         self.proc: subprocess.Popen | None = None
         self.lock = threading.Lock()
         self.used = 0.0
         self._reaper: threading.Thread | None = None
 
+    def _log(self) -> Path:
+        return home() / f"{self.name}.log"
+
     def _start(self) -> None:
-        log = open(home() / "speech.log", "ab")
+        log = open(self._log(), "ab")
         env = {**os.environ, "HF_HUB_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false"}
-        self.proc = subprocess.Popen([python(), "-u", str(WORKER), BACKEND], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=log, text=True, encoding="utf-8", bufsize=1, env=env)
+        self.proc = subprocess.Popen(self.command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8", bufsize=1, env=env)
         log.close()
         if json.loads(self._line()).get("ready") is not True:
-            raise RuntimeError("The speech worker didn't start.")
+            raise RuntimeError(f"The {self.name} worker didn't start.")
         if self._reaper is None:
             self._reaper = threading.Thread(target=self._reap, daemon=True)
             self._reaper.start()
@@ -125,30 +129,33 @@ class Worker:
         line = self.proc.stdout.readline()
         if not line:
             self.proc = None
-            tail = (home() / "speech.log").read_text(errors="replace").strip().splitlines()[-3:]
-            raise RuntimeError("The speech worker stopped. " + " ".join(tail))
+            tail = self._log().read_text(errors="replace").strip().splitlines()[-3:]
+            raise RuntimeError(f"The {self.name} worker stopped. " + " ".join(tail))
         return line
 
-    def transcribe(self, audio: str, model: str, language: str | None = None, task: str = "transcribe", prompt: str | None = None, on_segment=None) -> dict:
+    def request(self, payload: dict, on_message=None) -> dict:
+        """Sends one request; passes each message before the last to `on_message`, and returns the "done" one's value.
+        Raises ValueError with the worker's "error"."""
         with self.lock:
             if self.proc is None or self.proc.poll() is not None:
                 self._start()
             assert self.proc and self.proc.stdin
-            self.proc.stdin.write(json.dumps({"audio": audio, "model": _folder(model), "language": language, "task": task, "prompt": prompt}) + "\n")
+            self.proc.stdin.write(json.dumps(payload) + "\n")
             self.proc.stdin.flush()
-            segments = []
-            while True:
-                msg = json.loads(self._line())
-                if "segment" in msg:
-                    segments.append(msg["segment"])
-                    if on_segment:
-                        on_segment(msg["segment"], msg.get("progress"))
-                elif "error" in msg:
-                    self.used = time.time()
-                    raise ValueError(msg["error"])
-                elif "done" in msg:
-                    self.used = time.time()
-                    return {**msg["done"], "model": model, "segments": segments}
+            try:
+                while True:
+                    msg = json.loads(self._line())
+                    if "error" in msg:
+                        raise ValueError(msg["error"])
+                    if "done" in msg:
+                        return msg["done"]
+                    if on_message:
+                        on_message(msg)
+            finally:
+                self.used = time.time()
+
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
 
     def stop(self) -> None:
         with self.lock:
@@ -167,14 +174,23 @@ class Worker:
                 self.stop()
 
 
-worker = Worker()
+worker = Worker("speech", lambda: [python(), "-u", str(WORKER), BACKEND])
 
 
 def transcribe(audio: str, model: str | None = None, language: str | None = None, task: str = "transcribe", prompt: str | None = None, on_segment=None) -> dict:
     model = model or default_model()
     if error := _not_ready(model):
         raise error
-    return worker.transcribe(audio, model, language or None, task, prompt or None, on_segment)
+    segments: list[dict] = []
+
+    def got(msg: dict) -> None:
+        if "segment" in msg:
+            segments.append(msg["segment"])
+            if on_segment:
+                on_segment(msg["segment"], msg.get("progress"))
+
+    done = worker.request({"audio": audio, "model": _folder(model), "language": language or None, "task": task, "prompt": prompt or None}, got)
+    return {**done, "model": model, "segments": segments}
 
 
 def _bytes(data: bytes, suffix: str, **kw) -> dict:
@@ -263,7 +279,7 @@ def choose(req: Choice):
 def warm():
     """Loads the model ahead of a dictation (Chat calls this as recording starts), off the request."""
     model = default_model()
-    if _not_ready(model) is None and (worker.proc is None or worker.proc.poll() is not None) and not worker.lock.locked():
+    if _not_ready(model) is None and not worker.running() and not worker.lock.locked():
         def run() -> None:
             silence = home() / "speech-warm.wav"
             import wave
@@ -274,7 +290,7 @@ def warm():
                 w.setframerate(16000)
                 w.writeframes(b"\0\0" * 8000)
             try:
-                worker.transcribe(str(silence), model)
+                transcribe(str(silence), model)
             except (RuntimeError, ValueError):
                 pass  # the real request reports it
             finally:

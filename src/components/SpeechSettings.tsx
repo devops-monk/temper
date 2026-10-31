@@ -51,7 +51,7 @@ export function SpeechSettings() {
 
   async function download(repo: string) {
     setError(null);
-    await api("/api/hub/download", { json: { repo_id: repo } }).catch((e: Error) => setError(e.message));
+    await api("/api/models/download", { json: { repo_id: repo } }).catch((e: Error) => setError(e.message));
     void refreshJobs(); // the list shows it downloading, and the Models page its progress
   }
 

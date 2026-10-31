@@ -1,8 +1,11 @@
-# Speech to text
+# Speech
 
-Temper turns speech into text with Whisper, on your computer. Nothing you say is sent anywhere.
+Temper turns speech into text with Whisper, and text into speech with Kokoro, on your computer. Nothing
+you say or type is sent anywhere.
 
-## Set it up
+## Speech to text
+
+### Set it up
 
 **Settings → Speech to text → Install** sets up Whisper in its own environment, separate from the rest
 of Temper: about 470 MB on a Mac. On Apple Silicon it runs on MLX. On Windows and Linux it uses
@@ -17,14 +20,14 @@ Then download a model in the same place:
 
 From a terminal: `temper speech install`, then `temper speech use turbo` (it downloads the model if needed).
 
-## Dictate in Chat
+### Dictate in Chat
 
 Click the microphone in the message box, speak, and click it again. What you said goes into the message,
 ready to edit and send. The first dictation after a while loads the model, which can take half a minute;
 it starts loading when you start speaking, and stays loaded for 10 minutes after the last use. The
 first time, your computer asks whether Temper may use the microphone.
 
-## Transcribe a recording
+### Transcribe a recording
 
 **Settings → Speech to text → Transcribe a file** takes any audio or video file that FFmpeg reads (WAV, MP3,
 M4A, FLAC, OGG, MP4, MOV and more). Each transcript is saved in `transcripts/` in Temper's folder as plain
@@ -37,7 +40,7 @@ temper transcribe lecture.mp3 --language de        # skip language detection
 temper transcribe news.mp3 --translate             # English text from speech in any language
 ```
 
-## From other apps
+### From other apps
 
 Temper answers OpenAI's audio API, so apps that transcribe through OpenAI work with Temper's address and
 key:
@@ -50,3 +53,30 @@ curl http://127.0.0.1:8765/v1/audio/transcriptions -H "Authorization: Bearer $TE
 `response_format` can be `json` (the default), `text`, `srt`, `vtt` or `verbose_json`.
 `/v1/audio/translations` returns English text. A `model` that isn't one of the three above, like
 `whisper-1`, uses the model picked in Settings.
+
+## Text to speech
+
+The **Voice** page reads text aloud with Kokoro, a small speech model that runs on the CPU on any
+computer. The first time, it asks to install Kokoro into its own environment and then to download it
+(354 MB, with all its voices). From a terminal: `temper say --install`.
+
+- **Voices**: 54, in American and British English, Spanish, French, Hindi, Italian, Japanese, Brazilian
+  Portuguese and Mandarin. The speaker button plays a sample. The voice you pick is the one Chat uses.
+- **Read aloud** plays the text; **Save to gallery** keeps it as a WAV file in `voice/` in Temper's folder.
+- **Chat**: each reply has a *Read aloud* button. Code blocks and Markdown marks are left out.
+
+```bash
+temper say "Your model finished training."         # plays it
+temper say -v bf_emma -o note.mp3 < notes.txt        # or .wav, .opus, .flac, .aac
+temper say --voices
+```
+
+Apps that use OpenAI's speech API work too:
+
+```bash
+curl http://127.0.0.1:8765/v1/audio/speech -H "Authorization: Bearer $TEMPER_KEY" \
+  -H "Content-Type: application/json" -d '{"input": "Hello", "voice": "af_heart"}' -o hello.mp3
+```
+
+Kokoro's voice names work, and so do OpenAI's where Kokoro has a voice by that name (alloy, nova, echo,
+onyx, fable and others); any other name uses the voice picked on the Voice page.

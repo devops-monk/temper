@@ -111,6 +111,7 @@ README. It also makes an API key named after the folder and writes it, with Temp
 temper speech install                       # Whisper, in its own environment
 temper speech use turbo                     # or small, large; downloads it if needed
 temper transcribe talk.m4a -f srt -o talk.srt
+temper say "Hello" [-v bf_emma] [-o hello.mp3]   # text to speech; --install, --voices
 ```
 
 See [Speech to text](speech.md).
