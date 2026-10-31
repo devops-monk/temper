@@ -1,4 +1,4 @@
-import { AudioLines, Boxes, Cable, ChefHat, Database, FlaskConical, Library, MessageSquare, Microscope, PackageOpen, Settings } from "lucide-react";
+import { AudioLines, Boxes, Cable, ChefHat, Database, FlaskConical, ImageIcon, Library, MessageSquare, Microscope, PackageOpen, Settings } from "lucide-react";
 import type { ComponentType } from "react";
 import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
@@ -15,6 +15,7 @@ const ITEMS: { page: Page; label: Key; icon: ComponentType<{ className?: string 
   { page: "datasets", label: "nav.datasets", icon: Database },
   { page: "recipes", label: "nav.recipes", icon: ChefHat },
   { page: "export", label: "nav.export", icon: PackageOpen },
+  { page: "images", label: "nav.images", icon: ImageIcon },
   { page: "audio", label: "nav.audio", icon: AudioLines },
   { page: "connect", label: "nav.connect", icon: Cable },
 ];
@@ -23,7 +24,7 @@ export function Rail() {
   const { page, go, jobs } = useApp();
   const t = useT();
   const running = (kind: string) => jobs.some((j) => j.kind === kind && j.status === "running");
-  const busy: Partial<Record<Page, boolean>> = { models: running("download") || running("convert"), train: running("train"), export: running("export"), recipes: running("recipe"), research: running("research"), datasets: running("prepare") };
+  const busy: Partial<Record<Page, boolean>> = { models: running("download") || running("convert"), train: running("train"), export: running("export"), recipes: running("recipe"), research: running("research"), datasets: running("prepare"), images: running("image") };
 
   const item = (p: Page, label: string, Icon: ComponentType<{ className?: string }>) => (
     <button

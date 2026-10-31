@@ -6,8 +6,8 @@ format jobs.run_command reads): progress as it goes, then a result naming each s
 vocals among the stems it also writes "instrumental", everything else mixed back together.
 
 Audio is decoded with PyAV, so any format FFmpeg reads works. It runs on CUDA when there is a GPU and
-on the CPU otherwise: PyTorch's Metal backend crashes inside Demucs on some macOS versions, and a crash
-there can't be caught.
+on the CPU otherwise: PyTorch's Metal backend lacks a convolution Demucs needs (more than 65,536
+output channels).
 """
 
 from __future__ import annotations

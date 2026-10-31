@@ -87,7 +87,7 @@ onyx, fable and others); any other name uses the voice picked on the Audio page.
 saves the song without its vocals, for karaoke or a backing track. Demucs needs PyTorch, so it installs
 into its own environment (about 650 MB), and its model is an 84 MB download. It runs on an NVIDIA GPU when
 there is one and on the CPU otherwise; a 3-minute song takes about a minute on an M1 Pro. (PyTorch's Metal
-backend crashes inside Demucs on some macOS versions, so Macs use the CPU.) The stems are WAV files in
+backend lacks a convolution Demucs needs, so Macs use the CPU.) The stems are WAV files in
 `stems/` in Temper's folder.
 
 ```bash

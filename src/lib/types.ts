@@ -166,7 +166,7 @@ export interface Run {
   path: string;
 }
 
-export type Page = "chat" | "research" | "models" | "library" | "train" | "datasets" | "recipes" | "export" | "audio" | "connect" | "settings";
+export type Page = "chat" | "research" | "models" | "library" | "train" | "datasets" | "recipes" | "export" | "images" | "audio" | "connect" | "settings";
 
 /** A recipe column in data-designer's format; the editor knows the common fields of each type. */
 export interface RecipeColumn {

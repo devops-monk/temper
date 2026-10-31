@@ -1359,6 +1359,68 @@ def stems_cmd(args: list[str]) -> int:
     return 0
 
 
+def image_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper image", description="Make images from a prompt with a diffusion model, on this computer.")
+    p.add_argument("prompt", nargs="?", help="what to draw")
+    p.add_argument("--from", dest="source", help="change this picture instead of starting from nothing")
+    p.add_argument("--strength", type=float, default=0.6, help="with --from, how much to change it (0-1, default 0.6)")
+    p.add_argument("--negative", help="what to keep out of the picture")
+    p.add_argument("--model", help="one of the models `temper image --models` lists")
+    p.add_argument("--steps", type=int)
+    p.add_argument("--guidance", type=float)
+    p.add_argument("--size", help="WIDTHxHEIGHT, such as 768x512")
+    p.add_argument("--seed", type=int)
+    p.add_argument("-n", "--count", type=int, default=1)
+    p.add_argument("--lora", help="a LoRA file or folder to apply")
+    p.add_argument("--output", "-o", help="copy the images into this folder too")
+    p.add_argument("--models", action="store_true", help="list the models")
+    p.add_argument("--install", action="store_true", help="install image generation and download the chosen model (or --model)")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        st = _check(c.get("/api/images"))
+        if a.models:
+            _table([["*" if m["id"] == st["model"] else "", m["id"], m["license"], _size(m["size"]), "downloaded" if m["downloaded"] else ""] for m in st["models"]])
+            return 0
+        if a.install:
+            model = a.model or st["model"]
+            m = next((m for m in st["models"] if m["id"] == model), None)
+            if m is None:
+                raise CliError(f"No model called {model}. `temper image --models` lists them.")
+            steps = [(not st["installed"], "/api/images/install", None, "image generation (PyTorch and diffusers)"), (not m["downloaded"], "/api/images/download", {"model": model}, f"{m['name']} ({_size(m['size'])})")]
+            for needed, path, body, what in steps:
+                if needed:
+                    print(f"Installing {what}…", file=sys.stderr)
+                    end = follow(c, _check(c.post(path, json=body))["id"], logs=False)
+                    if end.get("status") != "done":
+                        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+            if a.model:
+                _check(c.put("/api/images/model", json={"model": model}))
+            print('Image generation is ready. Try: temper image "a lighthouse at dawn"')
+            return 0
+        if not a.prompt:
+            p.error("give a prompt, or --install")
+        body = {"prompt": a.prompt, "negative": a.negative, "model": a.model, "steps": a.steps, "guidance": a.guidance, "seed": a.seed, "count": a.count,
+                "image": os.path.abspath(a.source) if a.source else None, "strength": a.strength, "lora": os.path.abspath(a.lora) if a.lora else None}
+        if a.size:
+            w, _, h = a.size.lower().partition("x")
+            if not (w.isdigit() and h.isdigit()):
+                p.error("--size is WIDTHxHEIGHT, such as 768x512")
+            body.update(width=int(w), height=int(h))
+        end = follow(c, _check(c.post("/api/images/generate", json=body))["id"], logs=False)
+        if end.get("status") != "done":
+            raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+        made = {i["id"]: i for i in _check(c.get("/api/images/gallery"))["images"]}
+    rows = []
+    for image in (end.get("result") or {}).get("images", []):
+        path = made[image]["path"]
+        if a.output:
+            Path(a.output).mkdir(parents=True, exist_ok=True)
+            path = shutil.copy2(path, a.output)
+        rows.append([str(made[image]["seed"]), str(path)])
+    _table(rows)
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1435,7 +1497,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1458,6 +1520,7 @@ USAGE = """usage:
   temper transcribe <file> [--format txt|srt|vtt|json] [--language xx] [--translate] [-o out]
   temper say ["text"] [--voice V] [--speed S] [-o out.mp3] | --voices | --install
   temper stems <file> [-o folder] | --install
+  temper image ["prompt"] [--from pic] [--size WxH] [-n N] [--seed S] [--lora L] [-o folder] | --models | --install [--model M]
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey

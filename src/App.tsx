@@ -12,6 +12,7 @@ import { useUpdates } from "./lib/updates";
 import { ChatPage } from "./pages/Chat";
 import { ConnectPage } from "./pages/Connect";
 import { AudioPage } from "./pages/Audio";
+import { ImagesPage } from "./pages/Images";
 import { DatasetsPage } from "./pages/Datasets";
 import { ExportPage } from "./pages/Export";
 import { LibraryPage } from "./pages/Library";
@@ -78,6 +79,7 @@ export function App() {
                 {page === "datasets" && <DatasetsPage />}
                 {page === "recipes" && <RecipesPage />}
                 {page === "export" && <ExportPage />}
+                {page === "images" && <ImagesPage />}
                 {page === "audio" && <AudioPage />}
                 {page === "connect" && <ConnectPage />}
               </>

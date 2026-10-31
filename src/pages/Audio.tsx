@@ -115,14 +115,16 @@ interface Setup {
   size: number;
   repo: string;
   install: string;
+  /** Starts the model's download, when it isn't a plain repository download. */
+  download?: () => Promise<Job>;
   icon: ReactNode;
   title: string;
   about: string;
   onDone: () => void;
 }
 
-/** Installing an audio tool's environment, then downloading its model. */
-function Setup({ installed, repo, install, icon, title, about, onDone }: Setup) {
+/** Installing a tool's environment, then downloading its model. The Images page uses it too. */
+export function Setup({ installed, repo, install, download, icon, title, about, onDone }: Setup) {
   const { refreshJobs } = useApp();
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +143,7 @@ function Setup({ installed, repo, install, icon, title, about, onDone }: Setup) 
   async function start() {
     setError(null);
     try {
-      const job = installed ? await api<Job>("/api/models/download", { json: { repo_id: repo } }) : await api<Job>(install, { method: "POST" });
+      const job = !installed ? await api<Job>(install, { method: "POST" }) : download ? await download() : await api<Job>("/api/models/download", { json: { repo_id: repo } });
       setJobId(job.id);
       void refreshJobs();
     } catch (e) {

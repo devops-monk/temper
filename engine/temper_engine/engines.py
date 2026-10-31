@@ -35,6 +35,9 @@ ENGINES: dict[str, dict] = {
     "vllm": {"name": "vLLM", "formats": ["hf"], "packages": ["vllm"], "module": "vllm", "linux_gpu": True},
     "sglang": {"name": "SGLang", "formats": ["hf"], "packages": ["sglang[all]"], "module": "sglang", "linux_gpu": True},
 }
+# PyTorch 2.15's Metal backend calls an MPSNDArray method macOS 14 lacks, and the process aborts (an
+# Objective-C exception, which nothing can catch). 2.14 works; the environments that need PyTorch pin it on Macs.
+TORCH = "torch<2.15" if platform.system() == "Darwin" else "torch"
 # What the proxy sends as the request's model: the name each server answers to.
 SERVED = "temper"
 

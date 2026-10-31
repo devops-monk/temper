@@ -117,6 +117,18 @@ temper stems song.mp3 [-o folder]                 # vocals, drums, bass, other, 
 
 See [Speech to text](speech.md).
 
+## Images
+
+```bash
+temper image --install [--model segmind/SSD-1B]     # diffusers in its own environment, and a model
+temper image "a lighthouse at dawn" [-n 4] [--size 768x512] [--seed 7] [-o folder]
+temper image "make it winter" --from photo.png [--strength 0.5]
+temper image "..." --lora style.safetensors          # --negative, --steps, --guidance, --model too
+temper image --models
+```
+
+See [Images](images.md).
+
 ## Linked devices
 
 ```bash
