@@ -9,7 +9,7 @@ import { bytes, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import { useFileDrop } from "../lib/useFileDrop";
 
-type Kind = "upload" | "dataset" | "fine-tune" | "export" | "model" | "attachment";
+type Kind = "upload" | "dataset" | "fine-tune" | "export" | "model" | "attachment" | "picture" | "speech" | "stems";
 
 interface Item {
   id: string;
@@ -32,6 +32,10 @@ interface Item {
   /** How a fine-tune was trained: "mlx" on Apple Silicon, else on a GPU. */
   backend?: string;
   formats?: string[];
+  /** The model a picture was made with. */
+  made_with?: string;
+  voice?: string;
+  stems?: string[];
 }
 
 const KINDS: { kind: Kind; label: string; plural: string }[] = [
@@ -41,6 +45,9 @@ const KINDS: { kind: Kind; label: string; plural: string }[] = [
   { kind: "export", label: "Export", plural: "Exports" },
   { kind: "model", label: "Converted model", plural: "Converted models" },
   { kind: "attachment", label: "Chat attachment", plural: "Chat attachments" },
+  { kind: "picture", label: "Picture", plural: "Pictures" },
+  { kind: "speech", label: "Speech", plural: "Speech" },
+  { kind: "stems", label: "Stems", plural: "Stems" },
 ];
 const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<Kind, string>;
 
@@ -58,6 +65,9 @@ function ChatWithRun({ item }: { item: Item }) {
 function details(item: Item): string {
   if (item.kind === "fine-tune") return [item.base_model, item.adapter ? "adapter saved" : "no adapter yet"].filter(Boolean).join(", ");
   if (item.kind === "export") return item.gguf?.length ? `${item.gguf.length} GGUF file${item.gguf.length > 1 ? "s" : ""}` : (item.formats ?? []).join(", ");
+  if (item.kind === "picture" && item.made_with) return item.made_with.split("/").pop()!;
+  if (item.kind === "speech" && item.voice) return `voice ${item.voice}`;
+  if (item.kind === "stems") return (item.stems ?? []).join(", ");
   if (item.name !== item.original) return item.original;
   return "";
 }
@@ -114,7 +124,7 @@ export function LibraryPage() {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Library"
-        description="Your uploads, datasets, fine-tunes, exports and converted models. Renaming changes the name shown here; files on disk keep theirs."
+        description="Your uploads, datasets, fine-tunes, exports and converted models, and the pictures, speech and stems you make. Renaming changes the name shown here; files on disk keep theirs."
         actions={
           inTauri ? (
             <Button variant="primary" onClick={() => void chooseFiles()}>
@@ -281,7 +291,7 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
   const gguf = item.gguf?.[0];
 
   async function remove() {
-    const what = item.kind === "fine-tune" ? "this training run and its adapter" : item.kind === "export" ? "this export and all its files" : "this file";
+    const what = item.kind === "fine-tune" ? "this training run and its adapter" : item.kind === "export" ? "this export and all its files" : item.kind === "stems" ? "these stems" : "this file";
     if (!confirm(`Delete ${what} (${item.name})? This frees ${bytes(item.size)} and can't be undone.`)) return;
     await run(api(`/api/files?id=${encodeURIComponent(item.id)}`, { method: "DELETE" }));
   }
@@ -344,6 +354,16 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
           </Button>
         )}
         {item.kind === "fine-tune" && item.adapter && item.base_model && <ChatWithRun item={item} />}
+        {item.kind === "picture" && (
+          <Button size="sm" onClick={() => go("images")}>
+            Open Images
+          </Button>
+        )}
+        {(item.kind === "speech" || item.kind === "stems") && (
+          <Button size="sm" onClick={() => go("audio")}>
+            Open Audio
+          </Button>
+        )}
         {gguf && <LoadButton path={gguf} name={gguf.split(/[\\/]/).pop()!} />}
         {gguf && item.kind === "export" && <AddToOllama path={gguf} />}
         {item.kind === "fine-tune" && item.adapter && <PublishToHub what={{ run_id: item.path.split(/[\\/]/).pop()! }} name={item.original} />}

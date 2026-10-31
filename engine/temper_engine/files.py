@@ -1,10 +1,10 @@
-"""The library of files Temper keeps: uploads, datasets, fine-tuned runs, exports and converted models.
+"""The library of files Temper keeps: uploads, datasets, fine-tuned runs, exports, converted models, chat
+attachments, generated pictures, saved speech and separated stems.
 
 Each kind lives in its own folder under Temper's home, where the feature that made it put it. This
 lists them in one place and keeps what the person adds on top in files.json: a display name,
 favourites and folders. Renaming changes only the display name, because runs and exports refer to
-their datasets and adapters by path. Later features (chat attachments, generated images and audio,
-sandbox files) add a kind to KINDS.
+their datasets and adapters by path. Later features (sandbox files) add a kind to KINDS.
 """
 
 from __future__ import annotations
@@ -125,6 +125,31 @@ def _attachments() -> Iterator[tuple[Path, dict]]:
             yield d / info["file"], {"title": Path(info["name"]).stem, "attached": info.get("kind")}
 
 
+def _pictures() -> Iterator[tuple[Path, dict]]:
+    """Pictures made on the Images page, named after their prompt; the settings beside each go with it."""
+    root = home() / "images"
+    for p in sorted(root.glob("*.png")) if root.is_dir() else []:
+        info = _read_json(p.with_suffix(".json"))
+        yield p, {"title": (info.get("prompt") or p.stem)[:80], "parts": [str(p), str(p.with_suffix(".json"))], "size": p.stat().st_size, "made_with": info.get("model")}
+
+
+def _speech() -> Iterator[tuple[Path, dict]]:
+    """Clips saved from text to speech, named after what they say."""
+    root = home() / "voice"
+    for p in sorted(root.glob("*.wav")) if root.is_dir() else []:
+        info = _read_json(p.with_suffix(".json"))
+        yield p, {"title": (info.get("text") or p.stem)[:80], "parts": [str(p), str(p.with_suffix(".json"))], "size": p.stat().st_size, "voice": info.get("voice")}
+
+
+def _stems() -> Iterator[tuple[Path, dict]]:
+    """Songs split into stems: the folder of WAV files, named after the song."""
+    root = home() / "stems"
+    for d in sorted(root.iterdir()) if root.is_dir() else []:
+        wavs = sorted(p.stem for p in d.glob("*.wav")) if d.is_dir() else []
+        if wavs:
+            yield d, {"title": _read_json(d / "source.json").get("name"), "stems": wavs}
+
+
 KINDS: dict[str, Callable[[], Iterator[tuple[Path, dict]]]] = {
     "upload": _uploads,
     "dataset": _datasets,
@@ -132,6 +157,9 @@ KINDS: dict[str, Callable[[], Iterator[tuple[Path, dict]]]] = {
     "export": _exports,
     "model": _converted,
     "attachment": _attachments,
+    "picture": _pictures,
+    "speech": _speech,
+    "stems": _stems,
 }
 
 

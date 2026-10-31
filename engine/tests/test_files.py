@@ -74,3 +74,26 @@ def test_delete_removes_files_and_library_entries():
     client.delete("/api/files", params={"id": "runs/20261025-tutor"}, headers=AUTH)
     assert not (home() / "runs" / "20261025-tutor").exists()
     assert client.delete("/api/files", params={"id": "runs/20261025-tutor"}, headers=AUTH).status_code == 404
+
+
+def test_pictures_speech_and_stems_are_listed_and_deleted_whole():
+    root = home()
+    (root / "images").mkdir(exist_ok=True)
+    (root / "images" / "0123456789ab.png").write_bytes(b"png")
+    (root / "images" / "0123456789ab.json").write_text(json.dumps({"prompt": "a fox in the snow", "model": "SimianLuo/LCM_Dreamshaper_v7"}))
+    (root / "voice").mkdir(exist_ok=True)
+    (root / "voice" / "abc.wav").write_bytes(b"wav")
+    (root / "voice" / "abc.json").write_text(json.dumps({"text": "Hello there", "voice": "af_heart"}))
+    song = root / "stems" / "20261031-120000-Song"
+    song.mkdir(parents=True, exist_ok=True)
+    for name in ("vocals", "drums"):
+        (song / f"{name}.wav").write_bytes(b"x")
+    (song / "source.json").write_text(json.dumps({"name": "My Song"}))
+    found = items()
+    picture, clip, stems = found["images/0123456789ab.png"], found["voice/abc.wav"], found["stems/20261031-120000-Song"]
+    assert (picture["kind"], picture["name"], picture["size"], picture["made_with"]) == ("picture", "a fox in the snow", 3, "SimianLuo/LCM_Dreamshaper_v7")
+    assert (clip["kind"], clip["name"], clip["voice"]) == ("speech", "Hello there", "af_heart")
+    assert (stems["kind"], stems["name"], stems["stems"]) == ("stems", "My Song", ["drums", "vocals"])
+    for item in (picture, clip, stems):
+        client.delete("/api/files", params={"id": item["id"]}, headers=AUTH)
+    assert not list((root / "images").iterdir()) and not list((root / "voice").iterdir()) and not song.exists()
