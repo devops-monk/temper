@@ -17,8 +17,12 @@ def _exit_with_parent(pid: int) -> None:
     os._exit(0)
 
 
+# The `temper` subcommands answered by cli.py.
+CLI = ("start", "mcp", "models", "load", "chat", "train", "runs", "export", "serve")
+
+
 def main() -> None:
-    if sys.argv[1:2] in (["start"], ["mcp"]) or sys.argv[1:3] == ["doctor", "--mcp"]:
+    if sys.argv[1:2] in ([c] for c in CLI) or sys.argv[1:3] == ["doctor", "--mcp"]:
         from .cli import main as cli
 
         sys.exit(cli(sys.argv[1:]))
@@ -37,15 +41,20 @@ def main() -> None:
     if args.parent_pid:
         threading.Thread(target=_exit_with_parent, args=(args.parent_pid,), daemon=True).start()
 
+    run_engine(args.host, args.port, args.token)
+
+
+def run_engine(host: str, port: int, token: str) -> None:
+    """Serves the engine until stopped: for the desktop shell, and for `temper serve`."""
     # The doctor reports when the shell had to fall back from the usual port.
-    os.environ["TEMPER_PORT"] = str(args.port)
+    os.environ["TEMPER_PORT"] = str(port)
     from .app import create_app
     from .cli import clear_running, write_running
 
     # Leaves the address and key where `temper start` and `temper mcp add` find them.
-    write_running(f"http://127.0.0.1:{args.port}", args.token)
+    write_running(f"http://127.0.0.1:{port}", token)
     try:
-        uvicorn.run(create_app(token=args.token), host=args.host, port=args.port, log_level="warning")
+        uvicorn.run(create_app(token=token), host=host, port=port, log_level="warning")
     finally:
         clear_running()
 

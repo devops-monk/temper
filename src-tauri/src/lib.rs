@@ -54,7 +54,7 @@ fn headless_setup() -> Option<(Profile, bool)> {
 }
 
 /// Release builds on Windows have no console of their own; borrow the terminal that started us
-/// so `temper doctor`, `temper start` and `temper --setup` can print.
+/// so `temper doctor`, `temper chat` and the other commands, and `temper --setup`, can print.
 fn attach_console() {
     #[cfg(windows)]
     unsafe {
@@ -66,9 +66,12 @@ fn attach_console() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let headless = headless_setup();
-    // `temper doctor`, `temper start <agent>` and `temper mcp add <agent>` are the engine's to answer.
+    // The `temper` subcommands (doctor, start, mcp, models, chat, train, ...) are the engine's to answer.
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let cli = matches!(args.first().map(String::as_str), Some("doctor" | "start" | "mcp"));
+    let cli = matches!(
+        args.first().map(String::as_str),
+        Some("doctor" | "start" | "mcp" | "models" | "load" | "chat" | "train" | "runs" | "export" | "serve")
+    );
     if headless.is_some() || cli {
         attach_console();
     }

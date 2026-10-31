@@ -22,6 +22,8 @@ dependencies = [
   "youtube-transcript-api>=1.2",
   # Windows has no time-zone database of its own; zoneinfo reads this one (the clock tool).
   "tzdata>=2024.1; sys_platform == 'win32'",
+  # `temper train config.yaml`.
+  "pyyaml>=6",
 ]
 
 [project.optional-dependencies]

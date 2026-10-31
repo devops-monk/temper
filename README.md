@@ -25,13 +25,31 @@ Everything else is planned feature by feature in [PLAN.md](PLAN.md).
 
 ## From a terminal
 
-The app's own binary takes a few commands while Temper is open (on macOS it's
-`/Applications/Temper.app/Contents/MacOS/temper`; alias it as `temper`):
+The app's own binary takes these commands while Temper is open, or while `temper serve` runs (on macOS
+it's `/Applications/Temper.app/Contents/MacOS/temper`; alias it as `temper`):
 
 ```bash
+temper models               # the models on this computer
+temper load Qwen3-4B-GGUF   # load one (a name, a GGUF file name or a path; --quant, --context)
+temper chat "Hello"         # ask the loaded model once; with no prompt, chat until /bye
+temper train tutor.yaml     # fine-tune from a YAML config (--set key=value, --dry-run), following the run
+temper runs                 # past training runs
+temper export <run>         # export a run (--format gguf|mlx|lora|..., --quant q4_k_m, --imatrix)
+temper serve                # run the engine without the app, for a server or CI (--host, --port)
 temper start claude         # or codex, opencode, aider: starts the agent on the model loaded in Temper
 temper mcp add claude       # or codex, cursor, vscode: gives the agent Temper's MCP tools
 temper doctor               # checks drivers, disk, ports and engine packages (--mcp checks the MCP server)
+```
+
+A training config uses the Train page's setting names:
+
+```yaml
+name: math-tutor
+base_model: mlx-community/Qwen3-4B-Instruct-2507-4bit
+dataset: ~/data/gsm8k.jsonl       # a file, a Hugging Face dataset or an https:// / s3:// link
+method: lora
+max_steps: 200
+learning_rate: 2e-4
 ```
 
 ## Develop

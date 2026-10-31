@@ -86,3 +86,80 @@ def test_mcp_add_writes_each_agents_config_and_keeps_what_was_there(user_home):
     cursor.write_text("{not json")
     with pytest.raises(cli.CliError, match="isn't valid JSON"):
         cli.add("cursor")
+
+
+@pytest.fixture
+def engine(monkeypatch):
+    """The commands talk to a real engine app, in-process."""
+    from fastapi.testclient import TestClient
+
+    from temper_engine.app import create_app
+
+    client = TestClient(create_app(token="t"), headers={"Authorization": "Bearer t"})
+    monkeypatch.setattr(cli, "running", lambda: {"url": "http://testserver", "token": "t", "pid": os.getpid()})
+    monkeypatch.setattr(cli, "_client", lambda engine: client)
+    with client:
+        yield client
+
+
+MODELS = [
+    {"id": "Qwen/Qwen3-4B-GGUF", "path": "/m/qwen", "safetensors": False, "gguf": [{"name": "Qwen3-4B-Q8_0.gguf", "path": "/m/q8.gguf"}, {"name": "Qwen3-4B-Q4_K_M.gguf", "path": "/m/q4.gguf"}]},
+    {"id": "mlx-community/Qwen3-0.6B-4bit", "path": "/m/mlx", "safetensors": True, "gguf": []},
+]
+
+
+def test_a_model_is_found_by_name_file_or_quant():
+    assert cli.resolve_model(MODELS, "qwen/qwen3-4b-gguf") == ("/m/q4.gguf", "Qwen3-4B-Q4_K_M.gguf")  # Q4_K_M when there's a choice
+    assert cli.resolve_model(MODELS, "Qwen3-4B-GGUF", "q8_0")[0] == "/m/q8.gguf"
+    assert cli.resolve_model(MODELS, "Qwen3-4B-Q8_0.gguf")[0] == "/m/q8.gguf"
+    assert cli.resolve_model(MODELS, "0.6B") == ("/m/mlx", "mlx-community/Qwen3-0.6B-4bit")
+    with pytest.raises(cli.CliError, match="temper models"):
+        cli.resolve_model(MODELS, "llama")
+    with pytest.raises(cli.CliError, match="no IQ2_M"):
+        cli.resolve_model(MODELS, "Qwen3-4B-GGUF", "IQ2_M")
+
+
+def test_a_yaml_config_is_checked_and_printed_in_full_on_a_dry_run(tmp_path, capsys):
+    cfg = tmp_path / "tutor.yaml"
+    cfg.write_text("base_model: mlx-community/Qwen3-0.6B-4bit\ndataset: ./math.jsonl\nmethod: lora\nmax_steps: 30\n")
+    (tmp_path / "math.jsonl").write_text("{}\n")
+    assert cli.train_config(str(cfg), [])["dataset"] == str((tmp_path / "math.jsonl").resolve())  # beside the config
+    assert cli.train_config(str(cfg), [])["base_model"] == "mlx-community/Qwen3-0.6B-4bit"  # a Hub name stays one
+    assert cli.main(["train", str(cfg), "--set", "learning_rate=1e-4", "--set", "name=tutor", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "base_model: mlx-community/Qwen3-0.6B-4bit" in out and "learning_rate: 0.0001" in out and "max_steps: 30" in out and "lora_r: 16" in out
+
+    assert cli.main(["train", str(cfg), "--set", "learnig_rate=1e-4", "--dry-run"]) == 1
+    assert "Unknown settings: learnig_rate" in capsys.readouterr().err
+    assert cli.main(["train", str(cfg), "--set", "max_steps=-3", "--dry-run"]) == 1
+    assert "max_steps" in capsys.readouterr().err
+    cfg.write_text("- just\n- a list\n")
+    assert cli.main(["train", str(cfg), "--dry-run"]) == 1
+    assert "should be settings" in capsys.readouterr().err
+
+
+def test_runs_and_exports_go_through_the_engine(engine, capsys):
+    run = home() / "runs" / "20261031-090000-tutor"
+    (run / "adapter").mkdir(parents=True)
+    (run / "config.json").write_text(json.dumps({"name": "tutor", "base_model": "Qwen/Qwen3-0.6B", "backend": "gpu", "method": "lora"}))
+    assert cli.main(["runs"]) == 0
+    assert "20261031-090000-tutor" in capsys.readouterr().out
+    # The engine's own checks come back as plain messages.
+    assert cli.main(["export", "tutor", "--format", "mlx"]) == 1
+    assert "Apple Silicon" in capsys.readouterr().err
+    assert cli.main(["export", "nothing-like-it"]) == 1
+    assert "No run matches" in capsys.readouterr().err
+
+
+def test_chat_needs_a_loaded_model_and_load_says_what_it_couldnt_find(engine, capsys):
+    assert cli.main(["chat", "hello"]) == 1
+    assert "No model is loaded" in capsys.readouterr().err
+    assert cli.main(["load", "no-such-model"]) == 1
+    assert "No model called 'no-such-model'" in capsys.readouterr().err
+
+
+def test_serve_uses_the_apps_key_and_refuses_a_second_engine(monkeypatch):
+    key = cli.stable_key()
+    assert len(key) == 32 and cli.stable_key() == key and (home() / "api-key").read_text() == key
+    monkeypatch.setattr(cli, "running", lambda: ENGINE)
+    assert cli.main(["serve"]) == 1

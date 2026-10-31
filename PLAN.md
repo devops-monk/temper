@@ -265,15 +265,18 @@ temper/
 - [ ] **10.5 Secure remote access**: Cloudflare Tunnel HTTPS link, with admin password and an option to turn tools off.
 - [ ] **10.6 Accounts**: admin password, multiple users with separate chats and jobs, reset password from the CLI.
 - [ ] **10.7 Cloud providers**: connect OpenAI, Anthropic, Google, OpenRouter or a ChatGPT/Codex subscription and use them next to local models; keys stored in the OS keychain.
-- [ ] **10.8 Headless server mode**: `temper serve` with systemd unit, Docker image and a browser UI.
+- [~] **10.8 Headless server mode**: `temper serve` with systemd unit, Docker image and a browser UI.
+  Done: `temper serve [--host] [--port]` runs the engine without the app, with the app's own key (made if there isn't one), and the other `temper` commands work against it. It refuses to start beside a running engine and warns when it's reachable from other computers. Still to do: the systemd unit, a Docker image and a browser UI.
 - [ ] **10.9 Decisions API** *(audit)*: typed answers (yes/no, choice, score) from decision models or a saved connection.
 - [x] **10.10 Engine discovery** *(audit)*: answer the probes Ollama- and llama.cpp-aware tools send, so they detect Temper automatically.
   Done: Connect → Other apps can make Temper answer at Ollama's address (localhost:11434, only while Ollama itself isn't running) and at a llama-server's (8080 or another port), on this computer only and off by default. It answers Ollama's API (`/`, `/api/version`, `/api/tags`, `/api/ps`, `/api/show`, `/api/chat` and `/api/generate`, whole or streamed, with images, tools and JSON output) and llama-server's `/health` and `/props`, all from the loaded model, and passes `/v1` through. A port another app already answers on (IPv4 or IPv6) is reported and left alone. Tested with the real `ollama` CLI pointed at it: `ollama list`, `ollama ps` and `ollama run` answered by a Qwen3-4B GGUF loaded in Temper.
 
 ## Phase 11: CLI
 
-- [ ] **11.1 `temper`** with subcommands mirroring the app: `chat`, `train`, `export`, `eval`, `serve`, `start <agent>`, `mcp`, `doctor`, `update`, `uninstall`.
-- [ ] **11.2 YAML training configs**: `temper train config.yaml`, with `--dry-run` and CLI overrides.
+- [~] **11.1 `temper`** with subcommands mirroring the app: `chat`, `train`, `export`, `eval`, `serve`, `start <agent>`, `mcp`, `doctor`, `update`, `uninstall`.
+  Done: `temper models`, `load` (a model's name, a GGUF file name or a path; `--quant`, `--context`), `chat` (once with a prompt or piped text, or a conversation until /bye), `train` (11.2), `runs`, `export` (`--format`, `--quant`, `--imatrix`) and `serve`, alongside `start`, `mcp` and `doctor`. Training and exports print their progress until they finish; Ctrl-C stops following, not the job. Engine errors come back as plain messages. Tested live: listed, loaded and chatted with Qwen3-0.6B, trained 8 steps from a YAML file and exported the run to MLX. Still to do: `eval`, `update` and `uninstall`.
+- [x] **11.2 YAML training configs**: `temper train config.yaml`, with `--dry-run` and CLI overrides.
+  Done: the config uses the Train page's setting names; `--set key=value` overrides one (values read as YAML, so `2e-4` is a number); `--dry-run` checks it and prints it in full with the defaults filled in. Misspelled settings and bad values are named. Relative paths are taken from the config's folder.
 
 ## Phase 12: Polish, quality and launch
 
