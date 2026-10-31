@@ -56,9 +56,25 @@ def addresses() -> list[str]:
     return found
 
 
-class Listener:
-    def __init__(self):
-        self.app = None
+def answering(port: int) -> bool:
+    """Whether something already listens on this computer's port. Binding alone doesn't tell: another app
+    on the IPv6 wildcard leaves 127.0.0.1 free to bind, yet "localhost" would still reach that app."""
+    for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                s.settimeout(0.3)
+                if s.connect_ex((address, port)) == 0:
+                    return True
+        except OSError:
+            pass
+    return False
+
+
+class Background:
+    """A uvicorn server for an extra address, in a thread of its own, that can be started and stopped."""
+
+    def __init__(self, name: str):
+        self.name = name
         self.server = None
         self.thread: threading.Thread | None = None
         self.port: int | None = None
@@ -68,27 +84,29 @@ class Listener:
     def running(self) -> bool:
         return bool(self.server and self.server.started and self.thread and self.thread.is_alive())
 
-    def start(self, port: int) -> None:
+    def start(self, asgi, host: str, port: int) -> None:
         import uvicorn
 
         self.stop()
         self.error = None
-        config = uvicorn.Config(lan_only(self.app), host="0.0.0.0", port=port, log_level="warning", lifespan="off")
-        self.server = uvicorn.Server(config)
+        if answering(port):
+            self.error = f"Port {port} is in use by another app. Choose another port."
+            return
+        self.server = server = uvicorn.Server(uvicorn.Config(asgi, host=host, port=port, log_level="warning", lifespan="off"))
         self.port = port
 
         def run():
             try:
-                self.server.run()
+                server.run()
             except SystemExit:  # uvicorn exits this way when the port is taken
                 pass
-            if not self.server.started and not self.server.should_exit:
+            if not server.started and not server.should_exit:
                 self.error = f"Port {port} is in use by another app. Choose another port."
 
-        self.thread = threading.Thread(target=run, name="lan-listener", daemon=True)
+        self.thread = threading.Thread(target=run, name=self.name, daemon=True)
         self.thread.start()
         for _ in range(50):  # wait up to 5 s for it to start or fail
-            if self.server.started or not self.thread.is_alive():
+            if server.started or not self.thread.is_alive():
                 break
             threading.Event().wait(0.1)
 
@@ -99,11 +117,17 @@ class Listener:
             self.thread.join(timeout=5)
         self.server = self.thread = None
 
+
+class Listener(Background):
+    def __init__(self):
+        super().__init__("lan-listener")
+        self.app = None
+
     def apply(self) -> None:
         """Starts or stops the listener to match the saved setting."""
         cfg = prefs.load().get("lan") or {}
         if cfg.get("enabled") and self.app is not None:
-            self.start(int(cfg.get("port") or DEFAULT_PORT))
+            self.start(lan_only(self.app), "0.0.0.0", int(cfg.get("port") or DEFAULT_PORT))
         else:
             self.stop()
 

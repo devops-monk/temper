@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
+import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
 import { CopyButton, Notice, PageHeader, cx } from "../components/ui";
 import { useApp } from "../lib/store";
@@ -217,6 +218,14 @@ export function ConnectPage() {
             already pointed at the loaded model. Claude Code reads a long system prompt and many tool descriptions, so load the model with a context of 32K or more, and pick one that's good at
             calling tools.
           </p>
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">Other apps</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">
+            Many apps look for a local model at Ollama's or llama.cpp's usual address. Temper can answer there too, on this computer only. Like Ollama, those addresses take no key.
+          </p>
+          <DiscoverySettings />
         </div>
 
         <div className="mt-8 max-w-[760px]">

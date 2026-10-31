@@ -267,7 +267,8 @@ temper/
 - [ ] **10.7 Cloud providers**: connect OpenAI, Anthropic, Google, OpenRouter or a ChatGPT/Codex subscription and use them next to local models; keys stored in the OS keychain.
 - [ ] **10.8 Headless server mode**: `temper serve` with systemd unit, Docker image and a browser UI.
 - [ ] **10.9 Decisions API** *(audit)*: typed answers (yes/no, choice, score) from decision models or a saved connection.
-- [ ] **10.10 Engine discovery** *(audit)*: answer the probes Ollama- and llama.cpp-aware tools send, so they detect Temper automatically.
+- [x] **10.10 Engine discovery** *(audit)*: answer the probes Ollama- and llama.cpp-aware tools send, so they detect Temper automatically.
+  Done: Connect → Other apps can make Temper answer at Ollama's address (localhost:11434, only while Ollama itself isn't running) and at a llama-server's (8080 or another port), on this computer only and off by default. It answers Ollama's API (`/`, `/api/version`, `/api/tags`, `/api/ps`, `/api/show`, `/api/chat` and `/api/generate`, whole or streamed, with images, tools and JSON output) and llama-server's `/health` and `/props`, all from the loaded model, and passes `/v1` through. A port another app already answers on (IPv4 or IPv6) is reported and left alone. Tested with the real `ollama` CLI pointed at it: `ollama list`, `ollama ps` and `ollama run` answered by a Qwen3-4B GGUF loaded in Temper.
 
 ## Phase 11: CLI
 
