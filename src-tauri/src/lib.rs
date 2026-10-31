@@ -1,3 +1,4 @@
+mod desktop;
 mod engine;
 mod secrets;
 mod setup;
@@ -75,12 +76,23 @@ pub fn run() {
     if headless.is_some() || cli {
         attach_console();
     }
-    let app = tauri::Builder::default()
+    let window = headless.is_none() && !cli;
+    let mut builder = tauri::Builder::default();
+    if window {
+        // Must come first: a second launch (a file or link opened while Temper runs) hands over its arguments and exits.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            desktop::open_args(app, argv.iter().skip(1), std::path::Path::new(&cwd));
+            desktop::show(app);
+        }));
+    }
+    let app = builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(Engine::new())
+        .manage(desktop::Opens::default())
         .setup(move |app| {
             if cli {
                 let handle = app.handle().clone();
@@ -123,15 +135,50 @@ pub fn run() {
                 let _ = window.show();
             }
             app.state::<Engine>().start(app.handle());
+            if let Err(e) = desktop::tray(app.handle()) {
+                eprintln!("No tray icon: {e}");
+            }
+            #[cfg(target_os = "linux")]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all(); // AppImages have no installer to register temper://
+            }
+            // Windows and Linux pass opened files and links as arguments; macOS sends RunEvent::Opened.
+            let cwd = std::env::current_dir().unwrap_or_default();
+            desktop::open_args(app.handle(), std::env::args().skip(1), &cwd);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![engine_info, engine_restart, setup_install, hf_token_save, hf_token_delete])
+        .on_window_event(|window, event| {
+            // In background mode closing the window keeps the API and the loaded model up, in the tray.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if desktop::background(window.app_handle()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            engine_info,
+            engine_restart,
+            setup_install,
+            hf_token_save,
+            hf_token_delete,
+            desktop::take_opens,
+            desktop::get_background,
+            desktop::set_background
+        ])
         .build(tauri::generate_context!())
         .expect("failed to build Temper");
 
-    app.run(|handle, event| {
-        if let RunEvent::Exit = event {
-            handle.state::<Engine>().stop();
+    app.run(|handle, event| match event {
+        RunEvent::Exit => handle.state::<Engine>().stop(),
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            desktop::open_args(handle, urls.iter().map(|u| u.to_string()), &cwd);
         }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => desktop::show(handle),
+        _ => {}
     });
 }

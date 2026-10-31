@@ -9,6 +9,7 @@ import { api, inTauri } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import type { HubModel, Job, LocalModel, RepoFile } from "../lib/types";
+import { useOpened } from "../lib/desktop";
 import { useFileDrop } from "../lib/useFileDrop";
 import { useJob } from "../lib/useJob";
 
@@ -158,6 +159,15 @@ function FindModels() {
   const [results, setResults] = useState<HubModel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const linked = useOpened((o) => o.search);
+
+  // A temper://model/<owner>/<name> link searches for that repository.
+  useEffect(() => {
+    if (!linked) return;
+    setQuery(linked);
+    setAuthor("");
+    useOpened.getState().set({ search: null });
+  }, [linked]);
 
   const search = useCallback(async () => {
     setError(null);
@@ -629,6 +639,18 @@ export function ModelsPage() {
     setTab("local");
     imported(await importPaths(paths));
   });
+  // Files opened with Temper, and links to a model, from the desktop shell (lib/desktop.ts).
+  const opened = useOpened();
+  useEffect(() => {
+    if (opened.search) setTab("find");
+  }, [opened.search]);
+  useEffect(() => {
+    if (!opened.models.length) return;
+    const paths = opened.models;
+    opened.set({ models: [] });
+    setTab("local");
+    void importPaths(paths).then(imported);
+  }, [opened]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">

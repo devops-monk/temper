@@ -12,7 +12,7 @@ import { HfAccount } from "../components/HfAccount";
 import { HubSource } from "../components/HubSource";
 import { Storage } from "../components/Storage";
 import { LicensesDialog } from "../components/Licenses";
-import { Badge, Button, Notice, PageHeader, Section, Select, cx } from "../components/ui";
+import { Badge, Button, Notice, PageHeader, Section, Select, Toggle, cx } from "../components/ui";
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
@@ -155,6 +155,26 @@ function Updates() {
   );
 }
 
+/** Closing the window can leave Temper in the tray, so the API and the loaded model stay up for other apps. */
+function KeepRunning() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    void import("@tauri-apps/api/core").then(({ invoke }) => invoke<boolean>("get_background").then(setOn, () => setOn(false)));
+  }, []);
+  async function change(value: boolean) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_background", { on: value });
+    setOn(value);
+  }
+  if (on === null) return null;
+  return (
+    <div className="mt-3">
+      <Toggle checked={on} onChange={(v) => void change(v)} label="Keep running when the window is closed" />
+      <p className="mt-1 text-[12px] text-muted">Temper stays in the menu bar or tray, so apps using its API keep working. Quit it from there.</p>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { theme, setTheme, engine, system, refreshEngine, go } = useApp();
   const t = useT();
@@ -241,6 +261,7 @@ export function SettingsPage() {
                 <Notice>{engine.detail}</Notice>
               </div>
             )}
+            {inTauri && <KeepRunning />}
           </Section>
 
           {engine?.status === "running" && <GlobalInstructions />}

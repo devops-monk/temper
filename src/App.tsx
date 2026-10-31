@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { CrashGuard, CrashNotice } from "./components/CrashGuard";
 import { Tour, useFirstRunTour } from "./components/Tour";
+import { useDesktopOpens } from "./lib/desktop";
 import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { EngineGate } from "./components/EngineGate";
@@ -36,6 +37,7 @@ export function App() {
   useEffect(initUpdates, [initUpdates]);
   useShortcuts();
   useFirstRunTour(ready);
+  const dropping = useDesktopOpens(ready);
 
   usePoll(refreshEngine, ready ? 10_000 : 1_000);
   useEffect(() => {
@@ -54,7 +56,12 @@ export function App() {
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1">
         <Rail />
-        <main className="flex min-w-0 flex-1 flex-col bg-bg">
+        <main className="relative flex min-w-0 flex-1 flex-col bg-bg">
+          {dropping && (
+            <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-bg/85 text-[15px] font-medium">
+              Drop a .gguf model to add it, or a data file to make a dataset
+            </div>
+          )}
           <CrashGuard page={page}>
             {page === "settings" ? (
               <SettingsPage />

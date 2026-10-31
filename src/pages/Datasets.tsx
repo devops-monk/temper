@@ -1,6 +1,7 @@
 import { Database, FileText, FlaskConical, FolderOpen, FolderPlus, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
+import { useOpened } from "../lib/desktop";
 import { api, inTauri } from "../lib/engine";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
@@ -225,6 +226,15 @@ export function DatasetsPage() {
 
   const missing = ROLES[format].filter((r) => r.required && !mapping[r.role]).map((r) => r.label);
   const body = preview && { source: preview.source, config: preview.config, split: preview.split ?? "train", format, mapping, system_prompt: systemPrompt };
+
+  // A data file opened with Temper or dropped on the window (lib/desktop.ts).
+  const opened = useOpened((o) => o.dataset);
+  useEffect(() => {
+    if (!opened) return;
+    useOpened.getState().set({ dataset: null });
+    void open(opened);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened]);
 
   // Re-render the model's view shortly after the mapping stops changing.
   const key = JSON.stringify(body);

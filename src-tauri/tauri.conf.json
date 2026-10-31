@@ -58,9 +58,38 @@
         "depends": []
       }
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "fileAssociations": [
+      {
+        "ext": [
+          "gguf"
+        ],
+        "name": "GGUF model",
+        "description": "AI model",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/octet-stream"
+      },
+      {
+        "ext": [
+          "jsonl",
+          "parquet"
+        ],
+        "name": "Training data",
+        "description": "Dataset",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "temper"
+        ]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQyQ0RCODk1QzUyNjMxMDUKUldRRk1TYkZsYmpOMGdMNDRoVndnRWdJbWRDMllHOVJSdExSdDV6dUFoNmFya3N2KzVOYlNhT1MK",
       "endpoints": [
