@@ -11,7 +11,7 @@ export interface PendingDataset {
   config?: string;
 }
 
-const PAGES: Page[] = ["chat", "research", "models", "library", "train", "datasets", "recipes", "export", "voice", "connect", "settings"];
+const PAGES: Page[] = ["chat", "research", "models", "library", "train", "datasets", "recipes", "export", "audio", "connect", "settings"];
 
 /** `#train` opens the Train page; used by deep links and screenshots. */
 function initialPage(): Page {

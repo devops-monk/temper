@@ -1272,7 +1272,7 @@ def speech_cmd(args: list[str]) -> int:
 def say_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper say", description="Read text aloud with Kokoro, on this computer.")
     p.add_argument("text", nargs="?", help="what to say (default: read from stdin)")
-    p.add_argument("--voice", "-v", help="a voice id, like af_heart or bm_george (default: the one picked on the Voice page)")
+    p.add_argument("--voice", "-v", help="a voice id, like af_heart or bm_george (default: the one picked on the Audio page)")
     p.add_argument("--speed", type=float, default=1.0, help="0.5 to 2 (default 1)")
     p.add_argument("--output", "-o", help="write the audio here (.wav, .mp3, .opus, .flac or .aac) instead of playing it")
     p.add_argument("--voices", action="store_true", help="list the voices")
@@ -1321,6 +1321,41 @@ def say_cmd(args: list[str]) -> int:
         raise CliError(f"Nothing here plays audio ({player[0]}); use -o to save it to a file.") from None
     finally:
         os.unlink(f.name)
+    return 0
+
+
+def stems_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper stems", description="Split a song into vocals, drums, bass and the rest with Demucs, on this computer.")
+    p.add_argument("file", nargs="?", help="an audio or video file (anything FFmpeg reads)")
+    p.add_argument("--output", "-o", help="copy the stems into this folder too")
+    p.add_argument("--install", action="store_true", help="install stem separation and download its model")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        if a.install:
+            st = _check(c.get("/api/stems"))
+            steps = [(not st["installed"], "/api/stems/install", None, "stem separation (PyTorch and Demucs)"), (not st["downloaded"], "/api/models/download", {"repo_id": st["repo"]}, f"Demucs's model ({_size(st['size'])})")]
+            for needed, path, body, what in steps:
+                if needed:
+                    print(f"Installing {what}…", file=sys.stderr)
+                    end = follow(c, _check(c.post(path, json=body))["id"], logs=False)
+                    if end.get("status") != "done":
+                        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+            print("Stem separation is ready. Try: temper stems song.mp3")
+            return 0
+        if not a.file:
+            p.error("give a file to split, or --install")
+        job = _check(c.post("/api/stems/jobs", json={"path": os.path.abspath(a.file)}))
+        end = follow(c, job["id"], logs=False)
+    if end.get("status") != "done":
+        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+    result = end.get("result") or {}
+    stems = result.get("stems") or {}
+    if a.output:
+        Path(a.output).mkdir(parents=True, exist_ok=True)
+        for path in stems.values():
+            shutil.copy2(path, a.output)
+    where = a.output or result.get("folder")
+    _table([[name, str(Path(where) / Path(path).name)] for name, path in stems.items()])
     return 0
 
 
@@ -1400,7 +1435,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1422,6 +1457,7 @@ USAGE = """usage:
   temper create <folder> [--template chat|tools|rag] [--lang python|typescript] [--model M]
   temper transcribe <file> [--format txt|srt|vtt|json] [--language xx] [--translate] [-o out]
   temper say ["text"] [--voice V] [--speed S] [-o out.mp3] | --voices | --install
+  temper stems <file> [-o folder] | --install
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey

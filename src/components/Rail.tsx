@@ -1,4 +1,4 @@
-import { Boxes, Cable, ChefHat, Database, FlaskConical, Library, MessageSquare, Microscope, PackageOpen, Settings, Volume2 } from "lucide-react";
+import { AudioLines, Boxes, Cable, ChefHat, Database, FlaskConical, Library, MessageSquare, Microscope, PackageOpen, Settings } from "lucide-react";
 import type { ComponentType } from "react";
 import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
@@ -15,7 +15,7 @@ const ITEMS: { page: Page; label: Key; icon: ComponentType<{ className?: string 
   { page: "datasets", label: "nav.datasets", icon: Database },
   { page: "recipes", label: "nav.recipes", icon: ChefHat },
   { page: "export", label: "nav.export", icon: PackageOpen },
-  { page: "voice", label: "nav.voice", icon: Volume2 },
+  { page: "audio", label: "nav.audio", icon: AudioLines },
   { page: "connect", label: "nav.connect", icon: Cable },
 ];
 

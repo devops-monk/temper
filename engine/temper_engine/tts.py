@@ -91,9 +91,9 @@ def status() -> dict:
 
 def _check() -> None:
     if python() is None:
-        raise HTTPException(409, "Text to speech isn't installed. Install it on the Voice page, or run `temper say --install`.")
+        raise HTTPException(409, "Text to speech isn't installed. Install it on the Audio page, or run `temper say --install`.")
     if model_folder() is None:
-        raise HTTPException(409, f"Kokoro's voices aren't downloaded. Download them on the Voice page ({REPO}).")
+        raise HTTPException(409, f"Kokoro's voices aren't downloaded. Download them on the Audio page ({REPO}).")
 
 
 def speak(text: str, out: str, voice: str | None = None, speed: float = 1.0, fmt: str = "wav") -> dict:
@@ -238,7 +238,7 @@ def delete_clip(clip: str):
 @router.post("/v1/audio/speech")
 def v1_speech(req: OpenAISpeech):
     """OpenAI's speech API. Kokoro's own voice names work, and so do OpenAI's where Kokoro has one by that name
-    (alloy, nova, echo, onyx, fable...); any other plays in the voice picked on the Voice page."""
+    (alloy, nova, echo, onyx, fable...); any other plays in the voice picked on the Audio page."""
     if req.response_format not in MEDIA:
         raise HTTPException(400, f"response_format can be {', '.join(MEDIA)}.")
     _check()

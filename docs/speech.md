@@ -56,7 +56,7 @@ curl http://127.0.0.1:8765/v1/audio/transcriptions -H "Authorization: Bearer $TE
 
 ## Text to speech
 
-The **Voice** page reads text aloud with Kokoro, a small speech model that runs on the CPU on any
+The **Audio** page (*Text to speech*) reads text aloud with Kokoro, a small speech model that runs on the CPU on any
 computer. The first time, it asks to install Kokoro into its own environment and then to download it
 (354 MB, with all its voices). From a terminal: `temper say --install`.
 
@@ -79,4 +79,18 @@ curl http://127.0.0.1:8765/v1/audio/speech -H "Authorization: Bearer $TEMPER_KEY
 ```
 
 Kokoro's voice names work, and so do OpenAI's where Kokoro has a voice by that name (alloy, nova, echo,
-onyx, fable and others); any other name uses the voice picked on the Voice page.
+onyx, fable and others); any other name uses the voice picked on the Audio page.
+
+## Separate stems
+
+*Audio → Separate stems* splits a song into vocals, drums, bass and everything else with Demucs, and also
+saves the song without its vocals, for karaoke or a backing track. Demucs needs PyTorch, so it installs
+into its own environment (about 650 MB), and its model is an 84 MB download. It runs on an NVIDIA GPU when
+there is one and on the CPU otherwise; a 3-minute song takes about a minute on an M1 Pro. (PyTorch's Metal
+backend crashes inside Demucs on some macOS versions, so Macs use the CPU.) The stems are WAV files in
+`stems/` in Temper's folder.
+
+```bash
+temper stems --install
+temper stems song.mp3 -o song-stems/
+```

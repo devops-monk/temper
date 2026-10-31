@@ -71,7 +71,7 @@ pub fn run() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cli = matches!(
         args.first().map(String::as_str),
-        Some("doctor" | "start" | "mcp" | "models" | "load" | "ps" | "unload" | "status" | "version" | "get" | "import" | "log" | "daemon" | "engines" | "create" | "devices" | "transcribe" | "speech" | "say" | "chat" | "train" | "runs" | "export" | "serve")
+        Some("doctor" | "start" | "mcp" | "models" | "load" | "ps" | "unload" | "status" | "version" | "get" | "import" | "log" | "daemon" | "engines" | "create" | "devices" | "transcribe" | "speech" | "say" | "stems" | "chat" | "train" | "runs" | "export" | "serve")
     );
     if headless.is_some() || cli {
         attach_console();

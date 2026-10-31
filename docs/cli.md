@@ -112,6 +112,7 @@ temper speech install                       # Whisper, in its own environment
 temper speech use turbo                     # or small, large; downloads it if needed
 temper transcribe talk.m4a -f srt -o talk.srt
 temper say "Hello" [-v bf_emma] [-o hello.mp3]   # text to speech; --install, --voices
+temper stems song.mp3 [-o folder]                 # vocals, drums, bass, other, and without vocals; --install
 ```
 
 See [Speech to text](speech.md).
