@@ -56,8 +56,9 @@ and follow or cancel Temper's jobs (downloads, training, exports). Add it with `
 The key Connect shows is this computer's own: it stays the same across restarts and opens all of Temper,
 not just the model API. For other apps and devices, create a named key under **Connect → API keys**
 instead. A named key opens only `/v1`, and works until you revoke it. The monitor beside the keys shows
-each request, which key made it and the tokens it used. Keys are stored only as hashes, so copy a new key
-when it is shown.
+each request, which key made it, the tokens it used and how fast the reply came. *Show prompts and replies*
+adds what was asked and answered, held in memory only while it's on; `temper log` follows the same from a
+terminal. Keys are stored only as hashes, so copy a new key when it is shown.
 
 ## From another device
 
