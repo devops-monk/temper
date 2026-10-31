@@ -2,6 +2,7 @@ import { ArrowUp, Columns2, Plus, RotateCcw, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, stream } from "../lib/engine";
 import { quantLabel } from "../lib/format";
+import { type Key, t as tr, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { LocalModel, RuntimeStatus } from "../lib/types";
 import { ReplyText, ThinkingBlock } from "./Reply";
@@ -28,6 +29,8 @@ interface Reply {
   tokens?: number;
   firstToken?: number;
 }
+
+const GROUP_LABEL: Record<Option["group"], Key> = { "Fine-tuned": "compare.fine_tuned", Models: "compare.models" };
 
 interface Turn {
   prompt: string;
@@ -59,30 +62,32 @@ async function waitReady(paths: string[], signal: AbortSignal) {
     const { servers } = await api<CompareStatus>("/api/compare");
     const mine = servers.filter((s) => s.path && paths.includes(s.path));
     const failed = mine.find((s) => s.state === "failed" || s.state === "idle");
-    if (failed) throw new Error(failed.error ?? `${failed.model} stopped loading.`);
+    if (failed) throw new Error(failed.error ?? tr("compare.stopped_loading", { model: failed.model ?? "" }));
     if (mine.length === paths.length && mine.every((s) => s.state === "ready")) return;
     await new Promise((r) => setTimeout(r, 500));
   }
 }
 
 function Stats({ reply }: { reply: Reply }) {
+  const t = useT();
   const parts = [
-    reply.speed !== undefined && `${reply.speed.toFixed(1)} tokens/s`,
-    reply.tokens !== undefined && `${reply.tokens} tokens`,
-    reply.firstToken !== undefined && `${reply.firstToken < 1000 ? `${Math.round(reply.firstToken)} ms` : `${(reply.firstToken / 1000).toFixed(1)} s`} to first token`,
+    reply.speed !== undefined && t("compare.speed", { n: reply.speed.toFixed(1) }),
+    reply.tokens !== undefined && t("compare.tokens", { n: reply.tokens }),
+    reply.firstToken !== undefined && t("compare.first_token", { time: reply.firstToken < 1000 ? `${Math.round(reply.firstToken)} ms` : `${(reply.firstToken / 1000).toFixed(1)} s` }),
   ].filter(Boolean);
   return parts.length ? <span className="text-[11.5px] text-muted tabular-nums">{parts.join(", ")}</span> : null;
 }
 
 /** A failure's first line, with llama-server's log folded away under it. */
 function FailedReply({ error }: { error: string }) {
+  const t = useT();
   const [reason, ...log] = error.split("\n");
   return (
     <Notice tone="error">
       {reason}
       {log.length > 0 && (
         <details className="mt-1.5 text-[11.5px]">
-          <summary className="cursor-pointer opacity-80">Details</summary>
+          <summary className="cursor-pointer opacity-80">{t("compare.details")}</summary>
           <pre className="mt-1 max-h-48 overflow-auto font-mono break-all whitespace-pre-wrap">{log.join("\n")}</pre>
         </details>
       )}
@@ -91,26 +96,27 @@ function FailedReply({ error }: { error: string }) {
 }
 
 function ReplyCard({ reply }: { reply: Reply }) {
+  const t = useT();
   const live = reply.status === "writing";
   return (
     <div className="group flex min-w-0 flex-col rounded-xl border border-line bg-surface px-4 py-3">
       {reply.status === "failed" ? (
-        <FailedReply error={reply.error ?? "Something went wrong."} />
+        <FailedReply error={reply.error ?? t("compare.wrong")} />
       ) : (
         <div className="prose-chat min-w-0 leading-relaxed">
           {reply.reasoning && <ThinkingBlock text={reply.reasoning} live={live && !reply.content} seconds={reply.thought} />}
           {reply.content ? (
             <ReplyText text={reply.content} />
           ) : reply.status === "waiting" ? (
-            <span className="text-[13px] text-muted">Waiting for its turn…</span>
+            <span className="text-[13px] text-muted">{t("compare.waiting")}</span>
           ) : reply.status === "loading" ? (
-            <span className="animate-pulse-dot text-[13px] text-muted">Loading the model…</span>
+            <span className="animate-pulse-dot text-[13px] text-muted">{t("compare.loading")}</span>
           ) : live && !reply.reasoning ? (
-            <span className="animate-pulse-dot text-muted">Thinking…</span>
+            <span className="animate-pulse-dot text-muted">{t("chat.thinking")}</span>
           ) : reply.status === "stopped" && !reply.reasoning ? (
-            <span className="text-[13px] text-muted">Stopped before it answered.</span>
+            <span className="text-[13px] text-muted">{t("compare.stopped")}</span>
           ) : !live && reply.reasoning ? (
-            <p className="text-[13px] text-muted">The model stopped while still thinking. Raise Max new tokens and try again.</p>
+            <p className="text-[13px] text-muted">{t("compare.stopped_thinking")}</p>
           ) : null}
         </div>
       )}
@@ -134,6 +140,7 @@ function ReplyCard({ reply }: { reply: Reply }) {
  */
 export function Compare({ settings }: { settings: { system: string } }) {
   const { system, ...sampling } = settings;
+  const t = useT();
   const { runtime, go } = useApp();
   const [options, setOptions] = useState<Option[] | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
@@ -174,21 +181,21 @@ export function Compare({ settings }: { settings: { system: string } }) {
   const option = (path: string) => options?.find((o) => o.path === path);
 
   function changeColumns(next: string[]) {
-    if (turns.length && !confirm("Changing the models starts a new comparison. Clear this one?")) return;
+    if (turns.length && !confirm(t("compare.clear_confirm"))) return;
     setTurns([]);
     setColumns(next);
   }
 
   const update = (turn: number, column: number, change: Partial<Reply>) =>
-    setTurns((all) => all.map((t, i) => (i === turn ? { ...t, replies: t.replies.map((r, j) => (j === column ? { ...r, ...change } : r)) } : t)));
+    setTurns((all) => all.map((x, i) => (i === turn ? { ...x, replies: x.replies.map((r, j) => (j === column ? { ...r, ...change } : r)) } : x)));
 
   async function ask(history: Turn[], turn: number, column: number, signal: AbortSignal) {
     const path = columns[column];
     const messages = [
       ...(system.trim() ? [{ role: "system", content: system }] : []),
-      ...history.flatMap((t) => {
-        const reply = t.replies[column];
-        return [{ role: "user", content: t.prompt }, ...(reply?.content ? [{ role: "assistant", content: reply.content }] : [])];
+      ...history.flatMap((x) => {
+        const reply = x.replies[column];
+        return [{ role: "user", content: x.prompt }, ...(reply?.content ? [{ role: "assistant", content: reply.content }] : [])];
       }),
     ];
     let content = "";
@@ -202,8 +209,8 @@ export function Compare({ settings }: { settings: { system: string } }) {
         (data) => {
           if (data === "[DONE]") return;
           const chunk = JSON.parse(data);
-          const t = chunk.timings;
-          if (t) update(turn, column, { speed: t.predicted_per_second, tokens: t.predicted_n, firstToken: t.prompt_ms });
+          const timings = chunk.timings;
+          if (timings) update(turn, column, { speed: timings.predicted_per_second, tokens: timings.predicted_n, firstToken: timings.prompt_ms });
           const delta = chunk.choices?.[0]?.delta;
           const thinking = (delta?.reasoning_content ?? delta?.reasoning ?? "") as string;
           const piece = (delta?.content ?? "") as string;
@@ -259,7 +266,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
           }),
         );
       } else {
-        setNotice("These models don't fit in memory together, so they answer one at a time.");
+        setNotice(t("compare.one_at_a_time"));
         for (let i = 0; i < columns.length && !ctrl.signal.aborted; i++) {
           if (columns[i] !== chatPath) {
             update(turn, i, { status: "loading" });
@@ -278,7 +285,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
       columns.forEach((_, i) => fail(i, e));
     } finally {
       // Replies that never started (stopped while loading or waiting) say so.
-      setTurns((all) => all.map((t, i) => (i === turn ? { ...t, replies: t.replies.map((r) => (r.status === "waiting" || r.status === "loading" ? { ...r, status: "stopped" } : r)) } : t)));
+      setTurns((all) => all.map((x, i) => (i === turn ? { ...x, replies: x.replies.map((r) => (r.status === "waiting" || r.status === "loading" ? { ...r, status: "stopped" } : r)) } : x)));
       setBusy(false);
       abort.current = null;
     }
@@ -291,13 +298,13 @@ export function Compare({ settings }: { settings: { system: string } }) {
     void send(prompt, turns);
   }
 
-  if (!options) return <p className="px-7 py-5 text-muted">Finding your models…</p>;
+  if (!options) return <p className="px-7 py-5 text-muted">{t("compare.finding")}</p>;
   if (options.length < 2)
     return (
-      <EmptyState icon={<Columns2 className="size-8" />} title="Compare needs two models">
-        <p>Download or import another GGUF model, or export a fine-tuned one, to compare them side by side.</p>
+      <EmptyState icon={<Columns2 className="size-8" />} title={t("compare.needs_two")}>
+        <p>{t("compare.needs_two_hint")}</p>
         <Button variant="primary" className="mt-4" onClick={() => go("models")}>
-          Open models
+          {t("compare.open_models")}
         </Button>
       </EmptyState>
     );
@@ -309,17 +316,17 @@ export function Compare({ settings }: { settings: { system: string } }) {
         <div className="grid min-w-0 flex-1 gap-3" style={grid}>
           {columns.map((path, i) => (
             <div key={i} className="flex min-w-0 items-center gap-1">
-              <Select value={path} onChange={(e) => changeColumns(columns.map((p, j) => (j === i ? e.target.value : p)))} disabled={busy} className="h-8 min-w-0 flex-1 text-[13px]" aria-label={`Model ${i + 1}`}>
+              <Select value={path} onChange={(e) => changeColumns(columns.map((p, j) => (j === i ? e.target.value : p)))} disabled={busy} className="h-8 min-w-0 flex-1 text-[13px]" aria-label={t("compare.model_n", { n: i + 1 })}>
                 {(["Fine-tuned", "Models"] as const).map(
                   (group) =>
                     options.some((o) => o.group === group) && (
-                      <optgroup key={group} label={group}>
+                      <optgroup key={group} label={t(GROUP_LABEL[group])}>
                         {options
                           .filter((o) => o.group === group)
                           .map((o) => (
                             <option key={o.path} value={o.path}>
                               {o.label}
-                              {o.path === chatPath ? " (loaded in chat)" : ""}
+                              {o.path === chatPath ? t("compare.loaded") : ""}
                             </option>
                           ))}
                       </optgroup>
@@ -327,7 +334,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
                 )}
               </Select>
               {columns.length > 2 && (
-                <button className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" onClick={() => changeColumns(columns.filter((_, j) => j !== i))} disabled={busy} title="Remove this model" aria-label={`Remove ${option(path)?.label ?? "model"}`}>
+                <button className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" onClick={() => changeColumns(columns.filter((_, j) => j !== i))} disabled={busy} title={t("compare.remove_title")} aria-label={t("compare.remove", { name: option(path)?.label ?? t("compare.model") })}>
                   <X className="size-3.5" />
                 </button>
               )}
@@ -335,24 +342,24 @@ export function Compare({ settings }: { settings: { system: string } }) {
           ))}
         </div>
         {columns.length < MAX_MODELS && (
-          <Button size="sm" variant="ghost" onClick={() => changeColumns([...columns, options.find((o) => !columns.includes(o.path))?.path ?? columns[0]])} disabled={busy} title="Compare another model">
-            <Plus className="size-3.5" /> Model
+          <Button size="sm" variant="ghost" onClick={() => changeColumns([...columns, options.find((o) => !columns.includes(o.path))?.path ?? columns[0]])} disabled={busy} title={t("compare.another")}>
+            <Plus className="size-3.5" /> {t("compare.add")}
           </Button>
         )}
       </div>
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
         {turns.length === 0 ? (
-          <EmptyState icon={<Columns2 className="size-8" />} title="Ask them all the same thing">
-            Each model answers in its own column, with the system prompt and sampling from the Generation panel. Comparisons aren't saved.
+          <EmptyState icon={<Columns2 className="size-8" />} title={t("compare.ask")}>
+            {t("compare.ask_hint")}
           </EmptyState>
         ) : (
           <div className="flex flex-col gap-5 px-6 py-6">
-            {turns.map((t, i) => (
+            {turns.map((turn, i) => (
               <div key={i} className="flex flex-col gap-3">
-                <div className="prose-chat max-w-[620px] self-end rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{t.prompt}</div>
+                <div className="prose-chat max-w-[620px] self-end rounded-2xl rounded-br-md bg-surface px-4 py-2.5 whitespace-pre-wrap shadow-[0_0_0_1px_var(--line)]">{turn.prompt}</div>
                 <div className="grid items-start gap-3" style={grid}>
-                  {t.replies.map((r, j) => (
+                  {turn.replies.map((r, j) => (
                     <ReplyCard key={j} reply={r} />
                   ))}
                 </div>
@@ -361,7 +368,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
             {!busy && (
               <div className="flex justify-end">
                 <Button size="sm" variant="ghost" onClick={() => void send(turns[turns.length - 1].prompt, turns.slice(0, -1))}>
-                  <RotateCcw className="size-3.5" /> Ask again
+                  <RotateCcw className="size-3.5" /> {t("compare.again")}
                 </Button>
               </div>
             )}
@@ -382,23 +389,23 @@ export function Compare({ settings }: { settings: { system: string } }) {
               }
             }}
             rows={Math.min(8, Math.max(1, draft.split("\n").length))}
-            placeholder={`Message ${columns.length} models`}
+            placeholder={t("compare.placeholder", { n: columns.length })}
             className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted"
-            aria-label="Message"
+            aria-label={t("compare.message")}
           />
           {busy ? (
-            <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label="Stop generating" className="size-9 rounded-xl px-0">
+            <Button variant="secondary" onClick={() => abort.current?.abort()} aria-label={t("chat.stop")} className="size-9 rounded-xl px-0">
               <Square className="size-3.5 fill-current" />
             </Button>
           ) : (
-            <Button variant="primary" onClick={submit} disabled={!draft.trim()} aria-label="Send" className="size-9 rounded-xl px-0">
+            <Button variant="primary" onClick={submit} disabled={!draft.trim()} aria-label={t("chat.send")} className="size-9 rounded-xl px-0">
               <ArrowUp className="size-4" />
             </Button>
           )}
         </div>
         <div className="mt-1.5 flex items-center justify-between text-[11.5px] text-muted">
-          <span>Enter to send, Shift+Enter for a new line</span>
-          <Toggle label="Let thinking models think" checked={think} onChange={setThink} />
+          <span>{t("chat.send_hint")}</span>
+          <Toggle label={t("compare.think")} checked={think} onChange={setThink} />
         </div>
       </div>
     </div>
