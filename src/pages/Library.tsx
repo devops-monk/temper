@@ -6,6 +6,7 @@ import { PublishToHub } from "../components/PublishToHub";
 import { Badge, Button, EmptyState, Input, Notice, PageHeader, Select, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { useFileDrop } from "../lib/useFileDrop";
 
@@ -40,19 +41,19 @@ interface Item {
   chat?: string;
 }
 
-const KINDS: { kind: Kind; label: string; plural: string }[] = [
-  { kind: "upload", label: "Upload", plural: "Uploads" },
-  { kind: "dataset", label: "Dataset", plural: "Datasets" },
-  { kind: "fine-tune", label: "Fine-tune", plural: "Fine-tunes" },
-  { kind: "export", label: "Export", plural: "Exports" },
-  { kind: "model", label: "Converted model", plural: "Converted models" },
-  { kind: "attachment", label: "Chat attachment", plural: "Chat attachments" },
-  { kind: "picture", label: "Picture", plural: "Pictures" },
-  { kind: "speech", label: "Speech", plural: "Speech" },
-  { kind: "stems", label: "Stems", plural: "Stems" },
-  { kind: "sandbox", label: "Made by code", plural: "Made by code" },
+const KINDS: { kind: Kind; label: Key; plural: Key }[] = [
+  { kind: "upload", label: "library.kind_upload", plural: "library.kinds_upload" },
+  { kind: "dataset", label: "library.kind_dataset", plural: "library.kinds_dataset" },
+  { kind: "fine-tune", label: "library.kind_fine_tune", plural: "library.kinds_fine_tune" },
+  { kind: "export", label: "library.kind_export", plural: "library.kinds_export" },
+  { kind: "model", label: "library.kind_model", plural: "library.kinds_model" },
+  { kind: "attachment", label: "library.kind_attachment", plural: "library.kinds_attachment" },
+  { kind: "picture", label: "library.kind_picture", plural: "library.kinds_picture" },
+  { kind: "speech", label: "library.kind_speech", plural: "library.kind_speech" },
+  { kind: "stems", label: "library.kind_stems", plural: "library.kind_stems" },
+  { kind: "sandbox", label: "library.kind_sandbox", plural: "library.kind_sandbox" },
 ];
-const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<Kind, string>;
+const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<Kind, Key>;
 
 type View = { type: "all" } | { type: "favourites" } | { type: "kind"; kind: Kind } | { type: "folder"; name: string };
 
@@ -60,24 +61,26 @@ type View = { type: "all" } | { type: "favourites" } | { type: "kind"; kind: Kin
  * run the GPU trainer's. */
 function ChatWithRun({ item }: { item: Item }) {
   const { engines } = useEngines();
+  const t = useT();
   const engine = item.backend === "mlx" ? engines?.find((e) => e.id === "mlx" && e.available) : engines?.find((e) => (e.id === "vllm" || e.id === "sglang") && e.available);
   if (!engine) return null;
-  return <LoadButton path={item.base_model!} name={item.name} engine={engine.id} adapter={`${item.path}/adapter`} label="Chat with it" />;
+  return <LoadButton path={item.base_model!} name={item.name} engine={engine.id} adapter={`${item.path}/adapter`} label={t("library.chat_with_it")} />;
 }
 
-function details(item: Item): string {
-  if (item.kind === "fine-tune") return [item.base_model, item.adapter ? "adapter saved" : "no adapter yet"].filter(Boolean).join(", ");
-  if (item.kind === "export") return item.gguf?.length ? `${item.gguf.length} GGUF file${item.gguf.length > 1 ? "s" : ""}` : (item.formats ?? []).join(", ");
+function details(item: Item, t: ReturnType<typeof useT>): string {
+  if (item.kind === "fine-tune") return [item.base_model, t(item.adapter ? "library.adapter_saved" : "library.no_adapter")].filter(Boolean).join(", ");
+  if (item.kind === "export") return item.gguf?.length ? (item.gguf.length > 1 ? t("library.gguf_many", { n: item.gguf.length }) : t("library.gguf_one")) : (item.formats ?? []).join(", ");
   if (item.kind === "picture" && item.made_with) return item.made_with.split("/").pop()!;
-  if (item.kind === "speech" && item.voice) return `voice ${item.voice}`;
+  if (item.kind === "speech" && item.voice) return t("library.voice", { voice: item.voice });
   if (item.kind === "stems") return (item.stems ?? []).join(", ");
-  if (item.kind === "sandbox") return item.chat === "scratch" ? "written by code outside a chat" : "written by code in a chat";
+  if (item.kind === "sandbox") return t(item.chat === "scratch" ? "library.code_outside_chat" : "library.code_in_chat");
   if (item.name !== item.original) return item.original;
   return "";
 }
 
 /** Everything Temper keeps on disk that people make or add: one list, with folders, favourites and names of their own. */
 export function LibraryPage() {
+  const t = useT();
   const [data, setData] = useState<{ folders: string[]; items: Item[] } | null>(null);
   const [view, setView] = useState<View>({ type: "all" });
   const [query, setQuery] = useState("");
@@ -106,7 +109,7 @@ export function LibraryPage() {
 
   async function chooseFiles() {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: true, title: "Add files to the library" });
+    const picked = await open({ multiple: true, title: t("library.add_files_title") });
     if (Array.isArray(picked) && picked.length) upload(picked);
     else if (typeof picked === "string") upload([picked]);
   }
@@ -122,23 +125,23 @@ export function LibraryPage() {
     });
   }, [data, view, query]);
 
-  const title = view.type === "all" ? "All files" : view.type === "favourites" ? "Favourites" : view.type === "kind" ? KINDS.find((k) => k.kind === view.kind)!.plural : view.name;
+  const title = view.type === "all" ? t("library.all_files") : view.type === "favourites" ? t("library.favourites") : view.type === "kind" ? t(KINDS.find((k) => k.kind === view.kind)!.plural) : view.name;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Library"
-        description="Your uploads, datasets, fine-tunes, exports and converted models, the pictures, speech and stems you make, and files code wrote in chats. Renaming changes the name shown here; files on disk keep theirs."
+        title={t("nav.library")}
+        description={t("library.description")}
         actions={
           inTauri ? (
             <Button variant="primary" onClick={() => void chooseFiles()}>
-              <Plus className="size-4" /> Add files
+              <Plus className="size-4" /> {t("library.add_files")}
             </Button>
           ) : null
         }
       />
       {dropping && (
-        <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-bg/85 font-medium">Drop to copy into your library</div>
+        <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-bg/85 font-medium">{t("library.drop")}</div>
       )}
       <div className="flex min-h-0 flex-1">
         <Sidebar data={data} view={view} setView={setView} run={run} />
@@ -148,7 +151,7 @@ export function LibraryPage() {
             <span className="text-[12.5px] text-muted tabular-nums">{data ? shown.length : ""}</span>
             <div className="relative ml-auto w-64">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name" className="h-8 pl-8 text-[13px]" aria-label="Search the library" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("library.search_placeholder")} className="h-8 pl-8 text-[13px]" aria-label={t("library.search_label")} />
             </div>
           </div>
           {!inTauri && <BrowserUpload onUpload={upload} />}
@@ -158,16 +161,10 @@ export function LibraryPage() {
             </div>
           )}
           {!data ? (
-            <p className="text-muted">Reading the library…</p>
+            <p className="text-muted">{t("library.reading")}</p>
           ) : shown.length === 0 ? (
-            <EmptyState icon={<Folder className="size-7" />} title={query ? "Nothing matches that name" : data.items.length ? "Nothing here yet" : "Your library is empty"}>
-              {query
-                ? "Try part of the name, or the file's own name."
-                : view.type === "folder"
-                  ? "Move files here with the folder menu on each one."
-                  : view.type === "favourites"
-                    ? "Star a file to keep it here."
-                    : "Datasets you prepare or generate, training runs, exports and converted models appear here. Drop files on this page to add your own."}
+            <EmptyState icon={<Folder className="size-7" />} title={t(query ? "library.no_match" : data.items.length ? "library.nothing_here" : "library.empty")}>
+              {t(query ? "library.no_match_hint" : view.type === "folder" ? "library.folder_hint" : view.type === "favourites" ? "library.favourites_hint" : "library.empty_hint")}
             </EmptyState>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
@@ -183,6 +180,7 @@ export function LibraryPage() {
 }
 
 function Sidebar({ data, view, setView, run }: { data: { folders: string[]; items: Item[] } | null; view: View; setView: (v: View) => void; run: (p: Promise<unknown>) => Promise<void> }) {
+  const t = useT();
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const count = (f: (i: Item) => boolean) => data?.items.filter(f).length ?? 0;
@@ -202,15 +200,15 @@ function Sidebar({ data, view, setView, run }: { data: { folders: string[]; item
   );
 
   return (
-    <nav className="w-52 shrink-0 overflow-y-auto border-r border-line px-2.5 py-4" aria-label="Library sections">
-      {entry({ type: "all" }, "All files", count(() => true))}
-      {entry({ type: "favourites" }, "Favourites", count((i) => i.favourite), <Star className="size-3.5" />)}
-      <div className="mt-3 mb-1 px-2.5 text-[12px] font-medium text-muted">Kinds</div>
-      {KINDS.map((k) => entry({ type: "kind", kind: k.kind }, k.plural, count((i) => i.kind === k.kind)))}
+    <nav className="w-52 shrink-0 overflow-y-auto border-r border-line px-2.5 py-4" aria-label={t("library.sections")}>
+      {entry({ type: "all" }, t("library.all_files"), count(() => true))}
+      {entry({ type: "favourites" }, t("library.favourites"), count((i) => i.favourite), <Star className="size-3.5" />)}
+      <div className="mt-3 mb-1 px-2.5 text-[12px] font-medium text-muted">{t("library.kinds")}</div>
+      {KINDS.map((k) => entry({ type: "kind", kind: k.kind }, t(k.plural), count((i) => i.kind === k.kind)))}
       <div className="mt-3 mb-1 flex items-center justify-between px-2.5 text-[12px] font-medium text-muted">
-        Folders
-        <button className="hover:text-text" onClick={() => setAdding(true)} title="New folder">
-          <FolderPlus className="size-3.5" aria-label="New folder" />
+        {t("library.folders")}
+        <button className="hover:text-text" onClick={() => setAdding(true)} title={t("library.new_folder")}>
+          <FolderPlus className="size-3.5" aria-label={t("library.new_folder")} />
         </button>
       </div>
       {data?.folders.map((name) =>
@@ -227,19 +225,19 @@ function Sidebar({ data, view, setView, run }: { data: { folders: string[]; item
           <div key={name} className="group relative">
             {entry({ type: "folder", name }, name, count((i) => i.folder === name), <Folder className="size-3.5" />)}
             <span className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 items-center gap-1 rounded bg-surface-2 px-1 group-hover:flex">
-              <button className="text-muted hover:text-text" onClick={() => setRenaming(name)} title={`Rename ${name}`}>
-                <Pencil className="size-3" aria-label={`Rename ${name}`} />
+              <button className="text-muted hover:text-text" onClick={() => setRenaming(name)} title={t("library.rename_named", { name })}>
+                <Pencil className="size-3" aria-label={t("library.rename_named", { name })} />
               </button>
               <button
                 className="text-muted hover:text-danger"
                 onClick={() => {
-                  if (!confirm(`Remove the folder ${name}? The files in it stay in your library.`)) return;
+                  if (!confirm(t("library.remove_folder_confirm", { name }))) return;
                   if (same({ type: "folder", name })) setView({ type: "all" });
                   void run(api(`/api/files/folders?name=${encodeURIComponent(name)}`, { method: "DELETE" }));
                 }}
-                title={`Remove ${name}`}
+                title={t("library.remove_named", { name })}
               >
-                <X className="size-3" aria-label={`Remove ${name}`} />
+                <X className="size-3" aria-label={t("library.remove_named", { name })} />
               </button>
             </span>
           </div>
@@ -248,20 +246,21 @@ function Sidebar({ data, view, setView, run }: { data: { folders: string[]; item
       {adding && (
         <NameForm
           initial=""
-          placeholder="Folder name"
+          placeholder={t("library.folder_name")}
           onDone={(value) => {
             setAdding(false);
             if (value) void run(api("/api/files/folders", { json: { name: value } }));
           }}
         />
       )}
-      {data && !data.folders.length && !adding && <p className="px-2.5 text-[12px] text-muted">Group files your own way, e.g. by project.</p>}
+      {data && !data.folders.length && !adding && <p className="px-2.5 text-[12px] text-muted">{t("library.folders_hint")}</p>}
     </nav>
   );
 }
 
 /** A one-line name editor: Enter saves, Escape cancels. */
 function NameForm({ initial, placeholder, onDone }: { initial: string; placeholder?: string; onDone: (value: string | null) => void }) {
+  const t = useT();
   const ref = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
   useEffect(() => ref.current?.select(), []);
@@ -279,8 +278,8 @@ function NameForm({ initial, placeholder, onDone }: { initial: string; placehold
         finish(ref.current!.value.trim());
       }}
     >
-      <Input ref={ref} defaultValue={initial} placeholder={placeholder} autoFocus className="h-7 px-2 text-[13px]" onKeyDown={(e) => e.key === "Escape" && finish(null)} onBlur={(e) => finish(e.currentTarget.value.trim())} aria-label={placeholder ?? "Name"} />
-      <button type="submit" className="text-muted hover:text-text" aria-label="Save">
+      <Input ref={ref} defaultValue={initial} placeholder={placeholder} autoFocus className="h-7 px-2 text-[13px]" onKeyDown={(e) => e.key === "Escape" && finish(null)} onBlur={(e) => finish(e.currentTarget.value.trim())} aria-label={placeholder ?? t("library.name")} />
+      <button type="submit" className="text-muted hover:text-text" aria-label={t("library.save")}>
         <Check className="size-3.5" />
       </button>
     </form>
@@ -289,14 +288,15 @@ function NameForm({ initial, placeholder, onDone }: { initial: string; placehold
 
 function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: Promise<unknown>) => Promise<void> }) {
   const { go, setPendingDataset } = useApp();
+  const t = useT();
   const [renaming, setRenaming] = useState(false);
   const patch = (json: Partial<Item>) => run(api("/api/files", { method: "PATCH", json: { id: item.id, ...json } }));
-  const extra = details(item);
+  const extra = details(item, t);
   const gguf = item.gguf?.[0];
 
   async function remove() {
-    const what = item.kind === "fine-tune" ? "this training run and its adapter" : item.kind === "export" ? "this export and all its files" : item.kind === "stems" ? "these stems" : "this file";
-    if (!confirm(`Delete ${what} (${item.name})? This frees ${bytes(item.size)} and can't be undone.`)) return;
+    const what = t(item.kind === "fine-tune" ? "library.what_run" : item.kind === "export" ? "library.what_export" : item.kind === "stems" ? "library.what_stems" : "library.what_file");
+    if (!confirm(t("library.delete_confirm", { what, name: item.name, size: bytes(item.size) }))) return;
     await run(api(`/api/files?id=${encodeURIComponent(item.id)}`, { method: "DELETE" }));
   }
 
@@ -307,8 +307,8 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
 
   return (
     <li className="group flex items-center gap-3 px-4 py-2.5">
-      <button onClick={() => void patch({ favourite: !item.favourite })} className={cx(item.favourite ? "text-straw" : "text-muted hover:text-text")} title={item.favourite ? "Remove from favourites" : "Add to favourites"}>
-        <Star className={cx("size-4", item.favourite && "fill-current")} aria-label={item.favourite ? "Favourite" : "Not a favourite"} />
+      <button onClick={() => void patch({ favourite: !item.favourite })} className={cx(item.favourite ? "text-straw" : "text-muted hover:text-text")} title={t(item.favourite ? "library.unfavourite" : "library.favourite")}>
+        <Star className={cx("size-4", item.favourite && "fill-current")} aria-label={t(item.favourite ? "library.is_favourite" : "library.not_favourite")} />
       </button>
       <div className="min-w-0 flex-1">
         {renaming ? (
@@ -324,10 +324,10 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
             <span className="truncate font-medium" title={item.path}>
               {item.name}
             </span>
-            <button onClick={() => setRenaming(true)} className="hidden text-muted group-hover:inline hover:text-text" title="Rename">
-              <Pencil className="size-3" aria-label={`Rename ${item.name}`} />
+            <button onClick={() => setRenaming(true)} className="hidden text-muted group-hover:inline hover:text-text" title={t("library.rename")}>
+              <Pencil className="size-3" aria-label={t("library.rename_named", { name: item.name })} />
             </button>
-            <Badge>{KIND_LABEL[item.kind]}</Badge>
+            <Badge>{t(KIND_LABEL[item.kind])}</Badge>
             {item.folder && (
               <span className="flex items-center gap-1 text-[12px] text-muted">
                 <Folder className="size-3" /> {item.folder}
@@ -349,23 +349,23 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
               go("train");
             }}
           >
-            Train on it
+            {t("library.train_on_it")}
           </Button>
         )}
         {item.kind === "fine-tune" && item.adapter && (
           <Button size="sm" onClick={() => go("export")}>
-            Export
+            {t("library.export")}
           </Button>
         )}
         {item.kind === "fine-tune" && item.adapter && item.base_model && <ChatWithRun item={item} />}
         {item.kind === "picture" && (
           <Button size="sm" onClick={() => go("images")}>
-            Open Images
+            {t("library.open_images")}
           </Button>
         )}
         {(item.kind === "speech" || item.kind === "stems") && (
           <Button size="sm" onClick={() => go("audio")}>
-            Open Audio
+            {t("library.open_audio")}
           </Button>
         )}
         {gguf && <LoadButton path={gguf} name={gguf.split(/[\\/]/).pop()!} />}
@@ -374,8 +374,8 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
         {item.kind === "export" && <PublishToHub what={{ export: item.path }} name={item.original} />}
         {item.kind === "dataset" && item.path.endsWith(".jsonl") && <PublishToHub what={{ dataset: item.path }} name={item.original} />}
         {folders.length > 0 && (
-          <Select value={item.folder ?? ""} onChange={(e) => void patch({ folder: e.target.value })} className="h-7 w-auto max-w-36 text-[12.5px]" aria-label={`Folder for ${item.name}`} title="Move to a folder">
-            <option value="">No folder</option>
+          <Select value={item.folder ?? ""} onChange={(e) => void patch({ folder: e.target.value })} className="h-7 w-auto max-w-36 text-[12.5px]" aria-label={t("library.folder_for", { name: item.name })} title={t("library.move_to_folder")}>
+            <option value="">{t("library.no_folder")}</option>
             {folders.map((f) => (
               <option key={f} value={f}>
                 {f}
@@ -384,12 +384,12 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
           </Select>
         )}
         {inTauri && (
-          <button className="text-muted hover:text-text" onClick={() => void reveal()} title="Show in folder">
-            <FolderOpen className="size-3.5" aria-label={`Show ${item.name} in its folder`} />
+          <button className="text-muted hover:text-text" onClick={() => void reveal()} title={t("library.show_in_folder")}>
+            <FolderOpen className="size-3.5" aria-label={t("library.show_named", { name: item.name })} />
           </button>
         )}
-        <button className="text-muted hover:text-danger" onClick={() => void remove()} title="Delete">
-          <Trash2 className="size-3.5" aria-label={`Delete ${item.name}`} />
+        <button className="text-muted hover:text-danger" onClick={() => void remove()} title={t("library.delete")}>
+          <Trash2 className="size-3.5" aria-label={t("library.delete_named", { name: item.name })} />
         </button>
       </span>
     </li>
@@ -398,6 +398,7 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
 
 /** In a browser there's no file dialog with paths, so files are added by path. */
 function BrowserUpload({ onUpload }: { onUpload: (paths: string[]) => void }) {
+  const t = useT();
   return (
     <form
       className="mb-4 flex gap-2"
@@ -408,9 +409,9 @@ function BrowserUpload({ onUpload }: { onUpload: (paths: string[]) => void }) {
         e.currentTarget.reset();
       }}
     >
-      <Input name="path" placeholder="/path/to/file.jsonl" spellCheck={false} className="h-8 flex-1 text-[13px]" aria-label="File to add" />
+      <Input name="path" placeholder="/path/to/file.jsonl" spellCheck={false} className="h-8 flex-1 text-[13px]" aria-label={t("library.file_to_add")} />
       <Button size="sm" type="submit">
-        Add file
+        {t("library.add_file")}
       </Button>
     </form>
   );
