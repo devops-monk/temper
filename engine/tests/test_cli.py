@@ -373,3 +373,25 @@ def test_engines_lists_picks_and_surveys(engine, monkeypatch, capsys):
     assert "Memory" in out and "can't run here: Not here." in out
     assert cli.main(["engines", "survey", "--json"]) == 0
     assert "system" in json.loads(capsys.readouterr().out)
+
+
+def test_create_writes_a_starter_with_its_own_key(engine, tmp_path, monkeypatch, capsys):
+    from temper_engine import starters
+
+    monkeypatch.setattr(cli, "loaded_model", lambda engine: "qwen")
+    for template in starters.TEMPLATES:
+        for lang in starters.LANGUAGES:
+            assert cli.main(["create", str(tmp_path / f"{lang}-{template}"), "-t", template, "-l", lang]) == 0
+    py, ts = tmp_path / "python-rag", tmp_path / "typescript-tools"
+    assert {p.name for p in py.iterdir()} == {"pyproject.toml", "temper.py", "main.py", ".gitignore", "README.md", ".env", "notes"}
+    assert {p.name for p in ts.iterdir()} == {"package.json", "tsconfig.json", "temper.ts", "main.ts", ".gitignore", "README.md", ".env"}
+    env = dict(line.split("=", 1) for line in (py / ".env").read_text().splitlines())
+    assert env["TEMPER_BASE_URL"] == "http://testserver/v1" and env["TEMPER_MODEL"] == "qwen" and ".env" in (py / ".gitignore").read_text()
+    # The key is a real named key that opens the model API, and shows in Connect so it can be revoked.
+    assert engine.get("/v1/models", headers={"Authorization": f"Bearer {env['TEMPER_API_KEY']}"}).status_code == 200
+    assert "python-rag (temper create)" in [k["name"] for k in engine.get("/api/keys").json()]
+    assert '"name": "typescript-tools"' in (ts / "package.json").read_text() and "__" not in (ts / "main.ts").read_text()
+    for template in starters.TEMPLATES:
+        compile((tmp_path / f"python-{template}" / "main.py").read_text(), "main.py", "exec")
+    assert cli.main(["create", str(py)]) == 1
+    assert "isn't empty" in capsys.readouterr().err

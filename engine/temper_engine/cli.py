@@ -1104,6 +1104,58 @@ def _survey(c: httpx.Client, engines: list[dict], as_json: bool) -> int:
     return 0
 
 
+def _choose(what: str, options: dict[str, str], given: str | None) -> str:
+    """`given`, or a pick from a numbered list when someone is at the terminal, else the first option."""
+    if given or not sys.stdin.isatty():
+        return given or next(iter(options))
+    print(f"{what}:")
+    keys = list(options)
+    for i, k in enumerate(keys, 1):
+        print(f"  {i}. {k:<11} {options[k]}")
+    try:
+        choice = input(f"Which one? [1-{len(keys)}, Enter for 1] ").strip() or "1"
+    except EOFError:
+        raise CliError("Nothing picked.") from None
+    if not choice.isdigit() or not 1 <= int(choice) <= len(keys):
+        raise CliError(f"Pick a number from 1 to {len(keys)}.")
+    return keys[int(choice) - 1]
+
+
+def create_cmd(args: list[str]) -> int:
+    from . import starters
+
+    p = argparse.ArgumentParser(prog="temper create", description="Start a small app that uses Temper's models, with an API key filled in.")
+    p.add_argument("folder", help="the new project's folder")
+    p.add_argument("--template", "-t", choices=list(starters.TEMPLATES), help="; ".join(f"{k}: {v}" for k, v in starters.TEMPLATES.items()))
+    p.add_argument("--lang", "-l", choices=starters.LANGUAGES, help="python (default) or typescript")
+    p.add_argument("--model", help="the model it asks for (default: the one loaded in Temper)")
+    a = p.parse_args(args)
+    folder = Path(os.path.abspath(a.folder))
+    if folder.exists() and (not folder.is_dir() or any(folder.iterdir())):
+        raise CliError(f"{folder} already exists and isn't empty; pick a new folder.")
+    template = _choose("What should it do", starters.TEMPLATES, a.template)
+    language = _choose("In which language", {"python": "run with uv or pip", "typescript": "run with Node 20+"}, a.lang)
+    engine = running()
+    model = a.model
+    if not model:
+        try:
+            model = loaded_model(engine)
+        except CliError:
+            model = ""  # requests go to whatever is loaded when it runs
+    key_name = f"{folder.name} (temper create)"[:60]
+    with _client(engine) as c:
+        key = _check(c.post("/api/keys", json={"name": key_name}))
+    project = starters.files(folder.name, template, language, engine["url"] + "/v1", key["key"], key_name, model)
+    starters.write(folder, project)
+    run = "uv run main.py" if language == "python" else "npm install && npm start"
+    notes = " notes" if template == "rag" else ""
+    if notes:
+        run += notes if language == "python" else " -- notes"
+    print(f"Made {folder} ({template}, {language}), with an API key named \"{key_name}\" in .env" + (f" and {model} as its model." if model else "."))
+    print(f"Next:  cd {a.folder} && {run}")
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1180,7 +1232,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1199,6 +1251,7 @@ USAGE = """usage:
   temper export <run> [--format gguf] [--quant q4_k_m] [--imatrix]
   temper serve [--host H] [--port N]
   temper daemon up|down|status|install|uninstall
+  temper create <folder> [--template chat|tools|rag] [--lang python|typescript] [--model M]
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey
   temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode

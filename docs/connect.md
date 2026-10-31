@@ -33,6 +33,8 @@ When memory runs short, models loaded this way make room for each other, least r
 loaded yourself are never unloaded to make room. Names that match nothing, like a client's default `gpt-4o`, go to
 the loaded model as before.
 
+To start an app of your own already wired to this API, run `temper create my-app` (see [the command line](cli.md#starter-projects)).
+
 ## Coding agents
 
 ```bash

@@ -92,6 +92,19 @@ read the Hugging Face token from the system keychain; set `HF_TOKEN` in its envi
 folder, so it stays the same between runs. Anyone with that key can manage the whole engine, so give apps
 named API keys instead (see [Connect](connect.md#api-keys)).
 
+## Starter projects
+
+```bash
+temper create my-app                       # asks what it should do and in which language
+temper create notes-bot -t rag -l typescript --model mlx-community/Qwen3-4B-Instruct-2507-4bit
+```
+
+`create` writes a small app that uses Temper's API through the OpenAI SDK: `chat` (a streaming chat), `tools`
+(the model calls two example functions) or `rag` (answers from a folder of notes and names the file it quotes,
+choosing passages by keyword overlap, so no embedding model is needed). Each comes in Python or TypeScript with a
+README. It also makes an API key named after the folder and writes it, with Temper's address and the model, to
+`.env`, which is in the project's `.gitignore`. Revoke the key under Connect → API keys when you're done with it.
+
 ## Engines
 
 ```bash
