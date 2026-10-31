@@ -60,6 +60,16 @@ temper serve --host 0.0.0.0        # reachable from other computers
 folder, so it stays the same between runs. Anyone with that key can manage the whole engine, so give apps
 named API keys instead (see [Connect](connect.md#api-keys)).
 
+## Status and scripting
+
+```bash
+temper status                      # running or not, address, loaded models, running jobs, disk
+temper version
+```
+
+`models`, `ps`, `runs` and `status` take `--json` for scripts. `temper status` exits with 1 when Temper isn't
+running, so `temper status >/dev/null || open -a Temper` starts it when needed.
+
 ## Agents and checks
 
 ```bash

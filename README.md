@@ -33,6 +33,7 @@ it's `/Applications/Temper.app/Contents/MacOS/temper`; alias it as `temper`):
 temper models               # the models on this computer
 temper load Qwen3-4B-GGUF   # load one (a name, a GGUF file name or a path; --quant, --context)
 temper ps                   # what's loaded; temper unload <model> or --all
+temper status               # running or not, loaded models, jobs, disk (--json on models, ps, runs, status)
 temper chat "Hello"         # ask the loaded model once; with no prompt, chat until /bye
 temper train tutor.yaml     # fine-tune from a YAML config (--set key=value, --dry-run), following the run
 temper runs                 # past training runs

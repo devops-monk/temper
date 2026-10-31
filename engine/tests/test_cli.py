@@ -227,3 +227,35 @@ def test_load_checks_the_fit_first(engine, servers, monkeypatch, capsys):
     assert cli.main(["load", "small"]) == 1
     assert "pass -y to try anyway" in capsys.readouterr().err
     assert cli.main(["load", "small", "-y"]) == 0
+
+
+def test_status_says_what_temper_is_doing(engine, servers, capsys):
+    assert cli.main(["load", "small"]) == 0
+    capsys.readouterr()
+    assert cli.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "running at http://testserver/v1, reachable from this computer" in out
+    assert "small-Q4_K_M.gguf (chat)" in out and "none running" in out
+    assert cli.main(["status", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["running"] and data["loaded"]["models"][0]["model"] == "small-Q4_K_M.gguf" and data["jobs"] == []
+
+
+def test_status_and_version_work_with_temper_closed(monkeypatch, capsys):
+    from temper_engine import __version__
+
+    def closed():
+        raise cli.CliError("Temper isn't running.")
+
+    monkeypatch.setattr(cli, "running", closed)
+    assert cli.main(["status", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out) == {"running": False, "detail": "Temper isn't running."}
+    assert cli.main(["version"]) == 0
+    assert capsys.readouterr().out == f"temper {__version__}\n"
+
+
+def test_agents_get_a_loaded_model_not_one_that_would_load(engine, servers):
+    with pytest.raises(cli.CliError, match="No model is loaded"):
+        cli.loaded_model(cli.running())  # /v1/models lists the downloaded ones too
+    assert cli.main(["load", "mid"]) == 0
+    assert cli.loaded_model(cli.running()) == "mid-Q4_K_M.gguf"

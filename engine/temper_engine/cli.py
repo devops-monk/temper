@@ -79,7 +79,8 @@ def running() -> dict:
 
 def loaded_model(engine: dict) -> str:
     with _client(engine) as c:
-        models = [m["id"] for m in _check(c.get("/v1/models")).get("data") or []]
+        # Loaded ones only: /v1/models also offers what a request could load on demand.
+        models = [m["id"] for m in _check(c.get("/v1/models")).get("data") or [] if m.get("loaded", True)]
     if not models:
         raise CliError("No model is loaded in Temper. Load one on the Models page, then run this again.")
     return models[0]
@@ -273,8 +274,14 @@ def _size(n: int | None) -> str:
 
 
 def models_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper models", description="The models on this computer.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
     with _client(running()) as c:
         models = _check(c.get("/api/models/local"))
+    if a.json:
+        print(json.dumps(models, indent=2))
+        return 0
     if not models:
         print("No models yet. Download one on the Models page.")
     for m in models:
@@ -576,8 +583,14 @@ def train_cmd(args: list[str]) -> int:
 
 
 def runs_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper runs", description="Training runs, newest first.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
     with _client(running()) as c:
         runs = _check(c.get("/api/train/runs"))
+    if a.json:
+        print(json.dumps(runs, indent=2))
+        return 0
     if not runs:
         print("No training runs yet.")
     for r in runs:
@@ -629,6 +642,61 @@ def stable_key() -> str:
     return key
 
 
+def status_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
+    try:
+        engine = running()
+    except CliError as e:
+        print(json.dumps({"running": False, "detail": str(e)}) if a.json else e)
+        return 1
+    with _client(engine) as c:
+        out = {
+            "running": True,
+            "url": engine["url"],
+            "version": _check(c.get("/api/health")).get("version"),
+            "loaded": _check(c.get("/api/runtime/loaded")),
+            "jobs": [j for j in _check(c.get("/api/jobs")) if j["status"] == "running"],
+            "lan": _check(c.get("/api/lan")),
+            "discovery": _check(c.get("/api/discovery")),
+            "storage": _check(c.get("/api/storage")),
+        }
+    if a.json:
+        print(json.dumps(out, indent=2))
+        return 0
+    loaded = out["loaded"]
+    models = ", ".join(f"{m.get('model')} ({'chat' if m.get('chat') else 'on demand' if m.get('on_demand') else 'alongside'})" for m in loaded["models"])
+    jobs = ", ".join(j["title"] + (f" {j['progress']:.0%}" if j.get("progress") is not None else "") for j in out["jobs"])
+    lan, disc, disk = out["lan"], out["discovery"], out["storage"]
+    reach = ["this computer"] + ([f"the network at {lan['url']}"] if lan.get("running") and lan.get("url") else [])
+    also = [f"{name}'s address ({d['port']})" for name, d in disc.items() if d.get("running")]
+    _table([
+        ["Temper", f"{out['version']}, running at {out['url']}/v1, reachable from {' and '.join(reach)}" + (f"; also answering at {', '.join(also)}" if also else "")],
+        ["Models", models or ("none loaded; requests that name a model load it" if loaded.get("load_on_demand") else "none loaded")],
+        ["Jobs", jobs or "none running"],
+        ["Disk", f"Temper uses {_size(sum(disk['usage'].values()))}; {_size(disk['disk']['free'])} free"],
+    ])
+    return 0
+
+
+def version_cmd(args: list[str]) -> int:
+    from . import __version__
+
+    p = argparse.ArgumentParser(prog="temper version", description="Temper's version.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
+    try:
+        engine = _check(httpx.get(f"{running()['url']}/api/health", timeout=3)).get("version")
+    except (CliError, httpx.HTTPError):
+        engine = None  # not running: this copy's version is all there is to say
+    if a.json:
+        print(json.dumps({"version": __version__, "running_engine": engine}))
+    else:
+        print(f"temper {__version__}" + (f" (the running engine is {engine})" if engine and engine != __version__ else ""))
+    return 0
+
+
 def serve_cmd(args: list[str]) -> int:
     from .__main__ import run_engine
 
@@ -650,17 +718,19 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
-  temper models
+  temper models [--json]
   temper load <model or path> [--quant Q] [--context N] [--alongside] [--ttl S] [--alias NAME] [--gpu-layers N] [--estimate-only] [-y]
   temper ps [--json]
   temper unload <model> | --all
+  temper status [--json]
+  temper version
   temper chat ["prompt"] [--system "..."]
   temper train <config.yaml> [--set key=value ...] [--dry-run]
-  temper runs
+  temper runs [--json]
   temper export <run> [--format gguf] [--quant q4_k_m] [--imatrix]
   temper serve [--host H] [--port N]
   temper start claude|codex|opencode|aider [agent arguments]
