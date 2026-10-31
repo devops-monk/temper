@@ -44,7 +44,7 @@ export function Rail() {
   );
 
   return (
-    <nav className="flex w-[196px] shrink-0 flex-col border-r border-line px-2.5 pt-4 pb-3" aria-label="Main">
+    <nav className="flex w-[196px] shrink-0 flex-col border-r border-line px-2.5 pt-4 pb-3" aria-label={t("rail.main")}>
       <div className="mb-5 flex items-center gap-2 px-2">
         <LogoMark className="size-[22px]" />
         <span className="text-[17px] font-semibold tracking-[-0.01em]">Temper</span>

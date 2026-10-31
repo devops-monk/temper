@@ -1,3 +1,4 @@
+import { t as tr } from "./i18n";
 import type { EngineInfo, SetupProfile } from "./types";
 
 /** True inside the desktop shell; false when the UI runs in a plain browser (`npm run dev`). */
@@ -97,7 +98,7 @@ export class EngineError extends Error {
 }
 
 export function connection(): EngineInfo {
-  if (!current || current.status !== "running") throw new EngineError("The engine is not running yet.", 0);
+  if (!current || current.status !== "running") throw new EngineError(tr("engine.not_running"), 0);
   return current;
 }
 

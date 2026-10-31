@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
+import { type Key, useT } from "../lib/i18n";
 import { Button } from "./ui";
 
 const SEEN = "temper.tour";
@@ -7,19 +8,19 @@ const SEEN = "temper.tour";
 interface Step {
   /** The rail item to point at (its data-tour); none for the welcome. */
   target?: string;
-  title: string;
-  body: string;
+  title: Key;
+  body: Key;
 }
 
 const STEPS: Step[] = [
-  { title: "Welcome to Temper", body: "Temper runs, fine-tunes and exports AI models on this computer, without sending your data anywhere. Here's where everything is; it takes a minute." },
-  { target: "models", title: "Models", body: "Find models on Hugging Face and download them, or add files you already have. Temper says which ones fit this computer. Load one to chat with it." },
-  { target: "chat", title: "Chat", body: "Talk to the loaded model. Attach files and images, let it use tools, keep projects, or compare models side by side." },
-  { target: "datasets", title: "Datasets", body: "Turn your own files, a Hugging Face dataset or a web link into training data, and check it before you train." },
-  { target: "train", title: "Train", body: "Fine-tune a model on your data. Temper fits the settings to this computer, shows the loss and sample replies as it learns, and keeps the best checkpoint." },
-  { target: "export", title: "Export", body: "Save what you trained as GGUF, MLX or an adapter, then add it to Ollama or publish it to Hugging Face." },
-  { target: "connect", title: "Connect", body: "Use the loaded model from Claude Code, Codex, editors and your own code, through OpenAI- and Anthropic-compatible APIs." },
-  { target: "settings", title: "Settings", body: "Appearance, accounts, privacy and your statistics. You can take this tour again from here." },
+  { title: "tour.welcome", body: "tour.welcome_body" },
+  { target: "models", title: "nav.models", body: "tour.models" },
+  { target: "chat", title: "nav.chat", body: "tour.chat" },
+  { target: "datasets", title: "nav.datasets", body: "tour.datasets" },
+  { target: "train", title: "nav.train", body: "tour.train" },
+  { target: "export", title: "nav.export", body: "tour.export" },
+  { target: "connect", title: "nav.connect", body: "tour.connect" },
+  { target: "settings", title: "nav.settings", body: "tour.settings" },
 ];
 
 /** Whether the tour is showing; Settings starts it again. */
@@ -55,6 +56,7 @@ const CARD = 320;
 
 /** A short walk around the rail: a spotlight on each part of the app, with a card beside it. */
 export function Tour() {
+  const t = useT();
   const { open, close } = useTour();
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -126,26 +128,26 @@ export function Tour() {
         style={style}
       >
         <div className="text-[11.5px] text-muted tabular-nums">
-          {i + 1} of {STEPS.length}
+          {t("tour.step", { n: i + 1, total: STEPS.length })}
         </div>
         <h2 id="tour-title" className="mt-1 text-[15px] font-semibold">
-          {step.title}
+          {t(step.title)}
         </h2>
         <p id="tour-body" className="mt-1.5 text-[13px] leading-relaxed text-muted">
-          {step.body}
+          {t(step.body)}
         </p>
         <div className="mt-4 flex items-center gap-2">
           <button className="text-[12.5px] text-muted hover:text-text" onClick={close}>
-            {last ? "Close" : "Skip the tour"}
+            {t(last ? "tour.close" : "tour.skip")}
           </button>
           <span className="flex-1" />
           {i > 0 && (
             <Button size="sm" variant="ghost" onClick={back}>
-              Back
+              {t("tour.back")}
             </Button>
           )}
           <Button size="sm" variant="primary" onClick={next}>
-            {i === 0 ? "Show me" : last ? "Done" : "Next"}
+            {t(i === 0 ? "tour.show" : last ? "tour.done" : "tour.next")}
           </Button>
         </div>
       </div>

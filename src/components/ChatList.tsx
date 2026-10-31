@@ -107,7 +107,7 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
         onMove={(folder) => void patch(c.id, { folder })}
         onExport={(format) => void exportChat(c, format).catch((e: Error) => setError(e.message))}
         onDelete={() => {
-          if (!confirm(`Delete “${c.title}”? This can't be undone.`)) return;
+          if (!confirm(t("list.delete_confirm", { title: c.title }))) return;
           void run(api(`/api/chats/${c.id}`, { method: "DELETE" })).then(() => onDeleted(c.id));
         }}
       />
@@ -179,15 +179,15 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
                   chats.filter((c) => c.folder === f && !c.pinned),
                   <Folder className="size-3" />,
                   <span className="hidden items-center gap-1 group-hover/section:flex">
-                    <button className="hover:text-text" onClick={() => setRenaming(`folder:${f}`)} title={`Rename ${f}`}>
-                      <Pencil className="size-3" aria-label={`Rename ${f}`} />
+                    <button className="hover:text-text" onClick={() => setRenaming(`folder:${f}`)} title={t("list.rename_named", { name: f })}>
+                      <Pencil className="size-3" aria-label={t("list.rename_named", { name: f })} />
                     </button>
                     <button
                       className="hover:text-danger"
-                      onClick={() => confirm(`Remove the folder ${f}? Its chats stay.`) && void run(api("/api/chats/folders/remove", { json: { name: f } }))}
-                      title={`Remove ${f}`}
+                      onClick={() => confirm(t("list.remove_folder_confirm", { name: f })) && void run(api("/api/chats/folders/remove", { json: { name: f } }))}
+                      title={t("list.remove_named", { name: f })}
                     >
-                      <X className="size-3" aria-label={`Remove ${f}`} />
+                      <X className="size-3" aria-label={t("list.remove_named", { name: f })} />
                     </button>
                   </span>,
                   false,
@@ -249,6 +249,7 @@ function ChatRow({
   onExport: (format: "md" | "json") => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -274,7 +275,7 @@ function ChatRow({
         onClick={onOpen}
         aria-current={active ? "true" : undefined}
         className={cx("flex w-full flex-col rounded-md px-2.5 py-1.5 text-left", active ? "bg-surface shadow-[0_0_0_1px_var(--line)]" : "hover:bg-surface/70")}
-        title={[chat.project && `Project: ${chat.project}`, chat.model && `Model: ${chat.model}`, relativeDate(chat.updated)].filter(Boolean).join("\n")}
+        title={[chat.project && t("list.project", { name: chat.project }), chat.model && t("list.model", { name: chat.model }), relativeDate(chat.updated)].filter(Boolean).join("\n")}
       >
         <span className={cx("truncate pr-5 text-[13px]", active ? "font-medium" : "")}>{chat.title}</span>
         {chat.snippet && <Snippet text={chat.snippet} />}
@@ -282,7 +283,7 @@ function ChatRow({
       <button
         onClick={() => setMenu((m) => !m)}
         className={cx("absolute top-1.5 right-1.5 rounded p-0.5 text-muted hover:bg-surface-2 hover:text-text", menu ? "block" : "hidden group-hover/row:block group-focus-within/row:block")}
-        aria-label={`Actions for ${chat.title}`}
+        aria-label={t("list.actions", { title: chat.title })}
         aria-expanded={menu}
       >
         <MoreHorizontal className="size-3.5" />
@@ -290,16 +291,16 @@ function ChatRow({
       {menu && (
         <div className="absolute top-8 right-1 z-20 w-52 rounded-lg border border-line bg-surface p-1 shadow-lg" role="menu">
           <button className={menuItem} onClick={act(onRename)} role="menuitem">
-            <Pencil className="size-3.5" /> Rename
+            <Pencil className="size-3.5" /> {t("list.rename")}
           </button>
           <button className={menuItem} onClick={act(onPin)} role="menuitem">
-            {chat.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />} {chat.pinned ? "Unpin" : "Pin"}
+            {chat.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />} {t(chat.pinned ? "list.unpin" : "list.pin")}
           </button>
           {(folders.length > 0 || chat.folder) && (
             <label className="flex items-center gap-2 px-2 py-1.5 text-[13px]">
               <Folder className="size-3.5 shrink-0" />
-              <select value={chat.folder ?? ""} onChange={(e) => act(() => onMove(e.target.value))()} className="min-w-0 flex-1 rounded border border-line bg-surface px-1 py-0.5 text-[12.5px]" aria-label="Move to folder">
-                <option value="">No folder</option>
+              <select value={chat.folder ?? ""} onChange={(e) => act(() => onMove(e.target.value))()} className="min-w-0 flex-1 rounded border border-line bg-surface px-1 py-0.5 text-[12.5px]" aria-label={t("list.move")}>
+                <option value="">{t("list.no_folder")}</option>
                 {folders.map((f) => (
                   <option key={f} value={f}>
                     {f}
@@ -309,13 +310,13 @@ function ChatRow({
             </label>
           )}
           <button className={menuItem} onClick={act(() => onExport("md"))} role="menuitem">
-            <Download className="size-3.5" /> Export as Markdown
+            <Download className="size-3.5" /> {t("list.export_md")}
           </button>
           <button className={menuItem} onClick={act(() => onExport("json"))} role="menuitem">
-            <Download className="size-3.5" /> Export as JSON
+            <Download className="size-3.5" /> {t("list.export_json")}
           </button>
           <button className={cx(menuItem, "text-danger")} onClick={act(onDelete)} role="menuitem">
-            <Trash2 className="size-3.5" /> Delete
+            <Trash2 className="size-3.5" /> {t("list.delete")}
           </button>
         </div>
       )}
@@ -324,6 +325,7 @@ function ChatRow({
 }
 
 function InlineName({ initial, placeholder, onDone }: { initial: string; placeholder?: string; onDone: (value: string | null) => void }) {
+  const t = useT();
   const ref = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
   useEffect(() => ref.current?.select(), []);
@@ -340,7 +342,7 @@ function InlineName({ initial, placeholder, onDone }: { initial: string; placeho
         finish(ref.current!.value.trim());
       }}
     >
-      <Input ref={ref} defaultValue={initial} placeholder={placeholder} autoFocus className="h-7 px-2 text-[13px]" onKeyDown={(e) => e.key === "Escape" && finish(null)} onBlur={(e) => finish(e.currentTarget.value.trim())} aria-label={placeholder ?? "Name"} />
+      <Input ref={ref} defaultValue={initial} placeholder={placeholder} autoFocus className="h-7 px-2 text-[13px]" onKeyDown={(e) => e.key === "Escape" && finish(null)} onBlur={(e) => finish(e.currentTarget.value.trim())} aria-label={placeholder ?? t("list.name")} />
     </form>
   );
 }
@@ -355,6 +357,7 @@ interface ImportSource {
 
 /** Finds Claude Code, Codex and Cursor history on this computer and imports it. */
 function ImportPanel({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const t = useT();
   const [sources, setSources] = useState<ImportSource[] | null>(null);
   const load = useCallback(() => {
     api<ImportSource[]>("/api/chats/import/sources").then(setSources, () => setSources([]));
@@ -363,18 +366,18 @@ function ImportPanel({ onClose, onImported }: { onClose: () => void; onImported:
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-[460px] rounded-xl border border-line bg-bg p-5 shadow-xl" role="dialog" aria-label="Import chats">
+      <div className="w-full max-w-[460px] rounded-xl border border-line bg-bg p-5 shadow-xl" role="dialog" aria-label={t("list.import_title")}>
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="font-semibold">Import chats</h2>
-          <button className="text-muted hover:text-text" onClick={onClose} aria-label="Close">
+          <h2 className="font-semibold">{t("list.import_title")}</h2>
+          <button className="text-muted hover:text-text" onClick={onClose} aria-label={t("list.close")}>
             <X className="size-4" />
           </button>
         </div>
         <p className="mb-4 text-[12.5px] text-muted">
-          Copies your conversations from these apps into Temper, so you can search them and continue them with a local model. Only what you and the assistant wrote comes across; tool calls and their output stay behind. Importing again adds what's new.
+          {t("list.import_about")}
         </p>
         {!sources ? (
-          <p className="text-muted">Looking for chats on this computer…</p>
+          <p className="text-muted">{t("list.looking")}</p>
         ) : (
           <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
             {sources.map((s) => (
@@ -395,6 +398,7 @@ function ImportPanel({ onClose, onImported }: { onClose: () => void; onImported:
 }
 
 function ImportRow({ source, onDone }: { source: ImportSource; onDone: () => void }) {
+  const t = useT();
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { status, events } = useJob(jobId);
@@ -424,12 +428,12 @@ function ImportRow({ source, onDone }: { source: ImportSource; onDone: () => voi
             {source.label}
           </p>
           <p className="truncate text-[12px] text-muted" title={source.path}>
-            {source.found ? `${source.found} conversation${source.found === 1 ? "" : "s"} found` : "Nothing found"}
-            {source.imported ? `, ${source.imported} already in Temper` : ""}
+            {source.found ? (source.found === 1 ? t("list.found_one") : t("list.found", { n: source.found })) : t("list.nothing")}
+            {source.imported ? t("list.already", { n: source.imported }) : ""}
           </p>
         </div>
         <Button size="sm" variant={source.found ? "primary" : "secondary"} disabled={!source.found || running} onClick={() => void start()}>
-          {running ? "Importing…" : source.imported ? "Import new" : "Import"}
+          {t(running ? "list.importing" : source.imported ? "list.import_new" : "list.import")}
         </Button>
       </div>
       {running && (
@@ -439,10 +443,10 @@ function ImportRow({ source, onDone }: { source: ImportSource; onDone: () => voi
       )}
       {status === "done" && result && (
         <p className="mt-1.5 text-[12px] text-muted">
-          {result.added ?? 0} added, {result.updated ?? 0} updated{result.unchanged ? `, ${result.unchanged} already up to date` : ""}.
+          {t(result.unchanged ? "list.result_unchanged" : "list.result", { added: result.added ?? 0, updated: result.updated ?? 0, unchanged: result.unchanged ?? 0 })}
         </p>
       )}
-      {(error || status === "failed") && <p className="mt-1.5 text-[12px] text-danger">{error ?? "The import stopped. Try again."}</p>}
+      {(error || status === "failed") && <p className="mt-1.5 text-[12px] text-danger">{error ?? t("list.import_failed")}</p>}
     </li>
   );
 }

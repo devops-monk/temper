@@ -1,6 +1,7 @@
 import { Loader2, Square, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { connection } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { Button } from "./ui";
 
 /** Text to speech as the engine reports it (engine tts.py). */
@@ -76,6 +77,7 @@ export async function speakUrl(text: string, voice?: string, speed = 1): Promise
 
 /** A reply's "Read aloud" button. */
 export function ReadAloud({ text }: { text: string }) {
+  const t = useT();
   const { tts } = useTts();
   const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +109,7 @@ export function ReadAloud({ text }: { text: string }) {
     <>
       <Button size="sm" variant="ghost" onClick={() => (state === "playing" ? audio.current?.pause() : state === "idle" && void play())} title={error ?? undefined}>
         {state === "loading" ? <Loader2 className="size-3.5 animate-spin" /> : state === "playing" ? <Square className="size-3 fill-current" /> : <Volume2 className="size-3.5" />}
-        {state === "playing" ? "Stop" : "Read aloud"}
+        {t(state === "playing" ? "aloud.stop" : "aloud.read")}
       </Button>
       {error && <span className="self-center text-[12px] text-danger">{error}</span>}
     </>

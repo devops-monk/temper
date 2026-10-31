@@ -3,6 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { create } from "zustand";
 import { inTauri } from "./engine";
+import { t as tr } from "./i18n";
 
 /** App updates from GitHub Releases. Each release's `latest.json` is signed in CI; the updater
  * checks the signature against the public key in tauri.conf.json before installing anything. */
@@ -78,7 +79,7 @@ export const useUpdates = create<UpdateState>((set, get) => ({
       await update.install();
       await relaunch();
     } catch (e) {
-      set({ status: "error", error: `The update didn't install. ${String(e)} Your current version still works.` });
+      set({ status: "error", error: tr("update.failed", { error: String(e) }) });
     }
   },
   setAuto: (auto) => {

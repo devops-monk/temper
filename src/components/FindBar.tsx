@@ -102,13 +102,13 @@ export function FindBar({ root, onClose }: { root: RefObject<HTMLElement | null>
       <span className="w-16 text-center text-[12px] text-muted tabular-nums" aria-live="polite">
         {query ? (ranges.length ? t("find.count", { n: current + 1, total: ranges.length }) : t("find.none")) : ""}
       </span>
-      <button onClick={() => step(-1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label="Previous match" title={t("find.previous")}>
+      <button onClick={() => step(-1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label={t("find.prev_match")} title={t("find.previous")}>
         <ChevronUp className="size-4" />
       </button>
-      <button onClick={() => step(1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label="Next match" title={t("find.next")}>
+      <button onClick={() => step(1)} disabled={!ranges.length} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40" aria-label={t("find.next_match")} title={t("find.next")}>
         <ChevronDown className="size-4" />
       </button>
-      <button onClick={onClose} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label="Close find" title={t("find.close")}>
+      <button onClick={onClose} className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label={t("find.close_find")} title={t("find.close")}>
         <X className="size-4" />
       </button>
     </div>
