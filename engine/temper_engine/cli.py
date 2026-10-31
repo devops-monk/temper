@@ -1552,6 +1552,54 @@ def classify_cmd(args: list[str]) -> int:
     return 0
 
 
+def embed_cmd(args: list[str]) -> int:
+    if args[:1] == ["train"]:
+        p = argparse.ArgumentParser(prog="temper embed train", description="Tune an embedding model on pairs (a question and its passage, a search and its result).")
+        p.add_argument("name")
+        p.add_argument("dataset", help="a CSV, JSON or JSONL file with two columns")
+        p.add_argument("--anchor", help="the column of questions or searches, when it isn't found by name")
+        p.add_argument("--positive", help="the column of what each should find, when it isn't found by name")
+        p.add_argument("--base", help="the sentence-transformers model to start from (default sentence-transformers/all-MiniLM-L6-v2)")
+        p.add_argument("--epochs", type=int, default=1)
+        p.add_argument("--hold-out", type=float, default=0.1, help="share of pairs kept back to measure it (default 0.1)")
+        a = p.parse_args(args[1:])
+        body = {"name": a.name, "dataset": os.path.abspath(a.dataset), "anchor_column": a.anchor, "positive_column": a.positive, "epochs": a.epochs, "eval_share": a.hold_out}
+        if a.base:
+            body["base"] = a.base
+        with _client(running()) as c:
+            job = _check(c.post("/api/embedders", json=body))
+            print(f"{job['train']} pairs to learn from, {job['eval']} held out", file=sys.stderr)
+            end = follow(c, job["id"], logs=False)
+        if end.get("status") != "done":
+            raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+        before, after = end["result"].get("before"), end["result"].get("after")
+        if before and after:
+            _table([["", "BEFORE", "AFTER"]] + [[label, f"{before[k]:.0%}", f"{after[k]:.0%}"] for k, label in (("recall_at_1", "Right one first"), ("recall_at_5", "In the top 5"))])
+        print(f'Use it: temper embed "some text" --model {end["result"]["name"]}, or model "{end["result"]["name"]}" at /v1/embeddings')
+        return 0
+    p = argparse.ArgumentParser(prog="temper embed", description="Embedding vectors for text, from a model on this computer (as /v1/embeddings gives them).")
+    p.add_argument("text", nargs="?", help="what to embed (default: each line of standard input)")
+    p.add_argument("--model", help="a tuned model, a knowledge-base embedding model, or a downloaded sentence-transformers model")
+    p.add_argument("--list", action="store_true", help="list tuned embedding models")
+    p.add_argument("--delete", metavar="NAME", help="delete a tuned embedding model")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        if a.list:
+            tuned = _check(c.get("/api/embedders"))["tuned"]
+            _table([[t["name"], t["base_id"], f"{t['after']['recall_at_1']:.0%} first" if t.get("after") else "", str(t["train_pairs"])] for t in tuned] or [["No tuned embedding models yet."]])
+            return 0
+        if a.delete:
+            _check(c.delete(f"/api/embedders/{a.delete}"))
+            print(f"Deleted {a.delete}.")
+            return 0
+        texts = [a.text] if a.text is not None else [line for line in sys.stdin.read().splitlines() if line.strip()]
+        out = _check(c.post("/v1/embeddings", json={"input": texts, "model": a.model}))
+    print(f"{out['model']}, {len(out['data'][0]['embedding'])} dimensions", file=sys.stderr)
+    for d in out["data"]:
+        print(json.dumps(d["embedding"]))
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1628,7 +1676,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "embed": embed_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1654,6 +1702,7 @@ USAGE = """usage:
   temper image ["prompt"] [--from pic] [--size WxH] [-n N] [--seed S] [--lora L] [-o folder] | --models | --install [--model M]
   temper decide "question" [-t text | < file] [--choices a,b | --labels a,b | --score 1-10] [--lines] [--save NAME] | -s NAME | --list
   temper classify train <name> <examples.csv> [--text C] [--label C] [--tune] | <name> ["text"] | --list | --install
+  temper embed ["text"] [--model M] | train <name> <pairs.jsonl> [--base B] [--epochs N] | --list | --delete NAME
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey

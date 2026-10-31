@@ -12,7 +12,8 @@ job events as `@@{json}` lines (the format jobs.run_command reads).
 
 `python classifier_worker.py serve` answers JSON lines on stdin, {"classifier": folder, "texts": [...]},
 with {"done": {"results": [{"label", "confidence", "scores"}]}} or {"error": "..."}, keeping the
-classifiers it has loaded.
+classifiers it has loaded. It also embeds for /v1/embeddings (embedders.py): {"embed": folder, "texts"}
+gets {"done": {"vectors": [...]}}, unit length.
 """
 
 from __future__ import annotations
@@ -160,13 +161,25 @@ def classify(req: dict) -> dict:
     return {"results": results}
 
 
+_encoders: dict = {}
+
+
+def embed(req: dict) -> dict:
+    from sentence_transformers import SentenceTransformer
+
+    if req["embed"] not in _encoders:
+        _encoders[req["embed"]] = SentenceTransformer(req["embed"], device=device())
+    return {"vectors": encode(_encoders[req["embed"]], req["texts"]).tolist()}
+
+
 def serve() -> None:
     print(json.dumps({"ready": True}), flush=True)
     for line in sys.stdin:
         if not line.strip():
             continue
         try:
-            print(json.dumps({"done": classify(json.loads(line))}), flush=True)
+            req = json.loads(line)
+            print(json.dumps({"done": embed(req) if "embed" in req else classify(req)}), flush=True)
         except Exception as e:
             print(json.dumps({"error": f"{type(e).__name__}: {e}"}), flush=True)
 

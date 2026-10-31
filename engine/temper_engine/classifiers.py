@@ -10,7 +10,7 @@ The training data is a CSV, JSON or JSONL file with a text column and a label co
 measure the classifier; a prepared `x.jsonl` with an `x.eval.jsonl` beside it uses that instead.
 
 PyTorch and sentence-transformers install on request into their own environment under
-engines/classifier. Classifiers are folders under classifiers/ in Temper's home. A saved decision can
+engines/classifier, which also tunes and runs sentence-transformers embedding models (embedders.py). Classifiers are folders under classifiers/ in Temper's home. A saved decision can
 answer with one (decisions.py), and apps reach them at POST /v1/classifiers/{name}.
 """
 

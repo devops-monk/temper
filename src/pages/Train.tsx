@@ -12,6 +12,7 @@ import { useApp } from "../lib/store";
 import { useJob } from "../lib/useJob";
 import type { Job } from "../lib/types";
 import { Classifiers } from "./Classifiers";
+import { Embedders } from "./Embedders";
 
 interface Form {
   name: string;
@@ -300,14 +301,17 @@ function useFit(base_model: string, method: Form["method"], objective: Form["obj
   return { autoFit, setAutoFit, fitted: fitted === `${base_model} ${method} ${objective}` };
 }
 
-/** What the Train page trains: a language model (LoRA and the rest), or a classifier (Classifiers.tsx). */
-function ModeSwitch({ mode, onChange }: { mode: "lm" | "classifier"; onChange: (m: "lm" | "classifier") => void }) {
+type Mode = "lm" | "classifier" | "embedder";
+
+/** What the Train page trains: a language model (LoRA and the rest), a classifier (Classifiers.tsx) or an embedding model (Embedders.tsx). */
+function ModeSwitch({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
     <div className="flex rounded-md border border-line p-0.5 text-[12.5px]" role="tablist" aria-label="What to train">
       {(
         [
           ["lm", "Language model"],
           ["classifier", "Classifier"],
+          ["embedder", "Embeddings"],
         ] as const
       ).map(([key, label]) => (
         <button
@@ -325,7 +329,7 @@ function ModeSwitch({ mode, onChange }: { mode: "lm" | "classifier"; onChange: (
 }
 
 export function TrainPage() {
-  const [mode, setMode] = useState<"lm" | "classifier">("lm");
+  const [mode, setMode] = useState<Mode>("lm");
   const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, pendingBaseModel, setPendingBaseModel, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
   const [form, setForm] = useState<Form>(() => ({ ...DEFAULTS, base_model: system?.backend === "metal" ? MLX_DEFAULT_MODEL : DEFAULTS.base_model }));
@@ -395,6 +399,13 @@ export function TrainPage() {
       <div className="flex min-h-0 flex-1 flex-col">
         <PageHeader title="Train" description="Teach a small model to sort text into your labels, from examples. It answers in milliseconds." actions={<ModeSwitch mode={mode} onChange={setMode} />} />
         <Classifiers />
+      </div>
+    );
+  if (mode === "embedder")
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PageHeader title="Train" description="Tune an embedding model on pairs from your data, so search finds what you mean." actions={<ModeSwitch mode={mode} onChange={setMode} />} />
+        <Embedders />
       </div>
     );
 

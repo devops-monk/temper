@@ -54,6 +54,23 @@ Temper is also an MCP server: an agent can list, load and unload your local mode
 ask for a typed decision (below), and follow or cancel Temper's jobs (downloads, training, exports). Add it with
 `temper mcp add claude` (or `codex`, `cursor`, `vscode`).
 
+## Embeddings
+
+`POST /v1/embeddings` is OpenAI's embeddings API, answered by the embedding models on this computer:
+
+- the knowledge bases' models (Qwen3 Embedding, Nomic, BGE small; GGUF, run by llama.cpp), by id or repo,
+- embedding models you tuned on the Train page, by name ([Embedding models](training.md#embedding-models)),
+- any sentence-transformers model downloaded from Hugging Face, by repo id (this needs the classifier
+  environment from *Train → Classifier*).
+
+Any other name, such as `text-embedding-3-small`, gets the knowledge bases' model, so apps written for
+OpenAI work unchanged. `encoding_format: "base64"` and `dimensions` (keep the first N numbers, made unit
+length again) work too. Vectors are unit length, so a dot product is the cosine similarity.
+
+```python
+client.embeddings.create(model="our-docs", input=["Who owns project Falcon?"]).data[0].embedding
+```
+
 ## Decisions
 
 When your code needs a value rather than prose (is this spam, which team gets this ticket, how positive is

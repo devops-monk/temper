@@ -99,3 +99,28 @@ temper classify train tickets examples.csv [--text message --label team] [--tune
 temper classify tickets "I was charged twice"      # billing  (92%)
 temper classify tickets < inbox.txt                 # one answer per line
 ```
+
+## Embedding models
+
+An embedding model turns text into a vector so that texts which mean the same thing land close together:
+it's what knowledge bases and semantic search run on. A general one doesn't know your product names,
+codenames or jargon. *Train → Embeddings* tunes one on **pairs** from your data: a question and the passage
+that answers it, a search and the product it should find.
+
+- **Pairs**: a CSV, JSON or JSONL file with two columns, found by name (`query`, `question`, `anchor`… and
+  `passage`, `answer`, `positive`…) or picked. At least 10; a hundred or more is better. No negatives are
+  needed: each pair's positive is pulled close and the other pairs' positives pushed away.
+- **Measured before and after**: a tenth of the pairs is held out. Each held-out question searches all their
+  answers (and some training answers as distractors), and the row shows how often the right one came first
+  and how often it was in the top 5, before and after tuning.
+- **Start from** MiniLM L6, BGE small or Multilingual MiniLM. More passes help small sets; too many and the
+  model forgets what it knew, which the held-out numbers show.
+
+It shares the classifiers' environment. Use a tuned model from your code as `model` at `/v1/embeddings`
+(see [Connect](connect.md#embeddings)), or from a terminal:
+
+```bash
+temper embed train our-docs pairs.jsonl [--epochs 3] [--base BAAI/bge-small-en-v1.5]
+temper embed "Who owns project Falcon?" --model our-docs     # the vector, as JSON
+temper embed --list
+```

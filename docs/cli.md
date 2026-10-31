@@ -140,6 +140,16 @@ temper classify --list | <name> --delete
 
 See [Classifiers](training.md#classifiers).
 
+## Embeddings
+
+```bash
+temper embed "text" [--model M]           # the vector as JSON; or one per line of standard input
+temper embed train <name> pairs.jsonl [--anchor C] [--positive C] [--base B] [--epochs N] [--hold-out 0.1]
+temper embed --list | --delete NAME
+```
+
+See [Embedding models](training.md#embedding-models).
+
 ## Images
 
 ```bash
