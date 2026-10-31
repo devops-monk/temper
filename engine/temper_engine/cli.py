@@ -1156,6 +1156,50 @@ def create_cmd(args: list[str]) -> int:
     return 0
 
 
+def devices_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper devices", description="Other computers running Temper whose models this one can use.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    sub = p.add_subparsers(dest="action")
+    add = sub.add_parser("add", help="link a computer by its address and one of its named API keys")
+    add.add_argument("url", help="its address, as its Connect page shows it (http://192.168.1.20:8765)")
+    add.add_argument("--key", required=True, help="a named API key made on that computer")
+    add.add_argument("--name", help="what to call it (default: its host name)")
+    sub.add_parser("remove", help="unlink a computer").add_argument("name")
+    prefer = sub.add_parser("prefer", help="which answers when it and this computer both have the model")
+    prefer.add_argument("name", help="a device's name, or `this` for this computer")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        listed = _check(c.get("/api/devices", params={"fresh": "true"}))
+
+        def named(name: str) -> dict:
+            found = next((d for d in listed["devices"] if d["name"].lower() == name.lower()), None)
+            if found is None:
+                raise CliError(f"No linked device called {name}." + (f" These are: {', '.join(d['name'] for d in listed['devices'])}." if listed["devices"] else ""))
+            return found
+
+        if a.action == "add":
+            d = _check(c.post("/api/devices", json={"url": a.url, "key": a.key, "name": a.name}))
+            print(f"Linked {d['name']} at {d['url']}, with {len(d['models'])} models. Ask for one as <model>@{d['name']}.")
+        elif a.action == "remove":
+            _check(c.delete(f"/api/devices/{named(a.name)['id']}"))
+            print(f"Unlinked {a.name}.")
+        elif a.action == "prefer":
+            device = None if a.name.lower() == "this" else named(a.name)
+            _check(c.put("/api/devices/preferred", json={"device": device and device["id"]}))
+            print(f"{device['name']} answers for models both computers have." if device else "This computer answers for its own models.")
+        elif a.json:
+            print(json.dumps(listed, indent=2))
+        elif not listed["devices"]:
+            print("No devices are linked. `temper devices add <address> --key <key>` links one; make the key on that computer under Connect → API keys.")
+        else:
+            rows = [["DEVICE", "ADDRESS", "STATUS", "MODELS"]]
+            for d in listed["devices"]:
+                status = ("online" if d["online"] else d["error"]) + (", preferred" if d["preferred"] else "")
+                rows.append([d["name"], d["url"], status, ", ".join(m["id"] + ("" if m["loaded"] else " (would load)") for m in d["models"]) or "-"])
+            _table(rows)
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1232,7 +1276,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1252,6 +1296,7 @@ USAGE = """usage:
   temper serve [--host H] [--port N]
   temper daemon up|down|status|install|uninstall
   temper create <folder> [--template chat|tools|rag] [--lang python|typescript] [--model M]
+  temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey
   temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode

@@ -280,7 +280,7 @@ async def v1_messages(request: Request):
     api_keys.record_prompt(entry, req.get("messages"))
     if not req.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
-            r = await client.post(url, json=req)
+            r = await client.post(url, json=req, headers=getattr(server, "headers", None))
         if r.status_code != 200:
             return _error(r.status_code, r.text[:500])
         msg = from_openai(r.json(), model)
@@ -289,7 +289,7 @@ async def v1_messages(request: Request):
         return JSONResponse(msg)
 
     client = httpx.AsyncClient(timeout=None)
-    upstream = await client.send(client.build_request("POST", url, json=req), stream=True)
+    upstream = await client.send(client.build_request("POST", url, json=req, headers=getattr(server, "headers", None)), stream=True)
     if upstream.status_code != 200:
         text = (await upstream.aread()).decode(errors="replace")
         await upstream.aclose()

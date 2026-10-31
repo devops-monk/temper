@@ -146,7 +146,7 @@ async def _answer(body: dict, chat: bool):
     started = time.time()
     if not req["stream"]:
         async with httpx.AsyncClient(timeout=None) as client:
-            r = await client.post(url, json=req)
+            r = await client.post(url, json=req, headers=getattr(_server, "headers", None))
         if r.status_code != 200:
             return JSONResponse({"error": r.text[:500]}, status_code=r.status_code)
         reply = r.json()
@@ -162,7 +162,7 @@ async def _answer(body: dict, chat: bool):
         return JSONResponse(out)
 
     client = httpx.AsyncClient(timeout=None)
-    upstream = await client.send(client.build_request("POST", url, json=req), stream=True)
+    upstream = await client.send(client.build_request("POST", url, json=req, headers=getattr(_server, "headers", None)), stream=True)
 
     async def lines():
         think = ThinkFilter()

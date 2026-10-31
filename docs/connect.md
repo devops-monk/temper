@@ -68,6 +68,25 @@ terminal. Keys are stored only as hashes, so copy a new key when it is shown.
 Only `/v1` is reachable from them, and only with an API key. Scan the QR code to copy the address.
 Turn it off when you don't need it.
 
+## Linked devices
+
+A laptop can use a desktop's models, and its GPU. On the desktop, turn on *Serve the model API on this network*
+and create an API key. On the laptop, add the desktop under **Connect → Linked devices** with its address
+and that key, or from a terminal:
+
+```bash
+temper devices add 192.168.1.20:8765 --key tk-… --name desk
+temper devices                     # each device, whether it's online, and its models
+temper devices prefer desk         # or `this`
+```
+
+The desktop's models show on the laptop's Models page as "on desk", and in `/v1/models` as `<model>@desk`.
+A request for `<model>@desk` runs on the desktop. A request for a model by name alone runs on the laptop if
+the laptop has that model, and on the desktop if only the desktop has it. When both have it, the
+**preferred** device answers. Chat, on the Chat page, uses the laptop's own models. `temper chat --model <model>@desk` and
+any app using the API can use the desktop's. The key is kept in `devices.json` in Temper's folder, readable
+only by you; revoke it on the desktop to cut the link off.
+
 ## Apps that expect Ollama or llama.cpp
 
 Some apps only look for Ollama (port 11434) or a llama.cpp server (port 8080). Under **Connect →

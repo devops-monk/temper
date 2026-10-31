@@ -118,9 +118,9 @@ def _absorb(gen: Generation, data: str, calls: dict[int, dict]) -> None:
 
 async def _round(gen: Generation, client: httpx.AsyncClient, body: dict) -> list[tools.Call] | None:
     """Streams one round of the reply; returns the tool calls it made, or None if it failed."""
-    _, url, body = await aroute(body)
+    server, url, body = await aroute(body)
     calls: dict[int, dict] = {}
-    async with client.stream("POST", url, json={**body, "stream": True}) as r:
+    async with client.stream("POST", url, json={**body, "stream": True}, headers=getattr(server, "headers", None)) as r:
         if r.status_code != 200:
             text = (await r.aread()).decode(errors="replace")
             try:
@@ -157,7 +157,7 @@ async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]
     try:
         server, _, _ = await aroute(dict(body))
         # llama-server takes the tools natively; other engines were offered them in the system prompt (compaction.py).
-        native = server.engine == "llama.cpp"
+        native = server.engine in ("llama.cpp", "remote")  # a linked device's Temper does its own offering
         offered = await asyncio.to_thread(tools.offer, names)  # connects the chat's MCP servers
         approve = [*approve, *offered.approve()]
         messages = list(body["messages"])

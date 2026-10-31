@@ -105,6 +105,17 @@ choosing passages by keyword overlap, so no embedding model is needed). Each com
 README. It also makes an API key named after the folder and writes it, with Temper's address and the model, to
 `.env`, which is in the project's `.gitignore`. Revoke the key under Connect → API keys when you're done with it.
 
+## Linked devices
+
+```bash
+temper devices add <address> --key <key> [--name desk]   # a key made on that computer, under Connect → API keys
+temper devices [--json]
+temper devices prefer desk | this
+temper devices remove desk
+```
+
+See [Connect](connect.md#linked-devices) for how requests are routed between them.
+
 ## Engines
 
 ```bash

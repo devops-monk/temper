@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
+import { Devices } from "../components/Devices";
 import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
 import { OnDemand } from "../components/OnDemand";
@@ -235,6 +236,16 @@ export function ConnectPage() {
           <h2 className="text-[15px] font-semibold">Other devices</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">Let phones and other computers on your home network use the loaded model.</p>
           <LanAccess />
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">Linked devices</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">
+            Use another computer's models from this one, such as a desktop's GPU from a laptop. On that computer, turn on serving on the network and make an API key, then link it here.
+            Ask for its models as <span className="font-mono text-[12.5px]">model@device</span>; a model only it has can be asked for by name alone. The preferred device answers for
+            models both computers have.
+          </p>
+          <Devices />
         </div>
 
         <div className="mt-8 max-w-[760px]">

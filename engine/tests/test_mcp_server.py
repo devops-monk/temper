@@ -60,7 +60,7 @@ def test_temper_s_own_client_can_use_temper_s_server(app_client, monkeypatch):
 def test_ask_model_returns_the_answer_without_its_thinking(monkeypatch):
     seen = {}
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, headers=None):
         seen.update(json)
         return httpx.Response(200, json={"choices": [{"message": {"content": "<think>hmm</think>\nParis."}}]})
 

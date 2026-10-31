@@ -1,10 +1,11 @@
 import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pause, Play, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CatalogView } from "../components/Catalog";
+import { useDevices } from "../components/Devices";
 import { CHAT_CONTEXT, type ChatEstimate, LoadButton, folderEngine, useEngines } from "../components/LoadButton";
 import { RepoAccess } from "../components/HfAccount";
 import { SOURCE_NAME, useHubSource } from "../components/HubSource";
-import { Badge, Button, EmptyState, Input, Notice, PageHeader, ProgressBar, Select, Toggle, cx } from "../components/ui";
+import { Badge, Button, CopyButton, EmptyState, Input, Notice, PageHeader, ProgressBar, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
@@ -332,6 +333,44 @@ function OllamaModels({ version, onImported }: { version: number; onImported: (e
             </Button>
           </li>
         ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The models of linked computers (Connect → Linked devices), which the API answers from there. */
+function DeviceModels() {
+  const { devices } = useDevices();
+  const go = useApp((s) => s.go);
+  if (!devices.length) return null;
+  return (
+    <div className="mx-7 mt-6 mb-6">
+      <h2 className="text-[13px] font-semibold">On other devices</h2>
+      <p className="mt-0.5 mb-2 text-[12px] text-muted">
+        Apps and agents using Temper's API reach these by the name shown; they run on that computer.{" "}
+        <button className="underline hover:text-text" onClick={() => go("connect")}>
+          Linked devices
+        </button>
+      </p>
+      <ul className="divide-y divide-line rounded-lg border border-line bg-surface text-[13px]">
+        {devices.flatMap((d) =>
+          d.online
+            ? d.models.map((m) => (
+                <li key={`${d.id}/${m.id}`} className="flex items-center gap-2 px-4 py-2">
+                  <span className="font-medium">{m.id}</span>
+                  <span className="text-muted">on {d.name}</span>
+                  {m.loaded ? <Badge tone="ok">Loaded</Badge> : <Badge>Loads when asked for</Badge>}
+                  <span className="flex-1" />
+                  <span className="font-mono text-[11.5px] text-muted">{`${m.id}@${d.name}`}</span>
+                  <CopyButton text={`${m.id}@${d.name}`} />
+                </li>
+              ))
+            : [
+                <li key={d.id} className="px-4 py-2 text-muted">
+                  {d.name}: {d.error}
+                </li>,
+              ],
+        )}
       </ul>
     </div>
   );
@@ -712,7 +751,12 @@ export function ModelsPage() {
             </Notice>
           </div>
         )}
-        {tab === "find" ? <FindModels /> : tab === "catalog" ? <CatalogView renderRepo={(id) => <RepoDetail id={id} />} /> : <LocalModels version={version} onImported={imported} />}
+        {tab === "find" ? <FindModels /> : tab === "catalog" ? <CatalogView renderRepo={(id) => <RepoDetail id={id} />} /> : (
+          <>
+            <LocalModels version={version} onImported={imported} />
+            <DeviceModels />
+          </>
+        )}
       </div>
     </div>
   );

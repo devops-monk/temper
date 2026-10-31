@@ -418,21 +418,28 @@ def v1_models():
     # Then what a request can load by naming it (on_demand.py), skipping what's loaded under another name.
     loaded = {s.path for s in servers if s.state == "ready"} | {*pool.aliases}
     data += [m for m in listing() if m["id"] not in loaded and m["id"] not in {d["id"] for d in data}]
-    return {"object": "list", "data": data}
+    from . import devices
+
+    return {"object": "list", "data": data + devices.listing()}
 
 
 def route(body: dict) -> tuple[RuntimeManager, str, dict]:
     """The server a chat request goes to, its URL, and the request as that server takes it.
 
+    A linked device's model is passed to that device (devices.py, with its key in `server.headers`).
     Compare mode's and alongside models are asked for by path or name, and a model on this computer that
     isn't loaded loads first (on_demand.py, which may take minutes: async callers use aroute). Anything else
     goes to chat's model. Attachments are expanded into what the model reads, and refused if it can't see or hear them.
     """
-    from . import on_demand
+    from . import devices, on_demand
     from .compare import pool
 
+    model = body.get("model")
+    # A linked device's model goes there (devices.py), unless a device passed this request on already.
+    if not body.pop(devices.HOP, False) and (remote := devices.target(model, lambda: on_demand.loaded(model) or on_demand.resolve(model) is not None)):
+        return remote, f"{remote.base}/v1/chat/completions", devices.forwarded(body, remote)
     ttl = body.pop("ttl", None)
-    on_demand.ensure(body.get("model"), ttl if isinstance(ttl, (int, float)) and not isinstance(ttl, bool) else None)
+    on_demand.ensure(model, ttl if isinstance(ttl, (int, float)) and not isinstance(ttl, bool) else None)
     server = pool.find(body.get("model"))
     if server is None:
         _require_ready()
@@ -467,8 +474,8 @@ def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | 
     body = {"messages": messages, "max_tokens": max_tokens, "stream": False, **({"model": model} if model else {})}
     if temperature is not None:
         body["temperature"] = temperature
-    _server, url, body = route(body)
-    r = httpx.post(url, json=body, timeout=None)
+    server, url, body = route(body)
+    r = httpx.post(url, json=body, headers=getattr(server, "headers", None), timeout=None)
     if r.status_code != 200:
         raise ValueError(f"The model's server answered {r.status_code}: {r.text[:300]}")
     text = ((r.json().get("choices") or [{}])[0].get("message") or {}).get("content") or ""
@@ -484,7 +491,7 @@ async def v1_chat(request: Request):
     api_keys.record_prompt(entry, body.get("messages"))
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
-            r = await client.post(url, json=body)
+            r = await client.post(url, json=body, headers=getattr(server, "headers", None))
             reply = r.json()
             usage = reply.get("usage") or {} if isinstance(reply, dict) else {}
             api_keys.tokens(entry, server.model, usage.get("prompt_tokens"), usage.get("completion_tokens"))
@@ -497,7 +504,7 @@ async def v1_chat(request: Request):
     if not asked:
         body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
     client = httpx.AsyncClient(timeout=None)
-    upstream = await client.send(client.build_request("POST", url, json=body), stream=True)
+    upstream = await client.send(client.build_request("POST", url, json=body, headers=getattr(server, "headers", None)), stream=True)
     if entry is not None:
         entry["model"], entry["streaming"] = server.model, True
 
