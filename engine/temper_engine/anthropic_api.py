@@ -277,6 +277,7 @@ async def v1_messages(request: Request):
         server, url, req = await aroute(to_openai(body))
     except HTTPException as e:
         return _error(e.status_code, str(e.detail))
+    api_keys.record_prompt(entry, req.get("messages"))
     if not req.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
             r = await client.post(url, json=req)
@@ -284,6 +285,7 @@ async def v1_messages(request: Request):
             return _error(r.status_code, r.text[:500])
         msg = from_openai(r.json(), model)
         api_keys.tokens(entry, server.model, msg["usage"]["input_tokens"], msg["usage"]["output_tokens"])
+        api_keys.record_reply(entry, "".join(b.get("text", "") for b in msg["content"] if b.get("type") == "text"))
         return JSONResponse(msg)
 
     client = httpx.AsyncClient(timeout=None)
@@ -294,9 +296,17 @@ async def v1_messages(request: Request):
         await client.aclose()
         return _error(upstream.status_code, text[:500])
 
+    if entry is not None:
+        entry["model"], entry["streaming"] = server.model, True
+
+    async def watched(lines):
+        async for line in lines:
+            api_keys.observe(entry, line)
+            yield line
+
     async def relay():
         try:
-            async for event in with_pings(translate_stream(upstream.aiter_lines(), model)):
+            async for event in with_pings(translate_stream(watched(upstream.aiter_lines()), model)):
                 if event.startswith(b"event: message_delta"):
                     usage = json.loads(event.split(b"data: ", 1)[1])["usage"]
                     api_keys.tokens(entry, server.model, usage["input_tokens"], usage["output_tokens"])
@@ -305,6 +315,7 @@ async def v1_messages(request: Request):
         finally:
             await upstream.aclose()
             await client.aclose()
+            api_keys.done(entry)
 
     return StreamingResponse(relay(), media_type="text/event-stream")
 

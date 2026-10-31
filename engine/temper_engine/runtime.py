@@ -481,12 +481,15 @@ async def v1_chat(request: Request):
 
     server, url, body = await aroute(await request.json())
     entry = getattr(request.state, "api_entry", None)
+    api_keys.record_prompt(entry, body.get("messages"))
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
             r = await client.post(url, json=body)
             reply = r.json()
             usage = reply.get("usage") or {} if isinstance(reply, dict) else {}
             api_keys.tokens(entry, server.model, usage.get("prompt_tokens"), usage.get("completion_tokens"))
+            if isinstance(reply, dict) and reply.get("choices"):
+                api_keys.record_reply(entry, (reply["choices"][0].get("message") or {}).get("content") or "")
             return JSONResponse(reply, status_code=r.status_code)
 
     # The servers count tokens only when asked; ask always, and keep the count to ourselves unless asked too.
@@ -496,11 +499,12 @@ async def v1_chat(request: Request):
     client = httpx.AsyncClient(timeout=None)
     upstream = await client.send(client.build_request("POST", url, json=body), stream=True)
     if entry is not None:
-        entry["model"] = server.model
+        entry["model"], entry["streaming"] = server.model, True
 
     async def relay():
         try:
             async for line in upstream.aiter_lines():
+                api_keys.observe(entry, line)
                 if line.startswith("data:") and '"usage"' in line:
                     api_keys.usage_from_stream(entry, line.encode(), server.model)
                     if not asked and re.search(r'"choices"\s*:\s*\[\s*\]', line):
@@ -509,5 +513,6 @@ async def v1_chat(request: Request):
         finally:
             await upstream.aclose()
             await client.aclose()
+            api_keys.done(entry)
 
     return StreamingResponse(relay(), status_code=upstream.status_code, media_type="text/event-stream")

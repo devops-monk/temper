@@ -343,3 +343,11 @@ def test_save_keeps_the_conversation_in_tempers_chats(engine):
     repl.history += [{"role": "user", "content": "again"}, {"role": "assistant", "content": "sure"}]
     repl.save("")
     assert len(engine.get(f"/api/chats/{repl.chat_id}").json()["messages"]) == 5  # the same chat, brought up to date
+
+
+def test_a_log_line_says_who_asked_what_and_how_fast():
+    e = {"time": 0, "method": "POST", "path": "/v1/chat/completions", "key": "laptop", "model": "qwen", "status": 200, "ms": 2000, "first_ms": 400,
+         "input_tokens": 16, "output_tokens": 80, "tokens_per_second": 50.0}
+    line = cli._log_line(e)
+    assert "POST  /v1/chat/completions  laptop  qwen  200  2.0s  first token 0.4s  16→80 tokens  50.0 tokens/s" in line
+    assert cli._log_line({**e, "model": None, "input_tokens": None, "output_tokens": None, "tokens_per_second": None, "path": "/v1/models", "method": "GET"}).endswith("GET  /v1/models  laptop  200  2.0s")

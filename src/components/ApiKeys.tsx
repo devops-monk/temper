@@ -1,7 +1,7 @@
 import { KeyRound, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api } from "../lib/engine";
-import { Button, CopyButton, Input, Notice, cx } from "./ui";
+import { Button, CopyButton, Input, Notice, Toggle, cx } from "./ui";
 
 /** An API key as the engine lists it (api_keys.py): the whole key is only in the reply that makes it. */
 interface ApiKey {
@@ -26,6 +26,12 @@ interface LogEntry {
   model: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
+  tokens_per_second: number | null;
+  first_ms: number | null;
+  done: boolean;
+  // Only while the monitor asks for them (engine api_keys.py).
+  prompt?: string;
+  reply?: string;
 }
 
 function ago(t: number | null): string {
@@ -141,48 +147,73 @@ export function ApiKeys() {
 /** The last requests to /v1, from any key or Temper itself, refreshed every few seconds. */
 export function ApiMonitor() {
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [content, setContent] = useState(false);
 
   useEffect(() => {
-    const load = () => void api<LogEntry[]>("/api/keys/log?limit=50").then(setLog, () => {});
+    // With content on, each poll keeps the engine recording prompts and replies; off, it stops and drops them.
+    const load = () => void api<LogEntry[]>(`/api/keys/log?limit=50&content=${content}`).then(setLog, () => {});
     load();
-    const t = setInterval(load, 3000);
+    const t = setInterval(load, content ? 1500 : 3000);
     return () => clearInterval(t);
-  }, []);
+  }, [content]);
 
-  if (!log.length) return <p className="text-[13px] text-muted">No requests yet. They show up here as apps use the API.</p>;
   return (
-    <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
-      <table className="w-full text-[12.5px]">
-        <thead className="sticky top-0 bg-surface text-left text-[12px] text-muted">
-          <tr>
-            <th className="px-3 py-1.5 font-medium">Time</th>
-            <th className="font-medium">From</th>
-            <th className="font-medium">Request</th>
-            <th className="font-medium">Model</th>
-            <th className="text-right font-medium">Tokens</th>
-            <th className="px-3 text-right font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {log.map((e) => (
-            <tr key={e.id} className="border-t border-line">
-              <td className="px-3 py-1.5 text-muted tabular-nums">{new Date(e.time * 1000).toLocaleTimeString()}</td>
-              <td>{e.key}</td>
-              <td className="font-mono text-[12px]">
-                {e.method} {e.path}
-              </td>
-              <td className="max-w-48 truncate text-muted" title={e.model ?? ""}>
-                {e.model ?? ""}
-              </td>
-              <td className="text-right tabular-nums">{e.input_tokens != null ? `${e.input_tokens} → ${e.output_tokens ?? 0}` : ""}</td>
-              <td className={cx("px-3 text-right tabular-nums", e.status == null ? "text-muted" : e.status >= 400 ? "text-danger" : "")}>
-                {e.status == null ? "…" : `${e.status}`}
-                {e.ms != null && <span className="ml-1.5 text-muted">{e.ms < 1000 ? `${e.ms} ms` : `${(e.ms / 1000).toFixed(1)} s`}</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <div className="mb-2 max-w-sm">
+        <Toggle checked={content} onChange={setContent} label="Show prompts and replies" />
+      </div>
+      {content && <p className="mb-2 text-[12px] text-muted">Recorded from now on while this is open, in memory only. Turning it off or leaving the page forgets them.</p>}
+      {!log.length ? (
+        <p className="text-[13px] text-muted">No requests yet. They show up here as apps use the API.</p>
+      ) : (
+        <div className="max-h-96 overflow-y-auto rounded-lg border border-line">
+          <table className="w-full text-[12.5px]">
+            <thead className="sticky top-0 bg-surface text-left text-[12px] text-muted">
+              <tr>
+                <th className="px-3 py-1.5 font-medium">Time</th>
+                <th className="font-medium">From</th>
+                <th className="font-medium">Request</th>
+                <th className="font-medium">Model</th>
+                <th className="text-right font-medium">Tokens</th>
+                <th className="text-right font-medium">Speed</th>
+                <th className="px-3 text-right font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {log.map((e) => (
+                <Fragment key={e.id}>
+                  <tr className="border-t border-line">
+                    <td className="px-3 py-1.5 text-muted tabular-nums">{new Date(e.time * 1000).toLocaleTimeString()}</td>
+                    <td>{e.key}</td>
+                    <td className="font-mono text-[12px]">
+                      {e.method} {e.path}
+                    </td>
+                    <td className="max-w-48 truncate text-muted" title={e.model ?? ""}>
+                      {e.model ?? ""}
+                    </td>
+                    <td className="text-right tabular-nums">{e.input_tokens != null ? `${e.input_tokens} → ${e.output_tokens ?? 0}` : ""}</td>
+                    <td className="text-right text-muted tabular-nums" title={e.first_ms != null ? `First token after ${(e.first_ms / 1000).toFixed(1)} s` : undefined}>
+                      {e.tokens_per_second != null ? `${e.tokens_per_second}/s` : ""}
+                    </td>
+                    <td className={cx("px-3 text-right tabular-nums", e.status == null ? "text-muted" : e.status >= 400 ? "text-danger" : "")}>
+                      {e.status == null || !e.done ? "…" : `${e.status}`}
+                      {e.ms != null && <span className="ml-1.5 text-muted">{e.ms < 1000 ? `${e.ms} ms` : `${(e.ms / 1000).toFixed(1)} s`}</span>}
+                    </td>
+                  </tr>
+                  {content && (e.prompt || e.reply) && (
+                    <tr>
+                      <td colSpan={7} className="px-3 pb-2 text-[12.5px]">
+                        {e.prompt && <p className="line-clamp-3 whitespace-pre-wrap text-muted">{e.prompt.trim()}</p>}
+                        {e.reply && <p className="mt-1 line-clamp-6 whitespace-pre-wrap">{e.reply.trim()}</p>}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

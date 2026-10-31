@@ -83,6 +83,8 @@ named API keys instead (see [Connect](connect.md#api-keys)).
 ```bash
 temper status                      # running or not, address, loaded models, running jobs, disk
 temper version
+temper log                         # follow the API's requests: who, model, tokens, time to first token, speed
+temper log --content               # with each prompt and reply (held in memory only, while it runs)
 ```
 
 `models`, `ps`, `runs` and `status` take `--json` for scripts. `temper status` exits with 1 when Temper isn't

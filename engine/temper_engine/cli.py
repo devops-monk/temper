@@ -895,6 +895,56 @@ def import_cmd(args: list[str]) -> int:
     return 0
 
 
+def _log_line(e: dict) -> str:
+    when = time.strftime("%H:%M:%S", time.localtime(e["time"]))
+    tokens = f"{e['input_tokens'] or 0}→{e['output_tokens'] or 0} tokens" if e.get("input_tokens") is not None or e.get("output_tokens") is not None else ""
+    speed = f"{e['tokens_per_second']} tokens/s" if e.get("tokens_per_second") else ""
+    took = f"{e['ms'] / 1000:.1f}s" if e.get("ms") is not None else ""
+    first = f"first token {e['first_ms'] / 1000:.1f}s" if e.get("first_ms") is not None and e.get("output_tokens") else ""
+    cells = [when, e["method"], e["path"], e["key"], e.get("model") or "", str(e.get("status") or ""), took, first, tokens, speed]
+    return "  ".join(c for c in cells if c)
+
+
+def log_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper log", description="Follow the model API's requests as they happen.")
+    p.add_argument("--content", action="store_true", help="also show each prompt and reply (kept in memory only, while this runs)")
+    p.add_argument("--json", action="store_true", help="one JSON object per request")
+    p.add_argument("-n", "--last", type=int, default=10, metavar="N", help="start with the last N requests (default 10)")
+    a = p.parse_args(args)
+    engine = running()
+    params = {"content": "true" if a.content else "false"}
+    with _client(engine) as c:
+        recent = _check(c.get("/api/keys/log", params={**params, "limit": max(a.last, 1)}))[::-1]
+        since = max((e.get("seq", 0) for e in recent), default=0)
+        shown: set[str] = set()
+
+        def show(e: dict) -> None:
+            if not e.get("done") or e["id"] in shown:
+                return  # each request once, when it's answered
+            shown.add(e["id"])
+            if a.json:
+                print(json.dumps(e), flush=True)
+                return
+            print(_log_line(e), flush=True)
+            if a.content:
+                for label, text in (("prompt", e.get("prompt")), ("reply", e.get("reply"))):
+                    if text:
+                        print(f"    {label}: " + text.strip().replace("\n", "\n            "), flush=True)
+
+        for e in recent[-a.last:] if a.last else []:
+            show(e)
+        if not a.json:
+            print(f"Following {engine['url']}/v1" + (" with prompts and replies" if a.content else "") + ". Ctrl-C stops.", file=sys.stderr)
+        try:
+            with c.stream("GET", "/api/keys/log/stream", params={**params, "since": since}) as r:
+                for line in r.iter_lines():
+                    if line.startswith("data:"):
+                        show(json.loads(line[5:]))
+        except KeyboardInterrupt:
+            print(file=sys.stderr)
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -971,7 +1021,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -982,6 +1032,7 @@ USAGE = """usage:
   temper get <search words | owner/name> [--quant Q] [--mlx] [-y]
   temper import <file or folder> [--copy | --move]
   temper status [--json]
+  temper log [--content] [--json] [-n N]
   temper version
   temper chat ["prompt"] [--system "..."] [--model M]
   temper train <config.yaml> [--set key=value ...] [--dry-run]
