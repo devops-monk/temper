@@ -18,6 +18,21 @@ curl http://127.0.0.1:8765/v1/chat/completions \
   -d '{"model": "local", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
+## Loading models by name
+
+With *Load models on demand* on (the default), a request whose `model` names a model you've downloaded loads
+it first, alongside any others. Use the model's whole name, such as `Qwen/Qwen3-4B-GGUF`, or a GGUF's file
+name. `/v1/models` lists everything that can load this way. The model unloads after the idle time in Settings, or after
+the request's `ttl` in seconds:
+
+```json
+{"model": "Qwen/Qwen3-4B-GGUF", "ttl": 600, "messages": [{"role": "user", "content": "Hello"}]}
+```
+
+When memory runs short, models loaded this way make room for each other, least recently used first. Models you
+loaded yourself are never unloaded to make room. Names that match nothing, like a client's default `gpt-4o`, go to
+the loaded model as before.
+
 ## Coding agents
 
 ```bash

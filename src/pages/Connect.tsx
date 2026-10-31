@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
 import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
+import { OnDemand } from "../components/OnDemand";
 import { CopyButton, Notice, PageHeader, cx } from "../components/ui";
 import { useApp } from "../lib/store";
 
@@ -204,9 +205,11 @@ export function ConnectPage() {
           <span />
         </dl>
 
+        <OnDemand />
+
         {runtime?.state !== "ready" && (
           <div className="mb-5 max-w-[760px]">
-            <Notice>Load a model on the Models page first. Requests fail until one is loaded.</Notice>
+            <Notice>No model is loaded. Requests that name a downloaded model load it while loading on demand is on; others fail until you load one on the Models page.</Notice>
           </div>
         )}
 

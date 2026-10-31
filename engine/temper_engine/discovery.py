@@ -136,11 +136,11 @@ def _done(model: str, started: float, counts: dict, reason: str | None, chat: bo
 
 async def _answer(body: dict, chat: bool):
     from .anthropic_api import ThinkFilter, strip_thinking
-    from .runtime import route
+    from .runtime import aroute
 
     model = body.get("model") or ""
     try:
-        _server, url, req = route(to_openai(body, chat))
+        _server, url, req = await aroute(to_openai(body, chat))
     except HTTPException as e:
         return JSONResponse({"error": str(e.detail)}, status_code=e.status_code)
     started = time.time()

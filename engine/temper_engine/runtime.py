@@ -406,19 +406,28 @@ def _require_ready() -> None:
 def v1_models():
     from .compare import pool
 
+    from .on_demand import listing
+
     servers = [manager, *pool.servers.values()]
     data = [{"id": s.model, "object": "model", "owned_by": "temper"} for s in servers if s.state == "ready"]
+    # Then what a request can load by naming it (on_demand.py), skipping what's loaded under another name.
+    loaded = {s.path for s in servers if s.state == "ready"} | {*pool.aliases}
+    data += [m for m in listing() if m["id"] not in loaded and m["id"] not in {d["id"] for d in data}]
     return {"object": "list", "data": data}
 
 
 def route(body: dict) -> tuple[RuntimeManager, str, dict]:
     """The server a chat request goes to, its URL, and the request as that server takes it.
 
-    Compare mode's and alongside models are asked for by path or name; anything else goes to chat's model.
-    Attachments are expanded into what the model reads, and refused if it can't see or hear them.
+    Compare mode's and alongside models are asked for by path or name, and a model on this computer that
+    isn't loaded loads first (on_demand.py, which may take minutes: async callers use aroute). Anything else
+    goes to chat's model. Attachments are expanded into what the model reads, and refused if it can't see or hear them.
     """
+    from . import on_demand
     from .compare import pool
 
+    ttl = body.pop("ttl", None)
+    on_demand.ensure(body.get("model"), ttl if isinstance(ttl, (int, float)) and not isinstance(ttl, bool) else None)
     server = pool.find(body.get("model"))
     if server is None:
         _require_ready()
@@ -441,6 +450,13 @@ def route(body: dict) -> tuple[RuntimeManager, str, dict]:
     return server, f"{server.base}/v1/chat/completions", translate(server.engine, body)
 
 
+async def aroute(body: dict) -> tuple[RuntimeManager, str, dict]:
+    """route() off the event loop, since loading a model on demand blocks until it's ready."""
+    from starlette.concurrency import run_in_threadpool
+
+    return await run_in_threadpool(route, body)
+
+
 def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | None = None, model: str | None = None) -> str:
     """One whole reply from a loaded model (chat's, or `model`), with a thinking model's reasoning left out."""
     body = {"messages": messages, "max_tokens": max_tokens, "stream": False, **({"model": model} if model else {})}
@@ -458,7 +474,7 @@ def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | 
 async def v1_chat(request: Request):
     from . import api_keys
 
-    server, url, body = route(await request.json())
+    server, url, body = await aroute(await request.json())
     entry = getattr(request.state, "api_entry", None)
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:

@@ -266,7 +266,7 @@ def _error(status: int, message: str) -> JSONResponse:
 
 @router.post("/v1/messages")
 async def v1_messages(request: Request):
-    from .runtime import route
+    from .runtime import aroute
 
     from . import api_keys
 
@@ -274,7 +274,7 @@ async def v1_messages(request: Request):
     model = body.get("model") or "temper"
     entry = getattr(request.state, "api_entry", None)
     try:
-        server, url, req = route(to_openai(body))
+        server, url, req = await aroute(to_openai(body))
     except HTTPException as e:
         return _error(e.status_code, str(e.detail))
     if not req.get("stream"):

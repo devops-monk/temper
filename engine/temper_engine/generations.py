@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import chats, tools
-from .runtime import route
+from .runtime import aroute
 
 router = APIRouter(prefix="/api/chat/generations", tags=["chat"])
 
@@ -118,7 +118,7 @@ def _absorb(gen: Generation, data: str, calls: dict[int, dict]) -> None:
 
 async def _round(gen: Generation, client: httpx.AsyncClient, body: dict) -> list[tools.Call] | None:
     """Streams one round of the reply; returns the tool calls it made, or None if it failed."""
-    _, url, body = route(body)
+    _, url, body = await aroute(body)
     calls: dict[int, dict] = {}
     async with client.stream("POST", url, json={**body, "stream": True}) as r:
         if r.status_code != 200:
@@ -155,7 +155,7 @@ async def _allowed(gen: Generation, step: dict) -> bool:
 
 async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]) -> None:
     try:
-        server, _, _ = route(dict(body))
+        server, _, _ = await aroute(dict(body))
         # llama-server takes the tools natively; other engines were offered them in the system prompt (compaction.py).
         native = server.engine == "llama.cpp"
         offered = await asyncio.to_thread(tools.offer, names)  # connects the chat's MCP servers

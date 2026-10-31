@@ -31,7 +31,10 @@ def idle_seconds() -> int:
 
 def listing() -> dict:
     chat = [{**manager.status(), "chat": True}] if manager.state != "idle" else []
-    return {"models": chat + [{**s, "chat": False} for s in pool.status(kept=True)], "idle_minutes": idle_seconds() // 60}
+    from .on_demand import enabled
+
+    models = chat + [{**s, "chat": False, "on_demand": s.get("path") in pool.on_demand} for s in pool.status(kept=True)]
+    return {"models": models, "idle_minutes": idle_seconds() // 60, "load_on_demand": enabled()}
 
 
 def load_alongside(req: LoadRequest) -> None:
@@ -60,6 +63,9 @@ def switch(path: str) -> None:
         pool.servers.pop(path)
         pool.used.pop(path, None)
         pool.kept.discard(path)
+        pool.on_demand.discard(path)  # chat's now: it stays until unloaded or idle like chat's model
+        pool.ttl.pop(path, None)
+        pool.aliases = {k: v for k, v in pool.aliases.items() if v != path}
         manager.swap(server)
         if server.path and server.state != "idle":
             pool.adopt(server.path, server)
@@ -100,4 +106,15 @@ class Idle(BaseModel):
 @router.put("/idle")
 def set_idle(req: Idle):
     prefs.update("idle_unload_minutes", req.minutes)
+    return listing()
+
+
+class OnDemand(BaseModel):
+    enabled: bool
+
+
+@router.put("/on-demand")
+def set_on_demand(req: OnDemand):
+    """Whether API requests naming a model that isn't loaded load it (on_demand.py)."""
+    prefs.update("load_on_demand", req.enabled)
     return listing()

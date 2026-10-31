@@ -32,6 +32,9 @@ class Pool:
         self.servers: dict[str, RuntimeManager] = {}  # by GGUF path
         self.used: dict[str, float] = {}
         self.kept: set[str] = set()  # loaded alongside chat's model, not for compare mode
+        self.on_demand: set[str] = set()  # kept ones an API request loaded (on_demand.py); unloaded first for room
+        self.ttl: dict[str, int] = {}  # seconds idle before a kept model unloads, instead of Settings' idle time
+        self.aliases: dict[str, str] = {}  # other names requests use for a server (a repo id for its GGUF)
         self.lock = threading.Lock()
         self.reaper: threading.Thread | None = None
 
@@ -39,7 +42,7 @@ class Pool:
         if not model:
             return None
         for path, server in self.servers.items():
-            if model in (path, server.model):
+            if model in (path, server.model) or self.aliases.get(model) == path:
                 self.used[path] = server.used = time.time()
                 return server
         return None
@@ -53,6 +56,9 @@ class Pool:
         server = self.servers.pop(path, None)
         self.used.pop(path, None)
         self.kept.discard(path)
+        self.on_demand.discard(path)
+        self.ttl.pop(path, None)
+        self.aliases = {k: v for k, v in self.aliases.items() if v != path}
         if server:
             server.unload()
 
@@ -94,7 +100,7 @@ class Pool:
         with self.lock:
             kept_idle = idle_seconds()
             for path in list(self.servers):
-                limit = kept_idle if path in self.kept else IDLE_SECONDS
+                limit = self.ttl.get(path, kept_idle) if path in self.kept else IDLE_SECONDS
                 if limit and now - self.servers[path].used > limit:
                     self.drop(path)
             if kept_idle and manager.state == "ready" and now - manager.used > kept_idle:

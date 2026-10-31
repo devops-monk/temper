@@ -40,7 +40,7 @@ def models(tmp_path, monkeypatch):
     monkeypatch.setattr(RuntimeManager, "unload", fake_unload)
     monkeypatch.setattr(compare.Pool, "_start_reaper", lambda self: None)
     yield {k: str(v) for k, v in paths.items()}
-    for d in (compare.pool.servers, compare.pool.used, compare.pool.kept):
+    for d in (compare.pool.servers, compare.pool.used, compare.pool.kept, compare.pool.on_demand, compare.pool.ttl, compare.pool.aliases):
         d.clear()
     fake_unload(manager)
 
@@ -50,7 +50,7 @@ def test_models_load_alongside_and_answer_by_name(models):
     status = call("POST", "/api/runtime/load", json={"path": models["b"], "alongside": True})
     assert status["path"] == models["a"]
     assert [m["path"] for m in call("GET", "/api/runtime")["alongside"]] == [models["b"]]
-    assert {m["id"] for m in call("GET", "/v1/models")["data"]} == {"a.gguf", "b.gguf"}
+    assert {m["id"] for m in call("GET", "/v1/models")["data"] if m.get("loaded", True)} == {"a.gguf", "b.gguf"}
     # Compare mode reuses an alongside model and doesn't unload it.
     call("POST", "/api/compare/unload")
     assert models["b"] in compare.pool.kept

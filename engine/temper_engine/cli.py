@@ -285,30 +285,13 @@ def models_cmd(args: list[str]) -> int:
 
 
 def resolve_model(models: list[dict], wanted: str, quant: str | None = None) -> tuple[str, str]:
-    """The path to load and its name, from what was typed: a path, a GGUF's file name, or a model's name
-    (its Q4_K_M file when it has GGUFs, unless `quant` says which)."""
-    if Path(wanted).expanduser().exists():
-        path = Path(wanted).expanduser()
-        return str(path), path.name
-    for m in models:
-        for g in m.get("gguf") or []:
-            if g["name"].lower() == wanted.lower():
-                return g["path"], g["name"]
-    w = wanted.lower()
-    model = next((m for m in models if m["id"].lower() == w), None) or next((m for m in models if w in m["id"].lower()), None)
-    if model is None:
-        raise CliError(f"No model called {wanted!r} on this computer. `temper models` lists them.")
-    ggufs = [g for g in model.get("gguf") or [] if g.get("complete", True)]
-    if quant:
-        ggufs = [g for g in ggufs if quant.lower() in g["name"].lower()]
-        if not ggufs:
-            raise CliError(f"{model['id']} has no {quant} file. `temper models` lists its files.")
-    if ggufs:
-        g = next((g for g in ggufs if "q4_k_m" in g["name"].lower()), ggufs[0])
-        return g["path"], g["name"]
-    if model.get("safetensors") and model.get("path"):
-        return model["path"], model["id"]
-    raise CliError(f"{model['id']} has nothing Temper can load.")
+    """The path to load and its name, from what was typed: a path, a GGUF's file name, or (part of) a model's name."""
+    from .model_names import pick
+
+    try:
+        return pick(models, wanted, quant)
+    except LookupError as e:
+        raise CliError(f"{e} `temper models` lists them.") from e
 
 
 def load_cmd(args: list[str]) -> int:

@@ -39,7 +39,10 @@ def fake_model(monkeypatch, pieces, delay=0.0, status=200, engine="llama.cpp"):
         asked.append(body)
         return httpx.Response(200, content=sse(pieces(body) if callable(pieces) else pieces), headers={"content-type": "text/event-stream"})
 
-    monkeypatch.setattr(generations, "route", lambda body: (SimpleNamespace(engine=engine), "http://model/v1/chat/completions", body))
+    async def aroute(body):
+        return SimpleNamespace(engine=engine), "http://model/v1/chat/completions", body
+
+    monkeypatch.setattr(generations, "aroute", aroute)
     monkeypatch.setattr(generations.httpx, "AsyncClient", lambda **kw: REAL_CLIENT(transport=httpx.MockTransport(handler), **kw))
     return asked
 
