@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { useOpened } from "../lib/desktop";
 import { api, inTauri } from "../lib/engine";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
@@ -30,19 +31,20 @@ interface Rendered {
   usable: number;
 }
 
-const FORMAT_LABEL: Record<Format, string> = { messages: "OpenAI messages", sharegpt: "ShareGPT", alpaca: "Prompt and response", text: "Plain text" };
+const FORMAT_LABEL: Record<Format, Key> = { messages: "datasets.f_messages", sharegpt: "datasets.f_sharegpt", alpaca: "datasets.f_alpaca", text: "datasets.f_text" };
 // Roles each format reads, with the column it uses when nothing is mapped.
-const ROLES: Record<Format, { role: string; label: string; required: boolean }[]> = {
-  messages: [{ role: "messages", label: "Messages (list of role and content)", required: true }],
-  sharegpt: [{ role: "conversations", label: "Conversations (list of from and value)", required: true }],
+const ROLES: Record<Format, { role: string; label: Key; required: boolean }[]> = {
+  messages: [{ role: "messages", label: "datasets.r_messages", required: true }],
+  sharegpt: [{ role: "conversations", label: "datasets.r_conversations", required: true }],
   alpaca: [
-    { role: "instruction", label: "Prompt", required: true },
-    { role: "input", label: "Extra context", required: false },
-    { role: "output", label: "Response", required: true },
-    { role: "system", label: "System message", required: false },
+    { role: "instruction", label: "datasets.r_prompt", required: true },
+    { role: "input", label: "datasets.r_input", required: false },
+    { role: "output", label: "datasets.r_response", required: true },
+    { role: "system", label: "datasets.r_system", required: false },
   ],
-  text: [{ role: "text", label: "Text", required: true }],
+  text: [{ role: "text", label: "datasets.r_text", required: true }],
 };
+const STATE: Record<string, Key> = { done: "job.done", failed: "job.failed", cancelled: "job.cancelled" };
 const SUGGESTIONS = ["mlabonne/FineTome-100k", "yahma/alpaca-cleaned", "HuggingFaceH4/ultrachat_200k", "openai/gsm8k"];
 
 function cell(value: unknown): string {
@@ -68,10 +70,10 @@ function Conversation({ conv }: { conv: Turn[] | string }) {
   if (typeof conv === "string") return <p className="font-mono text-[12px] whitespace-pre-wrap">{cell(conv)}</p>;
   return (
     <div className="flex flex-col gap-1.5">
-      {conv.map((t, i) => (
+      {conv.map((turn, i) => (
         <div key={i} className="grid grid-cols-[76px_1fr] gap-2 text-[13px]">
-          <span className={cx("font-medium", t.role === "assistant" ? "text-accent" : "text-muted")}>{t.role}</span>
-          <span className="break-words whitespace-pre-wrap">{t.content.length > 600 ? t.content.slice(0, 600) + "…" : t.content}</span>
+          <span className={cx("font-medium", turn.role === "assistant" ? "text-accent" : "text-muted")}>{turn.role}</span>
+          <span className="break-words whitespace-pre-wrap">{turn.content.length > 600 ? turn.content.slice(0, 600) + "…" : turn.content}</span>
         </div>
       ))}
     </div>
@@ -81,30 +83,32 @@ function Conversation({ conv }: { conv: Turn[] | string }) {
 function PrepareRun({ job }: { job: Job }) {
   const { go, setPendingDataset } = useApp();
   const { events, status } = useJob(job.id);
+  const t = useT();
   const state = status ?? job.status;
   const phase = [...events].reverse().find((e) => e.event === "phase")?.name as string | undefined;
   const result = events.find((e) => e.event === "result") as { output?: string; eval_output?: string | null; stats?: Record<string, number> } | undefined;
   const error = (events.find((e) => e.event === "error")?.message as string | undefined) ?? job.error;
   const s = result?.stats;
-  const dropped = s ? [s.duplicates && `${s.duplicates} duplicates`, s.malformed && `${s.malformed} unusable`, s.too_short && `${s.too_short} too short`, s.too_long && `${s.too_long} too long`].filter(Boolean) : [];
+  const dropped = s ? [s.duplicates && t("datasets.duplicates", { n: s.duplicates }), s.malformed && t("datasets.unusable", { n: s.malformed }), s.too_short && t("datasets.too_short", { n: s.too_short }), s.too_long && t("datasets.too_long", { n: s.too_long })].filter(Boolean) : [];
 
   return (
     <div className="rounded-lg border border-line bg-surface p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="truncate font-medium">{job.title}</span>
-        <Badge tone={state === "done" ? "ok" : state === "failed" ? "warn" : "neutral"}>{state === "running" ? (phase ?? "Starting") : state}</Badge>
+        <Badge tone={state === "done" ? "ok" : state === "failed" ? "warn" : "neutral"}>{state === "running" ? (phase ?? t("datasets.starting")) : state in STATE ? t(STATE[state]) : state}</Badge>
       </div>
       {state === "running" && <ProgressBar value={job.progress} />}
       {state === "failed" && error && <Notice tone="error">{error}</Notice>}
       {s && (
         <p className="text-[13px]">
-          {s.train} training rows{s.eval ? ` and ${s.eval} for evaluation` : ""} from {s.rows_in}.{dropped.length > 0 && <span className="text-muted"> Removed {dropped.join(", ")}.</span>}
+          {s.eval ? t("datasets.rows_eval", { train: s.train, eval: s.eval, rows: s.rows_in }) : t("datasets.rows", { train: s.train, rows: s.rows_in })}
+          {dropped.length > 0 && <span className="text-muted"> {t("datasets.removed", { list: dropped.join(", ") })}</span>}
         </p>
       )}
       {state === "done" && result?.output && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="primary" onClick={() => { setPendingDataset({ source: result.output! }); go("train"); }}>
-            <FlaskConical className="size-3.5" /> Train on this
+            <FlaskConical className="size-3.5" /> {t("datasets.train_on_this")}
           </Button>
           <span className="truncate font-mono text-[11.5px] text-muted" title={result.output}>
             {result.output}
@@ -118,13 +122,14 @@ function PrepareRun({ job }: { job: Job }) {
 /** Training text for continued pretraining: documents cut into pieces, no chat format needed (engine datasets.from_documents). */
 function FromDocuments() {
   const { jobs, refreshJobs } = useApp();
+  const t = useT();
   const [paths, setPaths] = useState<string[]>([]);
   const [size, setSize] = useState(4000);
   const [error, setError] = useState<string | null>(null);
   const runs = jobs.filter((j) => j.kind === "prepare" && j.title.startsWith("Training text from")).slice(0, 3);
 
   async function add() {
-    const folder = await pickFolder("Folder of documents to train on");
+    const folder = await pickFolder(t("datasets.docs_folder"));
     if (folder) setPaths((p) => [...new Set([...p, folder])]);
   }
 
@@ -142,32 +147,33 @@ function FromDocuments() {
   return (
     <div className="mx-auto mt-6 max-w-[620px] rounded-xl border border-line bg-surface p-4 text-left text-[13px]">
       <div className="mb-1 flex items-center gap-2 font-medium">
-        <FileText className="size-4 text-muted" /> Or train on your own documents
+        <FileText className="size-4 text-muted" /> {t("datasets.docs_title")}
       </div>
       <p className="mb-3 text-[12.5px] text-muted">
-        Temper reads PDF, Word, PowerPoint, Excel, HTML, Markdown, text and code, and cuts it into pieces of plain training text, so a model learns their
-        content and style (continued pretraining). No chat format needed; 5% is held out to measure progress.
+        {t("datasets.docs_hint")}
       </p>
       {paths.map((p) => (
         <div key={p} className="flex items-center gap-2 font-mono text-[12px]">
           <span className="min-w-0 flex-1 truncate">{p}</span>
-          <button className="text-muted hover:text-text" onClick={() => setPaths(paths.filter((x) => x !== p))} aria-label="Remove folder">
+          <button className="text-muted hover:text-text" onClick={() => setPaths(paths.filter((x) => x !== p))} aria-label={t("datasets.remove_folder")}>
             ×
           </button>
         </div>
       ))}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button size="sm" variant="ghost" onClick={() => void add()}>
-          <FolderPlus className="size-3.5" /> Add folder
+          <FolderPlus className="size-3.5" /> {t("datasets.add_folder")}
         </Button>
-        <Select value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-auto" aria-label="Piece size">
-          <option value={2000}>Pieces of about 500 tokens</option>
-          <option value={4000}>Pieces of about 1,000 tokens</option>
-          <option value={8000}>Pieces of about 2,000 tokens</option>
+        <Select value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-auto" aria-label={t("datasets.piece_size")}>
+          {[2000, 4000, 8000].map((chars) => (
+            <option key={chars} value={chars}>
+              {t("datasets.pieces", { n: (chars / 4).toLocaleString() })}
+            </option>
+          ))}
         </Select>
         <span className="flex-1" />
         <Button size="sm" variant="primary" onClick={() => void make()} disabled={!paths.length}>
-          <Sparkles className="size-3.5" /> Make training text
+          <Sparkles className="size-3.5" /> {t("datasets.make_text")}
         </Button>
       </div>
       {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
@@ -184,6 +190,7 @@ function FromDocuments() {
 
 export function DatasetsPage() {
   const { go, setPendingDataset, jobs, refreshJobs } = useApp();
+  const t = useT();
   const [source, setSource] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -220,11 +227,11 @@ export function DatasetsPage() {
 
   async function browse() {
     const { open: pick } = await import("@tauri-apps/plugin-dialog");
-    const file = await pick({ filters: [{ name: "Datasets", extensions: ["jsonl", "json", "csv", "parquet"] }] });
+    const file = await pick({ filters: [{ name: t("datasets.files"), extensions: ["jsonl", "json", "csv", "parquet"] }] });
     if (typeof file === "string") void open(file);
   }
 
-  const missing = ROLES[format].filter((r) => r.required && !mapping[r.role]).map((r) => r.label);
+  const missing = ROLES[format].filter((r) => r.required && !mapping[r.role]).map((r) => t(r.label));
   const body = preview && { source: preview.source, config: preview.config, split: preview.split ?? "train", format, mapping, system_prompt: systemPrompt };
 
   // A data file opened with Temper or dropped on the window (lib/desktop.ts).
@@ -275,26 +282,26 @@ export function DatasetsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Datasets"
-        description="Check a dataset, map its columns to chat turns, and clean it before you train."
+        title={t("nav.datasets")}
+        description={t("datasets.description")}
         actions={
           preview?.format && (
             <Button onClick={() => { setPendingDataset({ source: preview.source, config: preview.config, split: preview.split }); go("train"); }}>
-              <FlaskConical className="size-4" /> Train on it as is
+              <FlaskConical className="size-4" /> {t("datasets.train_as_is")}
             </Button>
           )
         }
       />
       <div className="border-b border-line px-7 py-4">
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void open(); }}>
-          <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Hugging Face dataset id, a local file path, or a web address" spellCheck={false} />
+          <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder={t("datasets.source_placeholder")} spellCheck={false} />
           {inTauri && (
             <Button type="button" onClick={browse}>
-              <FolderOpen className="size-4" /> Choose file
+              <FolderOpen className="size-4" /> {t("datasets.choose_file")}
             </Button>
           )}
           <Button type="submit" variant="primary" disabled={loading || !source.trim()}>
-            {loading ? "Opening…" : "Open"}
+            {loading ? t("datasets.opening") : t("datasets.open")}
           </Button>
         </form>
       </div>
@@ -302,8 +309,8 @@ export function DatasetsPage() {
         <div className="min-h-0 flex-1 overflow-auto px-7 py-5">
           {error && <Notice tone="error">{error}</Notice>}
           {!error && (
-            <EmptyState icon={<Database className="size-8" />} title="Open a dataset to preview it">
-              <p>Try one of these:</p>
+            <EmptyState icon={<Database className="size-8" />} title={t("datasets.empty")}>
+              <p>{t("datasets.try")}</p>
               <div className="mt-3 flex flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((s) => (
                   <Button key={s} size="sm" onClick={() => void open(s)}>
@@ -318,18 +325,18 @@ export function DatasetsPage() {
       ) : (
         <div className="flex min-h-0 flex-1">
           <div className="w-[400px] shrink-0 overflow-y-auto border-r border-line px-7 pb-8">
-            <Section title="Format" aside={preview.format ? <Badge tone="ok">Detected</Badge> : preview.suggested ? <Badge tone="accent">Suggested</Badge> : <Badge tone="warn">Pick columns</Badge>}>
+            <Section title={t("datasets.format")} aside={preview.format ? <Badge tone="ok">{t("datasets.detected")}</Badge> : preview.suggested ? <Badge tone="accent">{t("datasets.suggested")}</Badge> : <Badge tone="warn">{t("datasets.pick_columns")}</Badge>}>
               <div className="flex flex-col gap-3">
                 {((preview.configs?.length ?? 0) > 1 || (preview.splits?.length ?? 0) > 1) && (
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Subset">
+                    <Field label={t("datasets.subset")}>
                       <Select value={preview.config} onChange={(e) => void open(preview.source, { config: e.target.value })} disabled={loading}>
                         {preview.configs?.map((c) => (
                           <option key={c}>{c}</option>
                         ))}
                       </Select>
                     </Field>
-                    <Field label="Split">
+                    <Field label={t("datasets.split")}>
                       <Select value={preview.split} onChange={(e) => void open(preview.source, { config: preview.config, split: e.target.value })} disabled={loading}>
                         {preview.splits?.map((s) => (
                           <option key={s}>{s}</option>
@@ -338,7 +345,7 @@ export function DatasetsPage() {
                     </Field>
                   </div>
                 )}
-                <Field label="Shape">
+                <Field label={t("datasets.shape")}>
                   <Select
                     value={format}
                     onChange={(e) => {
@@ -349,15 +356,15 @@ export function DatasetsPage() {
                   >
                     {(Object.keys(FORMAT_LABEL) as Format[]).map((f) => (
                       <option key={f} value={f}>
-                        {FORMAT_LABEL[f]}
+                        {t(FORMAT_LABEL[f])}
                       </option>
                     ))}
                   </Select>
                 </Field>
                 {ROLES[format].map(({ role, label, required }) => (
-                  <Field key={role} label={label}>
+                  <Field key={role} label={t(label)}>
                     <Select value={mapping[role] ?? ""} onChange={(e) => setMapping((m) => ({ ...m, [role]: e.target.value }))}>
-                      <option value="">{required ? "Choose a column…" : "None"}</option>
+                      <option value="">{required ? t("datasets.choose_column") : t("datasets.none")}</option>
                       {preview.columns.map((c) => (
                         <option key={c}>{c}</option>
                       ))}
@@ -365,7 +372,7 @@ export function DatasetsPage() {
                   </Field>
                 ))}
                 {format !== "text" && (
-                  <Field label="System prompt" hint="Optional. Added to every conversation that doesn't have one.">
+                  <Field label={t("datasets.system_prompt")} hint={t("datasets.system_hint")}>
                     <textarea
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
@@ -376,28 +383,28 @@ export function DatasetsPage() {
                 )}
               </div>
             </Section>
-            <Section title="Cleaning">
+            <Section title={t("datasets.cleaning")}>
               <div className="flex flex-col gap-3">
-                <Toggle checked={cleaning.dedupe} onChange={setClean("dedupe")} label="Remove duplicate rows" />
-                <Toggle checked={cleaning.shuffle} onChange={setClean("shuffle")} label="Shuffle" />
+                <Toggle checked={cleaning.dedupe} onChange={setClean("dedupe")} label={t("datasets.dedupe")} />
+                <Toggle checked={cleaning.shuffle} onChange={setClean("shuffle")} label={t("datasets.shuffle")} />
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Shortest" hint="Characters; 0 keeps all.">
+                  <Field label={t("datasets.shortest")} hint={t("datasets.chars_hint")}>
                     <Input type="number" min={0} value={cleaning.min_chars} onChange={(e) => setClean("min_chars")(Number(e.target.value))} />
                   </Field>
-                  <Field label="Longest" hint="Characters; 0 keeps all.">
+                  <Field label={t("datasets.longest")} hint={t("datasets.chars_hint")}>
                     <Input type="number" min={0} value={cleaning.max_chars} onChange={(e) => setClean("max_chars")(Number(e.target.value))} />
                   </Field>
-                  <Field label="Evaluation split" hint="Percent held out.">
+                  <Field label={t("datasets.eval_split")} hint={t("datasets.eval_hint")}>
                     <Input type="number" min={0} max={50} value={cleaning.eval_percent} onChange={(e) => setClean("eval_percent")(Number(e.target.value))} />
                   </Field>
-                  <Field label="Rows to keep" hint="0 keeps all.">
+                  <Field label={t("datasets.rows_keep")} hint={t("datasets.rows_hint")}>
                     <Input type="number" min={0} value={cleaning.max_rows} onChange={(e) => setClean("max_rows")(Number(e.target.value))} />
                   </Field>
                 </div>
                 <Button variant="primary" onClick={() => void prepare()} disabled={preparing || missing.length > 0}>
-                  <Sparkles className="size-4" /> {preparing ? "Starting…" : "Prepare dataset"}
+                  <Sparkles className="size-4" /> {preparing ? t("datasets.starting_dots") : t("datasets.prepare")}
                 </Button>
-                {missing.length > 0 && <span className="text-xs text-muted">Choose a column for: {missing.join(", ")}.</span>}
+                {missing.length > 0 && <span className="text-xs text-muted">{t("datasets.missing", { list: missing.join(", ") })}</span>}
               </div>
             </Section>
           </div>
@@ -418,8 +425,8 @@ export function DatasetsPage() {
               <div className="flex rounded-md border border-line bg-surface p-0.5" role="tablist">
                 {(
                   [
-                    ["model", "As the model sees it"],
-                    ["rows", "Raw rows"],
+                    ["model", t("datasets.view_model")],
+                    ["rows", t("datasets.view_rows")],
                   ] as const
                 ).map(([k, label]) => (
                   <button key={k} role="tab" aria-selected={view === k} onClick={() => setView(k)} className={cx("rounded px-2.5 py-1 text-[13px] font-medium", view === k ? "bg-surface-2 text-text" : "text-muted hover:text-text")}>
@@ -428,12 +435,12 @@ export function DatasetsPage() {
                 ))}
               </div>
               <span className="truncate text-[13px] text-muted">
-                {view === "model" && rendered ? `${rendered.usable} of ${rendered.rows.length} sample rows usable` : `First ${preview.rows.length} rows of ${preview.source}`}
+                {view === "model" && rendered ? t("datasets.usable", { usable: rendered.usable, total: rendered.rows.length }) : t("datasets.first_rows", { n: preview.rows.length, source: preview.source })}
               </span>
             </div>
             {view === "model" ? (
               missing.length ? (
-                <Notice tone="info">Map the {missing.join(" and ")} column{missing.length > 1 ? "s" : ""} to see the conversations.</Notice>
+                <Notice tone="info">{t("datasets.map_to_see", { list: missing.join(", ") })}</Notice>
               ) : renderError ? (
                 <Notice tone="error">{renderError}</Notice>
               ) : (
@@ -441,7 +448,7 @@ export function DatasetsPage() {
                   {rendered?.rows.map((r, i) =>
                     "error" in r ? (
                       <div key={i} className="rounded-lg border border-dashed border-line px-4 py-2.5 text-[13px] text-muted">
-                        Row {i + 1} skipped: {r.error}
+                        {t("datasets.row_skipped", { n: i + 1, error: r.error })}
                       </div>
                     ) : (
                       <div key={i} className="rounded-lg border border-line bg-surface px-4 py-3">

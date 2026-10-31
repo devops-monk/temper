@@ -30,7 +30,7 @@ const IQUANTS: { id: string; note: Key }[] = [
   { id: "iq3_m", note: "export.iq3" },
   { id: "iq2_m", note: "export.iq2" },
 ];
-const STATE: Record<string, Key> = { done: "export.state_done", failed: "export.state_failed", cancelled: "export.state_cancelled" };
+const STATE: Record<string, Key> = { done: "job.done", failed: "job.failed", cancelled: "job.cancelled" };
 
 async function reveal(path: string) {
   if (!inTauri) return;
