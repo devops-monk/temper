@@ -35,6 +35,7 @@ A computer without either can still chat, prepare datasets and export, but not t
 | ORPO | the same pairs | do SFT and preference training in one pass, without a reference model |
 | SimPO | the same pairs | a lighter DPO that doesn't need a reference model and favours shorter replies less |
 | KTO | single replies marked good or bad | learn from thumbs up and down, when nobody compared two replies side by side |
+| GRPO, Dr. GRPO, DAPO | prompts, and rewards that score replies | improve at tasks with checkable answers: maths, formats, code that passes a test |
 
 KTO rows have a prompt, a `completion` and a `label` of true (good) or false (bad), such as
 `{"prompt": "...", "completion": "...", "label": false}`; the completion may also be a conversation ending in
@@ -45,6 +46,24 @@ weighted to count equally however many there are of each.
 
 Preference objectives train an adapter, so they need LoRA or QLoRA. Run them on a model you have already
 trained with SFT, or on an instruct model.
+
+**Reinforcement learning (GRPO, Dr. GRPO, DAPO):** the model writes several replies to each prompt
+(*Replies per prompt*), your rewards score them, and replies that beat their group's average become likelier.
+Rewards are added together:
+
+- *Correct answer*: 1 when the reply's final answer matches the row's `answer` or `solution` column. The final
+  answer is the last `\boxed{}`, what follows `Answer:` or `####`, or else the last number in the reply; for
+  worked solutions such as GSM8K's, the expected answer is the part after `####`.
+- *Format*: 1 when the reply matches a regular expression, such as `Answer: *-?\d+`.
+- *Your own function*: Python, `def reward(prompt, completion, row)`, returning a number. It runs in the
+  training process, so it can use anything installed there.
+
+The chart shows the average reward instead of the loss, and each evaluation scores greedy replies to held-out
+prompts. Dr. GRPO removes GRPO's bias towards long wrong replies; DAPO counts every token equally and skips
+prompts whose replies all scored the same. There's no penalty for moving away from the starting model, so keep
+the learning rate small (Temper starts at 2e-5). The model's thinking switch is off while it practises: it
+reasons in its reply. Tested on a Mac: Qwen3-0.6B learnt to end multiplication answers with `Answer: N` and
+got them right, from 56% to 100% of the possible reward on held-out prompts, in six steps.
 
 **Chat template:** conversations are written out with the model's own chat template, exactly as it sees them
 when you chat. Choose another under *Method → Chat template* to train a base model (which has none) on

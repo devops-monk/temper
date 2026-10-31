@@ -5,8 +5,9 @@ interface Point {
   loss: number;
 }
 
-/** Training loss over steps. The line uses the temper gradient: it "cools" from straw to blue as training proceeds. */
-export function LossChart({ points, totalSteps }: { points: Point[]; totalSteps: number | null }) {
+/** Training loss (or, for reinforcement learning, reward) over steps. The line uses the temper gradient: it "cools" from straw
+ * to blue as training proceeds. */
+export function LossChart({ points, totalSteps, what = "loss" }: { points: Point[]; totalSteps: number | null; what?: "loss" | "reward" }) {
   const id = useId();
   const W = 560;
   const H = 180;
@@ -15,7 +16,7 @@ export function LossChart({ points, totalSteps }: { points: Point[]; totalSteps:
   if (points.length < 2) {
     return (
       <div className="flex h-[180px] items-center justify-center rounded-lg border border-dashed border-line text-[13px] text-muted">
-        The loss curve appears after the first few steps.
+        The {what} curve appears after the first few steps.
       </div>
     );
   }
@@ -32,7 +33,7 @@ export function LossChart({ points, totalSteps }: { points: Point[]; totalSteps:
   const last = points[points.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Loss ${last.loss.toFixed(3)} at step ${last.step}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${what === "loss" ? "Loss" : "Reward"} ${last.loss.toFixed(3)} at step ${last.step}`}>
       <defs>
         <linearGradient id={id} x1={pad.l} x2={W - pad.r} gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#E3BE63" />

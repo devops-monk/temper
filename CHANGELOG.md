@@ -65,6 +65,7 @@ Temper now makes pictures, listens and speaks, and runs like a service your othe
   web pages and YouTube transcripts.
 
 ### Training and export
+- Reinforcement learning (GRPO, Dr. GRPO, DAPO) with correct-answer, format and your own Python rewards.
 - Preference training (DPO, ORPO, SimPO, and KTO from replies marked good or bad), full and embedding training on Apple Silicon, and training text
   from documents.
 - Batch size, LoRA rank and context fitted to this computer; a token preview; loss on replies only; a chat

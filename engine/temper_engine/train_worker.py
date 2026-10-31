@@ -144,6 +144,8 @@ def reporter():
 
 
 def train_gpu(cfg: dict, out: Path) -> None:
+    if cfg.get("objective", "sft") in RL:
+        return train_gpu_rl(cfg, out)
     if cfg.get("objective", "sft") != "sft":
         return train_gpu_preference(cfg, out)
     emit("phase", name="Loading model")
@@ -334,6 +336,8 @@ def save_every(cfg: dict, steps: int) -> int:
 
 
 def train_mlx(cfg: dict, out: Path) -> None:
+    if cfg.get("objective", "sft") in RL:
+        return train_mlx_rl(cfg, out)
     if cfg.get("objective", "sft") != "sft":
         return train_mlx_preference(cfg, out)
     emit("phase", name="Preparing dataset")
@@ -556,6 +560,106 @@ def train_gpu_preference(cfg: dict, out: Path) -> None:
         processing_class=tokenizer,
         callbacks=[reporter()],
         **extra,
+    )
+    trainer.train(resume_from_checkpoint=cfg.get("resume_from") or None)
+    emit("phase", name="Saving")
+    target = out / "adapter"
+    model.save_pretrained(str(target))
+    tokenizer.save_pretrained(str(target))
+    chat_render.save(target, cfg.get("chat_template"))
+    emit("result", adapter=str(target), base_model=cfg["base_model"])
+
+
+# ---------------------------------------------------------------- reinforcement learning (GRPO, Dr. GRPO, DAPO)
+
+RL = ("grpo", "dr_grpo", "dapo")
+
+
+def rl_prompts(cfg: dict) -> tuple[list, list]:
+    """Training and held-out (prompt turns, row) pairs; 5% held out (at most 50) when there's no evaluation file."""
+    from .rewards import expected, prompts
+
+    train = prompts(load_rows(cfg))
+    random.Random(cfg["seed"]).shuffle(train)
+    if cfg.get("eval_dataset"):
+        valid = prompts(load_rows(cfg, cfg["eval_dataset"]))
+    else:
+        n = min(50, max(1, len(train) // 20)) if len(train) > 1 else 0
+        valid, train = train[:n], train[n:]
+    if "answer" in cfg["rewards"] and not any(expected(row) for _, row in train[:50]):
+        raise ValueError("The correct-answer reward needs an expected answer in each row (an answer or solution column).")
+    first = {"prompt": train[0][0], "answer": expected(train[0][1])}
+    emit("dataset", rows=len(train), format="prompts", sample=json.dumps(first, ensure_ascii=False)[:1500], eval_rows=len(valid))
+    provenance(cfg, texts=[json.dumps(p, ensure_ascii=False) for p, _ in train])
+    return train, valid
+
+
+def train_mlx_rl(cfg: dict, out: Path) -> None:
+    from . import mlx_grpo
+
+    emit("phase", name="Preparing dataset")
+    train, valid = rl_prompts(cfg)
+    steps = cfg["max_steps"] or int(max(1, len(train) // (cfg["batch_size"] * cfg["grad_accum"])) * cfg["epochs"])
+    mlx_grpo.train(cfg, out, train, valid, emit, steps, eval_every(steps), save_every(cfg, steps))
+
+
+def train_gpu_rl(cfg: dict, out: Path) -> None:
+    emit("phase", name="Loading model")
+    from unsloth import FastLanguageModel  # must be imported before transformers/trl
+
+    import inspect
+
+    from datasets import Dataset
+
+    from .rewards import scorer
+
+    model, tokenizer = FastLanguageModel.from_pretrained(model_name=cfg["base_model"], max_seq_length=cfg["max_seq_length"], load_in_4bit=cfg["method"] == "qlora")
+    chat_render.use(tokenizer, cfg.get("chat_template"))
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=cfg["lora_r"],
+        lora_alpha=cfg["lora_alpha"],
+        lora_dropout=cfg["lora_dropout"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=cfg["seed"],
+    )
+    emit("phase", name="Preparing dataset")
+    train, valid = rl_prompts(cfg)
+    score = scorer(cfg)
+    rows = {json.dumps(p, sort_keys=True): row for p, row in train + valid}
+
+    def reward(prompts, completions, **_):
+        """TRL's reward-function shape: conversational prompts and completions in, one number per completion out."""
+        out = []
+        for p, c in zip(prompts, completions):
+            text = c[-1]["content"] if isinstance(c, list) else str(c)
+            out.append(score(p, text, rows.get(json.dumps(p, sort_keys=True), {})))
+        return out
+
+    def dataset(items: list) -> Dataset:
+        return Dataset.from_dict({"prompt": [p for p, _ in items]})
+
+    steps = cfg["max_steps"] or int(max(1, len(train) // (cfg["batch_size"] * cfg["grad_accum"])) * cfg["epochs"])
+    Config, Trainer = _trl_trainer("GRPO")
+    args = dict(
+        output_dir=str(out / "checkpoints"), per_device_train_batch_size=cfg["batch_size"] * cfg["generations"], gradient_accumulation_steps=cfg["grad_accum"],
+        num_generations=cfg["generations"], max_completion_length=cfg["max_completion_length"], max_prompt_length=cfg["max_seq_length"] - cfg["max_completion_length"],
+        temperature=cfg["temperature"], beta=0.0, loss_type=cfg["objective"], warmup_steps=cfg["warmup_steps"], num_train_epochs=cfg["epochs"],
+        max_steps=cfg["max_steps"] or -1, learning_rate=cfg["learning_rate"], logging_steps=1, optim="adamw_8bit", lr_scheduler_type="linear",
+        seed=cfg["seed"], report_to="none", save_strategy="steps", save_steps=save_every(cfg, steps), save_total_limit=10,
+    )
+    if cfg["objective"] == "grpo":
+        args["scale_rewards"] = True
+    accepted = inspect.signature(Config.__init__).parameters  # only what this TRL version takes
+    trainer = Trainer(
+        model=model,
+        args=Config(**{k: v for k, v in args.items() if k in accepted}),
+        reward_funcs=[reward],
+        train_dataset=dataset(train),
+        processing_class=tokenizer,
+        callbacks=[reporter()],
     )
     trainer.train(resume_from_checkpoint=cfg.get("resume_from") or None)
     emit("phase", name="Saving")

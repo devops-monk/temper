@@ -20,7 +20,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from . import chat_render, home, preference, sources
+from . import chat_render, home, preference, rewards, sources
 from .hardware import probe
 from .jobs import registry
 
@@ -52,13 +52,21 @@ class TrainConfig(BaseModel):
     max_samples: int | None = Field(default=2000, ge=1)
     method: Literal["lora", "qlora", "full"] = "qlora"
     # sft: learn to write the replies. dpo, orpo, simpo: learn which of two replies is better; kto: from
-    # single replies marked good or bad (preference.py).
-    objective: Literal["sft", "dpo", "orpo", "simpo", "kto"] = "sft"
+    # single replies marked good or bad (preference.py). grpo, dr_grpo, dapo: reinforcement learning from
+    # rewards on the model's own replies (rewards.py).
+    objective: Literal["sft", "dpo", "orpo", "simpo", "kto", "grpo", "dr_grpo", "dapo"] = "sft"
     pref_beta: float | None = Field(default=None, gt=0)  # the objective's beta; None for its usual value
     # Continued pretraining: train the token embeddings and output head too, for new vocabulary or a new language.
     train_embeddings: bool = False
     # Replace the model's chat template: a name from chat_render.TEMPLATES, a .jinja file or Jinja text.
     chat_template: str | None = None
+    # Reinforcement learning: the rewards (rewards.REWARDS) and how replies are sampled.
+    rewards: list[str] = ["answer"]
+    reward_pattern: str | None = None
+    reward_code: str | None = None
+    generations: int = Field(default=4, ge=2, le=32)  # replies to each prompt, compared with each other
+    max_completion_length: int = Field(default=256, ge=16, le=8192)
+    temperature: float = Field(default=1.0, gt=0, le=2)
     max_seq_length: int = Field(default=2048, ge=128, le=262144)
     lora_r: int = Field(default=16, ge=1, le=512)
     lora_alpha: int = Field(default=16, ge=1)
@@ -133,7 +141,15 @@ def start(cfg: TrainConfig):
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     if cfg.objective != "sft" and (cfg.method == "full" or cfg.train_embeddings):
-        raise HTTPException(400, "Preference training trains LoRA adapters. Choose LoRA or QLoRA, without training the embeddings.")
+        what = "Reinforcement learning" if rewards.is_rl(cfg.objective) else "Preference training"
+        raise HTTPException(400, f"{what} trains LoRA adapters. Choose LoRA or QLoRA, without training the embeddings.")
+    if rewards.is_rl(cfg.objective):
+        try:
+            rewards.check(cfg.model_dump())
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        if cfg.max_completion_length >= cfg.max_seq_length:
+            raise HTTPException(400, "The reply limit has to be shorter than the context length, to leave room for the prompt.")
     if cfg.early_stopping and trainer != "mlx" and not cfg.eval_dataset:
         # MLX holds out a slice of the data by itself; the GPU trainer evaluates only on a separate set.
         raise HTTPException(400, "Stopping early needs a held-out set to measure against. Prepare the dataset on the Datasets page (it sets one aside), or give an evaluation file.")

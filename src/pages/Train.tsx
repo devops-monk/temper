@@ -27,6 +27,11 @@ interface Form {
   train_embeddings: boolean;
   /** "" for the model's own, a name from /api/train/templates, or Jinja of your own. */
   chat_template: string;
+  rewards: string[];
+  reward_pattern: string;
+  reward_code: string;
+  generations: number;
+  max_completion_length: number;
   max_seq_length: number;
   lora_r: number;
   lora_alpha: number;
@@ -52,6 +57,11 @@ const DEFAULTS: Form = {
   objective: "sft",
   train_embeddings: false,
   chat_template: "",
+  rewards: ["answer"],
+  reward_pattern: "",
+  reward_code: "",
+  generations: 4,
+  max_completion_length: 256,
   max_seq_length: 2048,
   lora_r: 16,
   lora_alpha: 16,
@@ -74,10 +84,16 @@ const OBJECTIVES = {
   dpo: { label: "DPO", note: "Learns which of two replies is better, from rows with a prompt, a chosen and a rejected reply. Stays close to the starting model." },
   orpo: { label: "ORPO", note: "Fine-tunes on the chosen replies while pushing away from the rejected ones, in one step. Same rows as DPO." },
   simpo: { label: "SimPO", note: "Compares the two replies' average likelihood, with a margin. Same rows as DPO; uses less memory." },
+  grpo: { label: "GRPO", note: "Writes several replies to each prompt, scores them with your rewards, and favours the ones that beat their group. Rows need a prompt, and usually the expected answer." },
+  dr_grpo: { label: "Dr. GRPO", note: "GRPO without its bias towards long wrong replies and easy questions. Same rows and rewards." },
+  dapo: { label: "DAPO", note: "GRPO that weighs every token equally, so long replies count fully, and skips prompts whose replies all scored the same." },
   kto: { label: "KTO", note: "Learns from single replies marked good or bad (rows with a prompt, a completion and a true or false label), so no pairs are needed. Pairs work too." },
 } as const;
+const RL: Form["objective"][] = ["grpo", "dr_grpo", "dapo"];
 const SFT_LR = 0.0002;
 const PREFERENCE_LR = 0.00005; // preference objectives move further per step
+const RL_LR = 0.00002; // reinforcement learning: smaller steps keep it from collapsing onto one kind of reply
+const usualLr = (o: Form["objective"]) => (o === "sft" ? SFT_LR : RL.includes(o) ? RL_LR : PREFERENCE_LR);
 
 const METHODS = {
   qlora: { label: "QLoRA", note: "4-bit base weights plus small adapters. Uses the least memory." },
@@ -105,9 +121,10 @@ function RunPanel({ job }: { job: Job }) {
   const refreshJobs = useApp((s) => s.refreshJobs);
   const logRef = useRef<HTMLPreElement>(null);
 
-  const { points, last, phase, dataset, logs, totalSteps, val, samples, best } = useMemo(() => {
+  const { points, last, phase, dataset, logs, totalSteps, val, valReward, samples, best } = useMemo(() => {
     const points: { step: number; loss: number }[] = [];
     let val: { step: number; val_loss: number; val_accuracy?: number } | null = null;
+    let valReward: { step: number; reward: number } | null = null;
     let last: Record<string, number> | null = null;
     let phase = "Starting worker";
     let totalSteps: number | null = null;
@@ -117,20 +134,22 @@ function RunPanel({ job }: { job: Job }) {
     const logs: string[] = [];
     for (const ev of events) {
       if (ev.event === "metrics" && typeof ev.loss === "number") {
-        points.push({ step: ev.step as number, loss: ev.loss });
+        // Reinforcement learning's loss is near zero by design; its reward is what shows progress.
+        points.push({ step: ev.step as number, loss: typeof ev.reward === "number" ? ev.reward : ev.loss });
         last = ev as unknown as Record<string, number>;
         totalSteps = (ev.total_steps as number) ?? totalSteps;
       } else if (ev.event === "phase") {
         phase = ev.name as string;
         totalSteps = (ev.total_steps as number) ?? totalSteps;
       } else if (ev.event === "eval" && typeof ev.val_loss === "number") val = { step: ev.step as number, val_loss: ev.val_loss, val_accuracy: ev.val_accuracy as number | undefined };
+      else if (ev.event === "eval" && typeof ev.val_reward === "number") valReward = { step: ev.step as number, reward: ev.val_reward };
       else if (ev.event === "dataset") dataset = ev;
       else if (ev.event === "sample") samples.push(ev as unknown as Sample);
       else if (ev.event === "best") best = ev as unknown as Best;
       else if (ev.event === "log") logs.push(ev.line as string);
       else if (ev.event === "error") logs.push(`Error: ${ev.message}`);
     }
-    return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps, val, samples, best };
+    return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps, val, valReward, samples, best };
   }, [events]);
 
   useEffect(() => {
@@ -164,8 +183,10 @@ function RunPanel({ job }: { job: Job }) {
       <dl className="grid grid-cols-4 gap-3">
         {[
           ["Step", last ? `${last.step} / ${totalSteps ?? "?"}` : "–"],
-          ["Loss", last?.loss != null ? last.loss.toFixed(4) : "–"],
-          last?.reward_accuracy != null
+          last?.reward != null ? ["Reward", last.reward.toFixed(2)] : ["Loss", last?.loss != null ? last.loss.toFixed(4) : "–"],
+          last?.completion_length != null
+            ? ["Reply length", `${Math.round(last.completion_length)} tokens`]
+            : last?.reward_accuracy != null
             ? ["Prefers chosen", `${Math.round(last.reward_accuracy * 100)}%`]
             : last?.lr != null
               ? ["Learning rate", last.lr.toExponential(2)]
@@ -180,7 +201,12 @@ function RunPanel({ job }: { job: Job }) {
       </dl>
 
       <div className="rounded-lg border border-line bg-surface p-3">
-        <LossChart points={points} totalSteps={totalSteps} />
+        <LossChart points={points} totalSteps={totalSteps} what={last?.reward != null ? "reward" : "loss"} />
+        {valReward && (
+          <p className="mt-1 text-[12.5px] text-muted">
+            Average reward on held-out prompts {valReward.reward.toFixed(2)} at step {valReward.step}
+          </p>
+        )}
         {val && (
           <p className="mt-1 text-[12.5px] text-muted">
             Validation loss {val.val_loss.toFixed(3)} at step {val.step}
@@ -381,7 +407,7 @@ export function TrainPage() {
     setError(null);
     setStarting(true);
     try {
-      const job = await api<Job>("/api/train", { json: { ...form, name: form.name || null, chat_template: form.chat_template.trim() || null } });
+      const job = await api<Job>("/api/train", { json: { ...form, name: form.name || null, chat_template: form.chat_template.trim() || null, reward_pattern: form.reward_pattern || null, reward_code: form.reward_code || null } });
       setSelected(job.id);
       await refreshJobs();
     } catch (e) {
@@ -507,16 +533,12 @@ export function TrainPage() {
                   onChange={(e) => {
                     const objective = e.target.value as Form["objective"];
                     // Moves the learning rate to the objective's usual one, unless it was changed.
-                    setForm((f) => ({
-                      ...f,
-                      objective,
-                      learning_rate: objective === "sft" ? (f.learning_rate === PREFERENCE_LR ? SFT_LR : f.learning_rate) : f.learning_rate === SFT_LR ? PREFERENCE_LR : f.learning_rate,
-                    }));
+                    setForm((f) => ({ ...f, objective, learning_rate: f.learning_rate === usualLr(f.objective) ? usualLr(objective) : f.learning_rate }));
                   }}
                 >
                   {(Object.keys(OBJECTIVES) as Form["objective"][]).map((o) => (
                     <option key={o} value={o}>
-                      {o === "sft" ? OBJECTIVES[o].label : `Preference: ${OBJECTIVES[o].label}`}
+                      {o === "sft" ? OBJECTIVES[o].label : `${RL.includes(o) ? "Reinforcement" : "Preference"}: ${OBJECTIVES[o].label}`}
                     </option>
                   ))}
                 </Select>
@@ -541,7 +563,8 @@ export function TrainPage() {
                   </p>
                 </>
               )}
-              {form.objective !== "sft" && form.method === "full" && <Notice>Preference training trains adapters: choose QLoRA or LoRA.</Notice>}
+              {form.objective !== "sft" && form.method === "full" && <Notice>{RL.includes(form.objective) ? "Reinforcement learning" : "Preference training"} trains adapters: choose QLoRA or LoRA.</Notice>}
+              {RL.includes(form.objective) && <Rewards form={form} set={set} />}
               <ChatTemplate value={form.chat_template} onChange={set("chat_template")} />
             </div>
           </Section>
@@ -674,5 +697,60 @@ function ChatTemplate({ value, onChange }: { value: string; onChange: (v: string
         />
       )}
     </Field>
+  );
+}
+
+const REWARDS = [
+  { id: "answer", label: "Correct answer", note: "1 when the reply's final answer (the last number, a \\boxed{} or what follows \"Answer:\") matches the row's answer or solution column." },
+  { id: "format", label: "Format", note: "1 when the reply matches a regular expression." },
+  { id: "python", label: "Your own function", note: "Python that scores each reply." },
+];
+
+const REWARD_STARTER = `def reward(prompt, completion, row):
+    """Return a number: higher for better replies. row is the dataset row."""
+    score = 0.0
+    if len(completion) < 400:
+        score += 0.5
+    return score
+`;
+
+/** What reinforcement learning rewards, and how many replies it compares (engine rewards.py). */
+function Rewards({ form, set }: { form: Form; set: <K extends keyof Form>(k: K) => (v: Form[K]) => void }) {
+  const toggle = (id: string, on: boolean) => {
+    set("rewards")(on ? [...form.rewards, id] : form.rewards.filter((r) => r !== id));
+    if (on && id === "python" && !form.reward_code) set("reward_code")(REWARD_STARTER);
+  };
+  return (
+    <div className="mt-1 flex flex-col gap-2 rounded-lg border border-line bg-surface px-3 py-2.5">
+      <span className="text-[12.5px] font-medium">Rewards, added together</span>
+      {REWARDS.map((r) => (
+        <div key={r.id}>
+          <label className="flex items-start gap-2 text-[13px]">
+            <input type="checkbox" className="mt-1 accent-[var(--accent)]" checked={form.rewards.includes(r.id)} onChange={(e) => toggle(r.id, e.target.checked)} />
+            <span>
+              {r.label}
+              <span className="block text-[12px] text-muted">{r.note}</span>
+            </span>
+          </label>
+          {r.id === "format" && form.rewards.includes("format") && (
+            <Input className="mt-1.5 font-mono text-[12px]" value={form.reward_pattern} onChange={(e) => set("reward_pattern")(e.target.value)} placeholder="Answer: *-?\d+" spellCheck={false} aria-label="Format pattern" />
+          )}
+          {r.id === "python" && form.rewards.includes("python") && (
+            <textarea
+              value={form.reward_code}
+              onChange={(e) => set("reward_code")(e.target.value)}
+              spellCheck={false}
+              rows={7}
+              aria-label="Reward function"
+              className="mt-1.5 w-full rounded-md border border-line bg-surface-2 px-3 py-2 font-mono text-[12px] text-text [font-variant-ligatures:none] focus:border-accent focus:outline-none"
+            />
+          )}
+        </div>
+      ))}
+      <div className="grid grid-cols-2 gap-3">
+        <NumberField label="Replies per prompt" value={form.generations} onChange={set("generations")} hint="Compared with each other" />
+        <NumberField label="Reply limit" value={form.max_completion_length} onChange={set("max_completion_length")} step={64} hint="Tokens" />
+      </div>
+    </div>
   );
 }

@@ -50,6 +50,17 @@ compare two answers:
 
 The label may be `true`/`false`, `1`/`0`, `yes`/`no` or `good`/`bad`. KTO also takes the pairs above.
 
+## Reinforcement learning data
+
+GRPO, Dr. GRPO and DAPO need only prompts, plus whatever the rewards check, usually the expected answer:
+
+```json
+{"question": "What is 48 * 7?", "answer": "336"}
+```
+
+A `system` column, or `messages` ending with the user's turn, work too. GSM8K-style worked solutions are fine:
+the answer is taken from after `####`.
+
 ## Making data with Recipes
 
 Have documents but no examples? **Recipes** uses a model to write training examples from PDFs, Word files,
