@@ -28,6 +28,7 @@ export function Rail() {
     <button
       key={p}
       onClick={() => go(p)}
+      data-tour={p}
       aria-current={page === p ? "page" : undefined}
       className={cx(
         "group relative flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors",

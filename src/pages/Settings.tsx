@@ -17,6 +17,7 @@ import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
 import { Privacy } from "../components/Privacy";
+import { useTour } from "../components/Tour";
 import { StatsSection } from "../components/Stats";
 import { LANGUAGES, type Language, useLanguage, useT } from "../lib/i18n";
 import { MOD } from "../lib/shortcuts";
@@ -159,6 +160,7 @@ export function SettingsPage() {
   const t = useT();
   const setup = engine?.setup;
   const [licenses, setLicenses] = useState(false);
+  const startTour = useTour((s) => s.start);
 
   async function reinstall(profile: "chat" | "train", clean: boolean) {
     if (clean && !confirm("Reinstall the engine? Temper deletes and rebuilds its Python environment. Your models, runs and exports are kept.")) return;
@@ -169,7 +171,14 @@ export function SettingsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title={t("settings.title")} />
+      <PageHeader
+        title={t("settings.title")}
+        actions={
+          <Button size="sm" variant="ghost" onClick={startTour}>
+            Take the tour
+          </Button>
+        }
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-10">
         <div className="max-w-[640px]">
           <Section title={t("settings.appearance")}>

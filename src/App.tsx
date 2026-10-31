@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { CrashGuard, CrashNotice } from "./components/CrashGuard";
+import { Tour, useFirstRunTour } from "./components/Tour";
 import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { EngineGate } from "./components/EngineGate";
@@ -34,6 +35,7 @@ export function App() {
 
   useEffect(initUpdates, [initUpdates]);
   useShortcuts();
+  useFirstRunTour(ready);
 
   usePoll(refreshEngine, ready ? 10_000 : 1_000);
   useEffect(() => {
@@ -77,6 +79,7 @@ export function App() {
       <StatusBar />
       <ShortcutsDialog />
       <CrashNotice />
+      <Tour />
     </div>
   );
 }

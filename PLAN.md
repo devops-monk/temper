@@ -280,7 +280,8 @@ temper/
 
 ## Phase 12: Polish, quality and launch
 
-- [ ] **12.1 Guided tour** on first launch.
+- [x] **12.1 Guided tour** on first launch.
+  Done: the first time the app is ready, a short tour walks the sidebar (Models, Chat, Datasets, Train, Export, Connect, Settings) with a spotlight on each and a card beside it. It works with the keyboard (arrows, Esc to skip), can be skipped, shows once, and Settings → Take the tour starts it again.
 - [~] **12.2 Profile and statistics**: tokens generated, models trained, time saved.
   Done: Settings → Statistics shows tokens written and read (from every reply through the model API, Temper's chats and Ollama-style requests included), replies and chats, models trained and the time spent training, exports, datasets and their rows, a 30-day chart of tokens written and the most used models. Counted and kept on this computer only. To count streamed replies, Temper now always asks the model server for token counts and passes them on only to clients that asked. Tested live: real replies counted to the token. Still to do: "time saved", which needs a definition first.
 - [ ] **12.3 Accessibility pass**: keyboard-only use, screen-reader labels, contrast checks in both themes.
