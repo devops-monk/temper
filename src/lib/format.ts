@@ -1,3 +1,5 @@
+import { useLanguage } from "./i18n";
+
 export function bytes(n: number | null | undefined): string {
   if (!n) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -23,8 +25,8 @@ export function relativeDate(iso: string | number | null | undefined): string {
   if (!iso) return "";
   const date = typeof iso === "number" ? new Date(iso * 1000) : new Date(iso);
   const days = Math.round((date.getTime() - Date.now()) / 86_400_000);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  if (Math.abs(days) < 1) return "today";
+  const rtf = new Intl.RelativeTimeFormat(useLanguage.getState().language, { numeric: "auto" });
+  if (Math.abs(days) < 1) return rtf.format(0, "day");
   if (Math.abs(days) < 30) return rtf.format(days, "day");
   if (Math.abs(days) < 365) return rtf.format(Math.round(days / 30), "month");
   return rtf.format(Math.round(days / 365), "year");
