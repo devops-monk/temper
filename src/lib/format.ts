@@ -36,3 +36,12 @@ export function quantLabel(file: string): string {
   const m = name.match(/((?:UD-)?(?:I?Q\d[\w]*|BF16|F16|F32|MXFP4\w*))(?:-\d+-of-\d+)?$/i);
   return m ? m[1] : name;
 }
+
+/** An Ollama name from a GGUF's file name: "20261024-154903-gsm8k-math-tutor-Q4_K_M.gguf" → "gsm8k-math-tutor:q4_k_m". */
+export function ollamaName(path: string): string {
+  const stem = path.split(/[\\/]/).pop()!.replace(/\.gguf$/i, "");
+  const quant = stem.match(/-((?:UD-)?I?Q\d\w*|F16|BF16|F32)$/i)?.[1];
+  const base = (quant ? stem.slice(0, -quant.length - 1) : stem).replace(/^\d{8}-\d{6}-/, "");
+  const slug = base.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+|-+$/g, "") || "model";
+  return quant ? `${slug}:${quant.toLowerCase()}` : slug;
+}

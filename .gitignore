@@ -9,3 +9,8 @@ engine/runs/
 .DS_Store
 .idea/
 assets/icon-1024.png
+
+# End-to-end tests
+e2e/.home/
+test-results/
+playwright-report/

@@ -1,18 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
+import { ollamaName } from "../lib/format";
 import { useJob } from "../lib/useJob";
 import { Button, Input } from "./ui";
 
 let installed: Promise<boolean> | null = null;
-
-/** An Ollama name from a GGUF's file name: "20261024-154903-gsm8k-math-tutor-Q4_K_M.gguf" → "gsm8k-math-tutor:q4_k_m". */
-export function ollamaName(path: string): string {
-  const stem = path.split(/[\\/]/).pop()!.replace(/\.gguf$/i, "");
-  const quant = stem.match(/-((?:UD-)?I?Q\d\w*|F16|BF16|F32)$/i)?.[1];
-  const base = (quant ? stem.slice(0, -quant.length - 1) : stem).replace(/^\d{8}-\d{6}-/, "");
-  const slug = base.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+|-+$/g, "") || "model";
-  return quant ? `${slug}:${quant.toLowerCase()}` : slug;
-}
 
 /** Adds a GGUF to Ollama (engine ollama.create), when Ollama is installed: asks for a name, then follows the job. */
 export function AddToOllama({ path }: { path: string }) {

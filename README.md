@@ -78,7 +78,9 @@ To preview the setup screens in a browser, open `http://localhost:1420/#setup=ch
 To work on the UI in a browser, start the engine yourself with `cd engine && uv run temper-engine --token dev`,
 then run `npm run dev` and open http://localhost:1420.
 
-Tests: `cd engine && uv run --extra dev pytest`. Typecheck and build the UI: `npm run build`.
+Tests: `cd engine && uv run --extra dev pytest` (engine), `npm test` (interface logic, Vitest) and
+`npm run test:e2e` (the interface in Chrome against a fresh engine, Playwright; it starts both itself).
+Typecheck and build the UI: `npm run build`.
 
 
 ## Icons

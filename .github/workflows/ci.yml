@@ -14,7 +14,23 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run check:locales
+      - run: npm test
       - run: npm run build
+
+  # The interface in Chrome against a real engine with an empty home folder (playwright.config.ts).
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+      - run: uv sync --directory engine
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-traces, path: test-results/ }
 
   engine:
     strategy:

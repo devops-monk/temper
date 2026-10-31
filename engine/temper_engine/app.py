@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -53,9 +54,11 @@ def create_app(token: str = "") -> FastAPI:
         return response
 
     # Added after the auth middleware so it wraps it and 401s still carry CORS headers.
+    # TEMPER_ORIGINS adds origins (comma-separated) for an interface served elsewhere, like the end-to-end tests'.
+    extra = [o.strip() for o in os.environ.get("TEMPER_ORIGINS", "").split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=APP_ORIGINS,
+        allow_origins=APP_ORIGINS + extra,
         allow_methods=["*"],
         allow_headers=["*"],
     )
