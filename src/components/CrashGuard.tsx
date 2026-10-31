@@ -2,6 +2,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from "react";
 import { type Crash, reportCrash } from "../lib/crash";
 import { api, openExternal } from "../lib/engine";
+import { t as tr, useT } from "../lib/i18n";
 import { Button } from "./ui";
 
 /** Catches a page that fails to draw: says so, saves a report, and offers to try again or report it. */
@@ -28,15 +29,15 @@ export class CrashGuard extends Component<{ page: string; children: ReactNode },
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="max-w-md text-center">
           <AlertTriangle className="mx-auto size-6 text-straw" />
-          <h2 className="mt-3 font-semibold">This page hit an error</h2>
+          <h2 className="mt-3 font-semibold">{tr("crash.page")}</h2>
           <p className="mt-1 text-[13px] text-muted">
-            {this.state.error.message}. Your chats, models and runs are safe. A report was saved on this computer; it's only sent if you choose to report it.
+            {tr("crash.safe", { error: this.state.error.message })}
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <Button onClick={() => this.setState({ error: null, crash: null })}>Try again</Button>
+            <Button onClick={() => this.setState({ error: null, crash: null })}>{tr("crash.retry")}</Button>
             {crash && (
               <Button variant="ghost" onClick={() => void openExternal(crash.report_url)}>
-                Report on GitHub
+                {tr("crash.report")}
               </Button>
             )}
           </div>
@@ -50,6 +51,7 @@ let offer: Promise<boolean> | null = null;
 
 /** When "Offer to report crashes" is on, a note after a crash with a link to report it. */
 export function CrashNotice() {
+  const t = useT();
   const [crash, setCrash] = useState<Crash | null>(null);
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export function CrashNotice() {
     <div className="fixed right-4 bottom-10 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-line bg-surface p-3 text-[13px] shadow-lg" role="alert">
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-straw" />
       <div className="min-w-0">
-        <div className="font-medium">Temper hit an error</div>
+        <div className="font-medium">{t("crash.hit")}</div>
         <div className="truncate text-muted" title={crash.error}>
           {crash.error}
         </div>
@@ -81,10 +83,10 @@ export function CrashNotice() {
             setCrash(null);
           }}
         >
-          Review and report on GitHub
+          {t("crash.review")}
         </button>
       </div>
-      <button className="text-muted hover:text-text" onClick={() => setCrash(null)} aria-label="Dismiss">
+      <button className="text-muted hover:text-text" onClick={() => setCrash(null)} aria-label={t("crash.dismiss")}>
         <X className="size-3.5" />
       </button>
     </div>

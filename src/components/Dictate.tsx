@@ -1,6 +1,7 @@
 import { Loader2, Mic, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { Button, cx } from "./ui";
 
 /** Speech to text as the engine reports it (engine speech.py). */
@@ -31,19 +32,20 @@ export function useSpeech(): { speech: SpeechStatus | null; refresh: () => void 
     speech,
     refresh: () => {
       statusCache = null;
-      setTick((t) => t + 1);
+      setTick((n) => n + 1);
     },
   };
 }
 
 /** The microphone button in Chat's composer: click to record, click again to put what was said into the message. */
 export function Dictate({ onText, disabled }: { onText: (text: string) => void; disabled?: boolean }) {
+  const t = useT();
   const { speech } = useSpeech();
   const [state, setState] = useState<"idle" | "recording" | "working">("idle");
   const [error, setError] = useState<string | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
 
-  useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
+  useEffect(() => () => recorder.current?.stream.getTracks().forEach((track) => track.stop()), []);
   if (!speech?.ready) return null;
 
   async function start() {
@@ -52,7 +54,7 @@ export function Dictate({ onText, disabled }: { onText: (text: string) => void; 
     try {
       media = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setError("Temper can't use the microphone. Allow it in System Settings → Privacy & Security → Microphone.");
+      setError(t("dictate.mic"));
       return;
     }
     void api("/api/speech/warm", { method: "POST" }).catch(() => {}); // loads the model while you speak
@@ -60,7 +62,7 @@ export function Dictate({ onText, disabled }: { onText: (text: string) => void; 
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     rec.onstop = async () => {
-      media.getTracks().forEach((t) => t.stop());
+      media.getTracks().forEach((track) => track.stop());
       const type = rec.mimeType || "audio/webm";
       const suffix = type.includes("mp4") ? ".m4a" : type.includes("ogg") ? ".ogg" : ".webm";
       setState("working");
@@ -84,8 +86,8 @@ export function Dictate({ onText, disabled }: { onText: (text: string) => void; 
         variant="ghost"
         onClick={() => (state === "recording" ? recorder.current?.stop() : state === "idle" && void start())}
         disabled={disabled || state === "working"}
-        aria-label={state === "recording" ? "Stop and transcribe" : "Dictate"}
-        title={state === "recording" ? "Stop and put it in the message" : `Dictate (${speech.backend}, on this computer)`}
+        aria-label={t(state === "recording" ? "dictate.stop" : "dictate.dictate")}
+        title={state === "recording" ? t("dictate.stop_title") : t("dictate.title", { backend: speech.backend })}
         className={cx("size-9 rounded-xl px-0 text-muted", state === "recording" && "text-danger")}
       >
         {state === "working" ? <Loader2 className="size-[18px] animate-spin" /> : state === "recording" ? <Square className="size-3.5 animate-pulse fill-current" /> : <Mic className="size-[18px]" />}

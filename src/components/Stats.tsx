@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
+import { t as tr, useT } from "../lib/i18n";
 import { Section } from "./ui";
 
 /** The engine's statistics (usage.py). */
@@ -24,8 +25,8 @@ const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumF
 const full = new Intl.NumberFormat();
 
 function hours(seconds: number): string {
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
-  return `${(seconds / 3600).toFixed(seconds < 36000 ? 1 : 0)} h`;
+  if (seconds < 3600) return tr("stats.min", { n: Math.round(seconds / 60) });
+  return tr("stats.h", { n: (seconds / 3600).toFixed(seconds < 36000 ? 1 : 0) });
 }
 
 function Tile({ value, label, title }: { value: string; label: string; title?: string }) {
@@ -39,6 +40,7 @@ function Tile({ value, label, title }: { value: string; label: string; title?: s
 
 /** Tokens written per day over the last 30 days: one series, so no legend; a tooltip on each bar. */
 function DailyTokens({ days }: { days: Stats["tokens"]["days"] }) {
+  const t = useT();
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...days.map((d) => d.output_tokens));
   const shown = hover != null ? days[hover] : null;
@@ -46,17 +48,19 @@ function DailyTokens({ days }: { days: Stats["tokens"]["days"] }) {
   return (
     <figure className="mt-4">
       <figcaption className="mb-2 flex items-baseline justify-between text-[12.5px]">
-        <span className="text-muted">Tokens written, last 30 days</span>
+        <span className="text-muted">{t("stats.last30")}</span>
         <span className="tabular-nums text-muted" aria-live="polite">
-          {shown ? `${label(shown.date)}: ${full.format(shown.output_tokens)} tokens in ${shown.replies} ${shown.replies === 1 ? "reply" : "replies"}` : `Most in a day: ${full.format(max === 1 && !days.some((d) => d.output_tokens) ? 0 : max)}`}
+          {shown
+            ? t(shown.replies === 1 ? "stats.day_one" : "stats.day", { date: label(shown.date), tokens: full.format(shown.output_tokens), n: shown.replies })
+            : t("stats.most", { n: full.format(max === 1 && !days.some((d) => d.output_tokens) ? 0 : max) })}
         </span>
       </figcaption>
-      <div className="flex h-24 items-end gap-[2px] border-b border-line" role="list" aria-label="Tokens written per day" onMouseLeave={() => setHover(null)}>
+      <div className="flex h-24 items-end gap-[2px] border-b border-line" role="list" aria-label={t("stats.per_day")} onMouseLeave={() => setHover(null)}>
         {days.map((d, i) => (
           <div
             key={d.date}
             role="listitem"
-            aria-label={`${label(d.date)}: ${d.output_tokens} tokens`}
+            aria-label={t("stats.bar", { date: label(d.date), n: d.output_tokens })}
             className="flex h-full flex-1 items-end"
             onMouseEnter={() => setHover(i)}
           >
@@ -69,7 +73,7 @@ function DailyTokens({ days }: { days: Stats["tokens"]["days"] }) {
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-muted tabular-nums">
         <span>{days.length ? label(days[0].date) : ""}</span>
-        <span>Today</span>
+        <span>{t("stats.today")}</span>
       </div>
     </figure>
   );
@@ -77,6 +81,7 @@ function DailyTokens({ days }: { days: Stats["tokens"]["days"] }) {
 
 /** Settings → Statistics: what Temper has done on this computer. Nothing here leaves it. */
 export function StatsSection() {
+  const t = useT();
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
@@ -84,38 +89,37 @@ export function StatsSection() {
   }, []);
   if (!stats) return null;
 
-  const t = stats.tokens;
+  const tok = stats.tokens;
   return (
-    <Section title="Statistics">
+    <Section title={t("stats.title")}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile value={compact.format(t.output)} label="tokens written" title={`${full.format(t.output)} written, ${full.format(t.input)} read, in ${full.format(t.replies)} replies`} />
-        <Tile value={compact.format(stats.messages)} label={`replies in ${full.format(stats.chats)} chats`} />
-        <Tile value={full.format(stats.training.finished)} label="models trained" title={`${stats.training.runs} runs, ${full.format(stats.training.steps)} steps`} />
-        <Tile value={hours(stats.training.seconds)} label="spent training" />
-        <Tile value={full.format(stats.exports)} label="exports" />
-        <Tile value={full.format(stats.datasets)} label="datasets prepared" title={`${full.format(stats.dataset_rows)} rows`} />
-        <Tile value={compact.format(t.input)} label="tokens read" />
-        <Tile value={compact.format(stats.dataset_rows)} label="training rows" />
+        <Tile value={compact.format(tok.output)} label={t("stats.written")} title={t("stats.written_title", { out: full.format(tok.output), in: full.format(tok.input), n: full.format(tok.replies) })} />
+        <Tile value={compact.format(stats.messages)} label={t("stats.replies", { n: full.format(stats.chats) })} />
+        <Tile value={full.format(stats.training.finished)} label={t("stats.trained")} title={t("stats.trained_title", { runs: stats.training.runs, steps: full.format(stats.training.steps) })} />
+        <Tile value={hours(stats.training.seconds)} label={t("stats.spent")} />
+        <Tile value={full.format(stats.exports)} label={t("stats.exports")} />
+        <Tile value={full.format(stats.datasets)} label={t("stats.datasets")} title={t("stats.rows", { n: full.format(stats.dataset_rows) })} />
+        <Tile value={compact.format(tok.input)} label={t("stats.read")} />
+        <Tile value={compact.format(stats.dataset_rows)} label={t("stats.training_rows")} />
       </div>
-      <DailyTokens days={t.days} />
-      {t.models.length > 0 && (
+      <DailyTokens days={tok.days} />
+      {tok.models.length > 0 && (
         <div className="mt-4 text-[13px]">
-          <div className="mb-1 text-[12.5px] text-muted">Most used models</div>
+          <div className="mb-1 text-[12.5px] text-muted">{t("stats.models")}</div>
           <ul>
-            {t.models.map((m) => (
+            {tok.models.map((m) => (
               <li key={m.model} className="flex items-center gap-3 border-t border-line py-1.5">
                 <span className="min-w-0 flex-1 truncate" title={m.model}>
                   {m.model}
                 </span>
-                <span className="shrink-0 text-muted tabular-nums">{full.format(m.output_tokens)} tokens</span>
+                <span className="shrink-0 text-muted tabular-nums">{t("stats.tokens", { n: full.format(m.output_tokens) })}</span>
               </li>
             ))}
           </ul>
         </div>
       )}
       <p className="mt-3 text-[12px] text-muted">
-        Counted on this computer{t.since ? ` since ${new Date(`${t.since}T12:00:00`).toLocaleDateString()}` : ""}, from replies through Temper's model API, its own chats included. None of it is
-        sent anywhere.
+        {tok.since ? t("stats.counted_since", { date: new Date(`${tok.since}T12:00:00`).toLocaleDateString() }) : t("stats.counted")}
       </p>
     </Section>
   );

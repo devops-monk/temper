@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Circle, Copy, RotateCw, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
+import { type Key, useT } from "../lib/i18n";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
 import { Button, Notice, Section, cx } from "./ui";
@@ -23,10 +24,10 @@ const ICON = {
   fail: <XCircle className="size-4 text-danger" />,
   info: <Circle className="size-4 text-muted" />,
 };
-const ACTION_LABEL: Record<Action, string> = {
-  install_llamacpp: "Install llama.cpp",
-  reinstall_engine: "Reinstall engine",
-  add_training: "Add training support",
+const ACTION_LABEL: Record<Action, Key> = {
+  install_llamacpp: "diag.install_llamacpp",
+  reinstall_engine: "diag.reinstall",
+  add_training: "diag.add_training",
 };
 const SYMBOL = { ok: "✓", warn: "!", fail: "✗", info: "·" };
 
@@ -41,6 +42,7 @@ export function Diagnostics({
   installed: "chat" | "train";
   onReinstall: (profile: "chat" | "train", clean: boolean) => void;
 }) {
+  const t = useT();
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export function Diagnostics({
     try {
       setChecks((await api<{ checks: Check[] }>("/api/doctor")).checks);
     } catch (e) {
-      setError(`The checks couldn't run. ${e instanceof Error ? e.message : String(e)}`);
+      setError(t("diag.couldnt", { error: e instanceof Error ? e.message : String(e) }));
     } finally {
       setRunning(false);
     }
@@ -89,27 +91,27 @@ export function Diagnostics({
 
   return (
     <Section
-      title="Diagnostics"
+      title={t("diag.title")}
       aside={
         <div className="flex gap-2">
           {checks && (
             <Button size="sm" onClick={() => void copy()}>
-              <Copy className="size-3.5" /> {copied ? "Copied" : "Copy report"}
+              <Copy className="size-3.5" /> {t(copied ? "diag.copied" : "diag.copy")}
             </Button>
           )}
           <Button size="sm" disabled={!ready || running} onClick={() => void run()}>
-            <RotateCw className={cx("size-3.5", running && "animate-spin")} /> {checks ? "Run again" : "Run checks"}
+            <RotateCw className={cx("size-3.5", running && "animate-spin")} /> {t(checks ? "diag.again" : "diag.run")}
           </Button>
         </div>
       }
     >
       {!checks ? (
         <p className="text-[13px] text-muted">
-          {ready ? "Checks drivers, GPU libraries, disk space, the API port and the engine's packages, and says how to fix what it finds." : "Diagnostics run once the engine is ready."}
+          {t(ready ? "diag.about" : "diag.not_ready")}
         </p>
       ) : (
         <>
-          <p className="mb-2 text-[13px] text-muted">{problems ? `${problems} thing${problems > 1 ? "s" : ""} to look at.` : "Everything looks good."}</p>
+          <p className="mb-2 text-[13px] text-muted">{problems ? (problems > 1 ? t("diag.problems", { n: problems }) : t("diag.problem")) : t("diag.good")}</p>
           <ul className="rounded-lg border border-line bg-surface">
             {checks.map((c) => (
               <li key={c.id} className="flex gap-3 border-t border-line px-4 py-2.5 first:border-t-0">
@@ -121,7 +123,7 @@ export function Diagnostics({
                 </div>
                 {c.action && c.status !== "ok" && (
                   <Button size="sm" className="shrink-0 self-center" disabled={!!jobId} onClick={() => void fix(c.action!)}>
-                    {c.action === "install_llamacpp" && jobId ? "Installing…" : ACTION_LABEL[c.action]}
+                    {c.action === "install_llamacpp" && jobId ? t("diag.installing") : t(ACTION_LABEL[c.action])}
                   </Button>
                 )}
               </li>

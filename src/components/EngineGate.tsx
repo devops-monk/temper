@@ -1,6 +1,7 @@
 import { KeyRound, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { inTauri, restartEngine, saveEngineKey } from "../lib/engine";
+import { useT, withNodes } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { LogoMark } from "./Logo";
 import { Setup } from "./Setup";
@@ -8,6 +9,7 @@ import { Button, Input } from "./ui";
 
 /** Shown in place of a page until the engine answers. */
 export function EngineGate() {
+  const t = useT();
   const { engine, refreshEngine } = useApp();
   const status = engine?.status ?? "starting";
 
@@ -18,7 +20,7 @@ export function EngineGate() {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         <LogoMark className="animate-pulse-dot size-12" />
-        <p className="text-muted">{engine?.detail ?? "Starting the engine…"}</p>
+        <p className="text-muted">{engine?.detail ?? t("gate.starting")}</p>
       </div>
     );
   }
@@ -28,12 +30,12 @@ export function EngineGate() {
       <div className="max-w-[460px]">
         <LogoMark className="mb-4 size-10" />
         <h1 className="text-xl font-semibold">
-          {status === "missing_uv" ? "Temper needs uv to run its engine" : "The engine isn't running"}
+          {t(status === "missing_uv" ? "gate.needs_uv" : "gate.not_running")}
         </h1>
         <p className="mt-2 text-muted">
           {status === "missing_uv"
-            ? "uv installs and runs the Python engine that loads and trains models. Install it, then start the engine again."
-            : (engine?.detail ?? "The engine stopped. Start it again to keep working.")}
+            ? t("gate.uv_hint")
+            : (engine?.detail ?? t("gate.stopped"))}
         </p>
         {status === "missing_uv" && (
           <pre className="mt-4 overflow-x-auto rounded-lg border border-line bg-surface p-3 font-mono text-[12.5px]">
@@ -50,7 +52,7 @@ export function EngineGate() {
               await refreshEngine();
             }}
           >
-            <RotateCw className="size-4" /> {inTauri ? "Start engine" : "Check again"}
+            <RotateCw className="size-4" /> {t(inTauri ? "gate.start" : "gate.check")}
           </Button>
         </div>
       </div>
@@ -60,6 +62,7 @@ export function EngineGate() {
 
 /** A browser on `temper serve` asks for the engine's key once, then keeps it. */
 function KeyForm({ wrong, onSaved }: { wrong: boolean; onSaved: () => Promise<void> }) {
+  const t = useT();
   const [key, setKey] = useState("");
   return (
     <div className="flex flex-1 items-center justify-center p-8">
@@ -72,14 +75,14 @@ function KeyForm({ wrong, onSaved }: { wrong: boolean; onSaved: () => Promise<vo
         }}
       >
         <LogoMark className="mb-4 size-10" />
-        <h1 className="text-xl font-semibold">{wrong ? "That key didn't work" : "Enter the engine's key"}</h1>
+        <h1 className="text-xl font-semibold">{t(wrong ? "gate.wrong_key" : "gate.enter_key")}</h1>
         <p className="mt-2 text-muted">
-          It&apos;s in the api-key file in Temper&apos;s folder on the computer running <span className="font-mono">temper serve</span>, and in the link it printed. This browser keeps it.
+          {withNodes(t("gate.key_hint"), { cmd: <span className="font-mono">temper serve</span> })}
         </p>
         <div className="mt-4 flex gap-2">
-          <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Key" aria-label="Engine key" autoFocus autoComplete="current-password" />
+          <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={t("gate.key")} aria-label={t("gate.engine_key")} autoFocus autoComplete="current-password" />
           <Button variant="primary" type="submit" disabled={!key.trim()}>
-            <KeyRound className="size-4" /> Open
+            <KeyRound className="size-4" /> {t("gate.open")}
           </Button>
         </div>
       </form>

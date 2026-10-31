@@ -2,13 +2,15 @@ import { Brain, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useT } from "../lib/i18n";
 import { cx } from "./ui";
 
 /** A reply's reasoning, open while the model thinks and folded away once it starts answering. */
 export function ThinkingBlock({ text, live, seconds }: { text: string; live: boolean; seconds?: number }) {
+  const t = useT();
   const [open, setOpen] = useState<boolean | null>(null);
   const shown = open ?? live;
-  const label = live ? "Thinking…" : seconds !== undefined ? `Thought for ${seconds < 1 ? "under a second" : `${Math.round(seconds)} s`}` : "Thinking";
+  const label = live ? t("chat.thinking") : seconds !== undefined ? (seconds < 1 ? t("reply.thought_brief") : t("reply.thought_for", { n: Math.round(seconds) })) : t("reply.thinking");
   return (
     <div className="mb-3">
       <button onClick={() => setOpen(!shown)} className="flex items-center gap-1.5 text-[12.5px] text-muted hover:text-text" aria-expanded={shown}>

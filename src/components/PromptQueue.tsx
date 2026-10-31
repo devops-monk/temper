@@ -1,6 +1,7 @@
 import { GripVertical, Pencil, Play, X } from "lucide-react";
 import { useState } from "react";
 import type { Attachment } from "./Attachments";
+import { useT } from "../lib/i18n";
 import { cx } from "./ui";
 
 export interface Queued {
@@ -16,6 +17,7 @@ function move<T>(items: T[], from: number, to: number): T[] {
 }
 
 function QueueRow({ item, onSave, onRemove }: { item: Queued; onSave: (text: string) => void; onRemove: () => void }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(item.text);
   const finish = (save: boolean) => {
@@ -37,18 +39,18 @@ function QueueRow({ item, onSave, onRemove }: { item: Queued; onSave: (text: str
       rows={Math.min(6, Math.max(2, text.split("\n").length))}
       autoFocus
       className="min-w-0 flex-1 resize-none rounded-md border border-accent bg-surface px-2 py-1 text-[13px] outline-none"
-      aria-label="Edit queued message"
+      aria-label={t("queue.edit")}
     />
   ) : (
     <>
-      <button className="line-clamp-2 min-w-0 flex-1 text-left text-[13px] whitespace-pre-wrap" onClick={() => setEditing(true)} title="Edit">
-        {item.text || <span className="text-muted">(no text)</span>}
+      <button className="line-clamp-2 min-w-0 flex-1 text-left text-[13px] whitespace-pre-wrap" onClick={() => setEditing(true)} title={t("queue.edit_short")}>
+        {item.text || <span className="text-muted">{t("queue.no_text")}</span>}
         {item.files?.length ? <span className="ml-1.5 text-[12px] text-muted">+ {item.files.map((f) => f.name).join(", ")}</span> : null}
       </button>
-      <button className="rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-text focus:opacity-100" onClick={() => setEditing(true)} aria-label="Edit queued message">
+      <button className="rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-text focus:opacity-100" onClick={() => setEditing(true)} aria-label={t("queue.edit")}>
         <Pencil className="size-3" />
       </button>
-      <button className="rounded p-1 text-muted hover:bg-surface-2 hover:text-danger" onClick={onRemove} aria-label="Remove from queue">
+      <button className="rounded p-1 text-muted hover:bg-surface-2 hover:text-danger" onClick={onRemove} aria-label={t("queue.remove")}>
         <X className="size-3.5" />
       </button>
     </>
@@ -57,21 +59,22 @@ function QueueRow({ item, onSave, onRemove }: { item: Queued; onSave: (text: str
 
 /** Follow-ups waiting for the reply being written, sent in order; edit them, drag to reorder, or remove them. */
 export function PromptQueue({ items, paused, onChange, onResume }: { items: Queued[]; paused: boolean; onChange: (items: Queued[]) => void; onResume: () => void }) {
+  const t = useT();
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
   if (!items.length) return null;
   return (
     <div className="mb-2 rounded-xl border border-line bg-surface/60 px-2 py-1.5">
       <div className="flex items-center gap-2 px-1 pb-1 text-[12px] text-muted">
-        <span>{paused ? `${items.length} queued, paused` : `${items.length} queued, sent when the reply finishes`}</span>
+        <span>{t(paused ? "queue.paused" : "queue.waiting", { n: items.length })}</span>
         <span className="ml-auto flex items-center gap-1">
           {paused && (
             <button className="flex items-center gap-1 rounded px-1.5 py-0.5 text-accent hover:bg-surface-2" onClick={onResume}>
-              <Play className="size-3" /> Send next
+              <Play className="size-3" /> {t("queue.send_next")}
             </button>
           )}
           <button className="rounded px-1.5 py-0.5 hover:bg-surface-2 hover:text-text" onClick={() => onChange([])}>
-            Clear
+            {t("queue.clear")}
           </button>
         </span>
       </div>
@@ -111,7 +114,7 @@ export function PromptQueue({ items, paused, onChange, onResume }: { items: Queu
               }}
               className="mt-0.5 cursor-grab rounded text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
               role="button"
-              aria-label={`Move queued message ${i + 1}. Drag, or use the arrow keys.`}
+              aria-label={t("queue.move", { n: i + 1 })}
             >
               <GripVertical className="size-3.5" />
             </span>

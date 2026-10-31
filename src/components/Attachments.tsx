@@ -2,6 +2,7 @@ import { FileText, Music, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, apiBlob, inTauri } from "../lib/engine";
 import { bytes } from "../lib/format";
+import { t as tr, useT } from "../lib/i18n";
 import { cx } from "./ui";
 
 /** A file sent with a chat message (engine attachments.py). */
@@ -32,7 +33,7 @@ function readBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
-    reader.onerror = () => reject(new Error(`${file.name} couldn't be read.`));
+    reader.onerror = () => reject(new Error(tr("attach.unreadable", { name: file.name })));
     reader.readAsDataURL(file);
   });
 }
@@ -52,7 +53,7 @@ export async function attach(files: (string | File)[]): Promise<{ added: Attachm
 export async function pickFiles(): Promise<(string | File)[]> {
   if (inTauri) {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: true, title: "Attach files", filters: [{ name: "Images, audio and documents", extensions: ACCEPT.map((e) => e.slice(1)) }] });
+    const picked = await open({ multiple: true, title: tr("attach.title"), filters: [{ name: tr("attach.filter"), extensions: ACCEPT.map((e) => e.slice(1)) }] });
     return Array.isArray(picked) ? picked : picked ? [picked] : [];
   }
   return new Promise((resolve) => {
@@ -90,19 +91,20 @@ function useBlobUrl(path: string | null) {
 function describe(a: Attachment, context: number): { text: string; warn: boolean } {
   if (a.kind !== "document") return { text: bytes(a.size), warn: false };
   const tokens = approxTokens(a);
-  const size = a.pages ? `${a.pages} page${a.pages > 1 ? "s" : ""}` : a.rows ? `${a.rows} rows` : null;
-  const length = tokens >= 1000 ? `about ${(tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1)}K tokens` : `about ${tokens} tokens`;
-  return { text: [size, length, a.truncated && "cut short"].filter(Boolean).join(", "), warn: tokens > context * 0.75 };
+  const size = a.pages ? (a.pages > 1 ? tr("attach.pages", { n: a.pages }) : tr("attach.page")) : a.rows ? tr("attach.rows", { n: a.rows }) : null;
+  const length = tokens >= 1000 ? tr("attach.ktokens", { n: (tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1) }) : tr("attach.tokens", { n: tokens });
+  return { text: [size, length, a.truncated && tr("attach.cut")].filter(Boolean).join(", "), warn: tokens > context * 0.75 };
 }
 
 /** A file in the message box (with a remove button) or in a sent message. */
 export function AttachmentChip({ attachment: a, context, onRemove }: { attachment: Attachment; context: number; onRemove?: () => void }) {
+  const t = useT();
   const src = useBlobUrl(a.kind === "document" ? null : `/api/attachments/${a.id}/file`);
   const { text, warn } = describe(a, context);
   if (a.kind === "image" && !onRemove)
     return src ? <img src={src} alt={a.name} title={a.name} className="max-h-60 max-w-full rounded-lg border border-line object-contain" /> : <div className="h-24 w-32 rounded-lg bg-surface-2" />;
   return (
-    <div className="flex max-w-[260px] min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-2 py-1.5" title={warn ? `${a.name} may not fit in the model's ${context.toLocaleString()}-token context.` : a.name}>
+    <div className="flex max-w-[260px] min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-2 py-1.5" title={warn ? t("attach.too_big", { name: a.name, n: context.toLocaleString() }) : a.name}>
       {a.kind === "image" ? (
         src ? <img src={src} alt="" className="size-9 shrink-0 rounded object-cover" /> : <div className="size-9 shrink-0 rounded bg-surface-2" />
       ) : (
@@ -113,7 +115,7 @@ export function AttachmentChip({ attachment: a, context, onRemove }: { attachmen
         {a.kind === "audio" && !onRemove && src ? <audio src={src} controls className="mt-1 h-7 w-48" /> : <span className={cx("block truncate text-[11.5px]", warn ? "text-straw" : "text-muted")}>{text}</span>}
       </span>
       {onRemove && (
-        <button className="rounded p-0.5 text-muted hover:bg-surface-2 hover:text-text" onClick={onRemove} aria-label={`Remove ${a.name}`}>
+        <button className="rounded p-0.5 text-muted hover:bg-surface-2 hover:text-text" onClick={onRemove} aria-label={t("attach.remove", { name: a.name })}>
           <X className="size-3.5" />
         </button>
       )}

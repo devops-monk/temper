@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import type { Crash } from "../lib/crash";
 import { api, openExternal } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { Section, Toggle } from "./ui";
 
 /** Settings → Privacy: no telemetry, and crash reports kept here until the user sends one. */
 export function Privacy() {
+  const t = useT();
   const [offer, setOffer] = useState(false);
   const [crashes, setCrashes] = useState<Crash[]>([]);
 
@@ -27,24 +29,22 @@ export function Privacy() {
   }
 
   return (
-    <Section title="Privacy">
+    <Section title={t("privacy.title")}>
       <p className="text-[13px] text-muted">
-        Temper sends no telemetry: no usage data, no analytics, nothing about your chats, models or files. It goes online only to do what you ask, like downloading a model or searching the
-        web, and to check for updates (which you can turn off above). The libraries it uses are told not to send telemetry either.
+        {t("privacy.about")}
       </p>
       <div className="mt-3">
-        <Toggle checked={offer} onChange={(on) => void setOn(on)} label="Offer to report crashes" />
+        <Toggle checked={offer} onChange={(on) => void setOn(on)} label={t("privacy.offer")} />
         <p className="mt-1 text-[12px] text-muted">
-          When Temper hits an error, it saves a report here, without your home folder, keys or tokens. With this on, it also offers to open it as a GitHub issue, which you read and send
-          yourself.
+          {t("privacy.offer_hint")}
         </p>
       </div>
       {crashes.length > 0 && (
         <div className="mt-3">
           <div className="mb-1 flex items-center justify-between text-[12.5px] text-muted">
-            <span>Saved reports</span>
+            <span>{t("privacy.saved")}</span>
             <button className="hover:text-text" onClick={() => void clear()}>
-              Delete all
+              {t("privacy.delete_all")}
             </button>
           </div>
           <ul className="rounded-lg border border-line bg-surface text-[13px]">
@@ -55,7 +55,7 @@ export function Privacy() {
                   {c.error}
                 </span>
                 <button className="shrink-0 text-accent hover:underline" onClick={() => void openExternal(c.report_url)}>
-                  Report
+                  {t("privacy.report")}
                 </button>
               </li>
             ))}

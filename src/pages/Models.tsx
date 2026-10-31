@@ -4,7 +4,7 @@ import { CatalogView } from "../components/Catalog";
 import { useDevices } from "../components/Devices";
 import { CHAT_CONTEXT, type ChatEstimate, LoadButton, folderEngine, useEngines } from "../components/LoadButton";
 import { RepoAccess } from "../components/HfAccount";
-import { SOURCE_NAME, useHubSource } from "../components/HubSource";
+import { sourceName, useHubSource } from "../components/HubSource";
 import { Badge, Button, CopyButton, EmptyState, Input, Notice, PageHeader, ProgressBar, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, compact, duration, quantLabel, relativeDate } from "../lib/format";
@@ -713,7 +713,7 @@ export function ModelsPage() {
       )}
       <PageHeader
         title={t("nav.models")}
-        description={t("models.description", { source: SOURCE_NAME[hub?.source ?? "huggingface"] })}
+        description={t("models.description", { source: sourceName(hub?.source ?? "huggingface") })}
         actions={
           runtime?.state === "ready" && (
             <Button size="sm" variant="ghost" onClick={async () => { await api("/api/runtime/unload", { method: "POST" }); void refreshRuntime(); }}>
