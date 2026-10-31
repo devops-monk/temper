@@ -945,6 +945,58 @@ def log_cmd(args: list[str]) -> int:
     return 0
 
 
+def daemon_cmd(args: list[str]) -> int:
+    from . import daemon
+
+    p = argparse.ArgumentParser(prog="temper daemon", description="Run Temper's engine in the background, with no window or terminal.")
+    sub = p.add_subparsers(dest="action", required=True)
+    up = sub.add_parser("up", help="start it in the background")
+    up.add_argument("--host", default="127.0.0.1", help="the address to listen on (default this computer only)")
+    up.add_argument("--port", type=int, default=8765)
+    sub.add_parser("down", help="stop the background engine")
+    sub.add_parser("status", help="whether it's running, and whether it starts at login")
+    sub.add_parser("install", help="start it at login (and now)")
+    sub.add_parser("uninstall", help="stop starting it at login")
+    a = p.parse_args(args)
+
+    def answering() -> str | None:
+        try:
+            return running()["url"]
+        except CliError:
+            return None
+
+    if a.action == "up":
+        if url := answering():
+            print(f"Temper is running already, at {url}." + ("" if daemon.pid() else " It's the app's engine; it stops when the app quits."))
+            return 0
+        started = daemon.start(a.host, a.port)
+        url = daemon.wait_until_answering(answering)
+        if url is None:
+            raise CliError(f"The engine didn't come up. Its log: {daemon.log_file()}")
+        print(f"Temper's engine is running in the background at {url} (pid {started}). `temper daemon down` stops it.")
+    elif a.action == "down":
+        if daemon.stop():
+            print("Stopped the background engine.")
+        elif answering():
+            raise CliError("The running engine is the app's (or one started at login); quit the app, or run `temper daemon uninstall`.")
+        else:
+            print("No background engine was running.")
+    elif a.action == "status":
+        url, found, login = answering(), daemon.pid(), daemon.login_item()
+        whose = "in the background" if found else "in the app (or from the login item)" if url else None
+        print(f"Engine: {'running ' + whose + ' at ' + url if url else 'not running'}")
+        print(f"Starts at login: {'yes' if login else 'no'}  (log: {daemon.log_file()})")
+    elif a.action == "install":
+        try:
+            where = daemon.install()
+        except RuntimeError as e:
+            raise CliError(str(e)) from e
+        print(f"Temper's engine now starts at login ({where}). `temper daemon uninstall` undoes it.")
+    elif a.action == "uninstall":
+        print("Temper's engine no longer starts at login." if daemon.uninstall() else "It wasn't set to start at login.")
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1021,7 +1073,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1039,6 +1091,7 @@ USAGE = """usage:
   temper runs [--json]
   temper export <run> [--format gguf] [--quant q4_k_m] [--imatrix]
   temper serve [--host H] [--port N]
+  temper daemon up|down|status|install|uninstall
   temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode
   temper doctor --mcp"""

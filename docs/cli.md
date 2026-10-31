@@ -74,6 +74,20 @@ temper serve                       # this computer only, on port 8765
 temper serve --host 0.0.0.0        # reachable from other computers
 ```
 
+In the background, without a terminal:
+
+```bash
+temper daemon up                   # start it detached (log in daemon.log in Temper's folder); --host, --port
+temper daemon status
+temper daemon down
+temper daemon install              # start it at login: a launchd agent, a systemd user unit or a scheduled task
+temper daemon uninstall
+```
+
+Settings → Engine → *Start the engine when I log in* does the same as `install`. When the app opens and finds a
+background engine running, it uses that engine rather than starting a second one. A background engine can't
+read the Hugging Face token from the system keychain; set `HF_TOKEN` in its environment for gated models.
+
 `temper serve` runs the engine on a server, in CI or over SSH. Its key is kept in `api-key` in Temper's
 folder, so it stays the same between runs. Anyone with that key can manage the whole engine, so give apps
 named API keys instead (see [Connect](connect.md#api-keys)).

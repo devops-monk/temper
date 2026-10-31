@@ -13,7 +13,7 @@ import { HubSource } from "../components/HubSource";
 import { Storage } from "../components/Storage";
 import { LicensesDialog } from "../components/Licenses";
 import { Badge, Button, Notice, PageHeader, Section, Select, Toggle, cx } from "../components/ui";
-import { inTauri, installEngine, restartEngine } from "../lib/engine";
+import { api, inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
 import { Privacy } from "../components/Privacy";
@@ -175,6 +175,34 @@ function KeepRunning() {
   );
 }
 
+/** The engine as a login item (engine daemon.py), so the API is up before the app is opened. */
+function StartAtLogin() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api<{ login: boolean }>("/api/daemon").then((d) => setOn(d.login), () => {});
+  }, []);
+  async function change(value: boolean) {
+    setError(null);
+    try {
+      setOn((await api<{ login: boolean }>("/api/daemon/login", { method: "PUT", json: { enabled: value } })).login);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  if (on === null) return null;
+  return (
+    <div className="mt-3">
+      <Toggle checked={on} onChange={(v) => void change(v)} label="Start the engine when I log in" />
+      <p className="mt-1 text-[12px] text-muted">
+        The model API is ready before you open Temper, for agents and other apps. The app uses that engine when you open it. From a terminal:{" "}
+        <span className="font-mono">temper daemon install</span>.
+      </p>
+      {error && <p className="mt-1 text-[12px] text-danger">{error}</p>}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { theme, setTheme, engine, system, refreshEngine, go } = useApp();
   const t = useT();
@@ -262,6 +290,7 @@ export function SettingsPage() {
               </div>
             )}
             {inTauri && <KeepRunning />}
+            {engine?.status === "running" && <StartAtLogin />}
           </Section>
 
           {engine?.status === "running" && <GlobalInstructions />}

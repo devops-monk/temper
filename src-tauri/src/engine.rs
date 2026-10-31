@@ -232,6 +232,26 @@ fn supervise(inner: Arc<Mutex<Inner>>, app: AppHandle, generation: u64, launcher
             s.token.clone()
         };
 
+        if let Some(port) = running_engine(&app, &token) {
+            // Its runs, settings and jobs are these files; a second engine would fight over them.
+            {
+                let mut s = inner.lock().unwrap();
+                if s.generation != generation {
+                    return;
+                }
+                s.port = port;
+            }
+            set_status(&inner, EngineStatus::Running, Some("Using Temper's engine that runs in the background (temper daemon).".into()));
+            while port_open(port) {
+                thread::sleep(Duration::from_secs(1));
+                if inner.lock().unwrap().generation != generation {
+                    return;
+                }
+            }
+            set_status(&inner, EngineStatus::Starting, Some("The background engine stopped; starting the app's own".into()));
+            continue;
+        }
+
         let Some(mut cmd) = engine_command(&app, &launcher, port, &token) else {
             set_status(&inner, EngineStatus::MissingUv, Some("Install uv from https://docs.astral.sh/uv/".into()));
             return;
@@ -347,6 +367,18 @@ fn free_port() -> u16 {
         .and_then(|l| l.local_addr())
         .map(|a| a.port())
         .unwrap_or(8765)
+}
+
+/// A Temper engine already serving these files (`temper daemon`, or the login item), from the engine.json
+/// it leaves: the same key as ours, and its port answering.
+fn running_engine(app: &AppHandle, token: &str) -> Option<u16> {
+    let data = app.path().app_data_dir().ok()?;
+    let found: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(data.join("engine.json")).ok()?).ok()?;
+    if found.get("token")?.as_str()? != token {
+        return None;
+    }
+    let port = found.get("url")?.as_str()?.strip_prefix("http://127.0.0.1:")?.parse().ok()?;
+    port_open(port).then_some(port)
 }
 
 fn port_open(port: u16) -> bool {
