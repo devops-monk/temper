@@ -4,6 +4,7 @@ import os
 import stat
 import sys
 
+import httpx
 import pytest
 
 from temper_engine import cli, home
@@ -259,3 +260,33 @@ def test_agents_get_a_loaded_model_not_one_that_would_load(engine, servers):
         cli.loaded_model(cli.running())  # /v1/models lists the downloaded ones too
     assert cli.main(["load", "mid"]) == 0
     assert cli.loaded_model(cli.running()) == "mid-Q4_K_M.gguf"
+
+
+def test_get_takes_the_best_quant_that_fits(monkeypatch):
+    ggufs = [{"name": f"m-{q}.gguf", "parts": [f"m-{q}.gguf"], "size": n} for q, n in (("Q2_K", 1), ("Q4_K_M", 2), ("Q8_0", 4), ("F16", 8))]
+    fits = {"m-Q4_K_M.gguf", "m-Q2_K.gguf"}
+    asked = []
+
+    class Client:
+        def post(self, path, json):
+            asked.append(json["filename"])
+            return httpx.Response(200, json={"verdict": "fits" if json["filename"] in fits else "too_large", "total": 3e9})
+
+    chosen, est = cli._pick_quant(Client(), "acme/m-GGUF", ggufs)
+    assert chosen["name"] == "m-Q4_K_M.gguf" and est["verdict"] == "fits"
+    assert asked == ["m-Q8_0.gguf", "m-Q4_K_M.gguf"]  # best first; F16 isn't a quant it offers
+    fits.clear()
+    assert cli._pick_quant(Client(), "acme/m-GGUF", ggufs) == (ggufs[0], None)  # nothing fits: the smallest
+
+
+def test_import_points_at_a_link_not_its_blob(engine, tmp_path, capsys):
+    from tests.test_library import gguf
+
+    blob = tmp_path / "blobs" / "2e80ce"
+    blob.parent.mkdir()
+    gguf(blob, "Tiny")
+    link = tmp_path / "snap" / "tiny-Q4_K_M.gguf"
+    link.parent.mkdir()
+    link.symlink_to(blob)
+    assert cli.main(["import", str(link)]) == 0
+    assert "`temper load tiny-Q4_K_M.gguf` loads it" in capsys.readouterr().out

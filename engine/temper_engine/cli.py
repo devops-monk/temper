@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -483,6 +484,15 @@ def chat_cmd(args: list[str]) -> int:
             history.append({"role": "assistant", "content": _reply(c, history)})
 
 
+def _bar(done: float, total: float, speed: float | None = None) -> None:
+    """A download's progress on one line, redrawn in place; nothing when stderr isn't a terminal."""
+    if not sys.stderr.isatty():
+        return
+    share = min(1.0, done / total) if total else 0.0
+    rate = f"  {speed / 1e6:.1f} MB/s" if speed else ""
+    print(f"\r  [{'#' * int(share * 30):<30}] {share:4.0%}  {_size(done)} of {_size(total)}{rate}   ", end="", flush=True, file=sys.stderr)
+
+
 def follow(c: httpx.Client, job_id: str, logs: bool) -> dict:
     """Prints a job's progress until it ends, and returns how it ended. Ctrl-C stops following, not the job."""
     try:
@@ -502,9 +512,13 @@ def follow(c: httpx.Client, job_id: str, logs: bool) -> dict:
                     print(f"  step {ev.get('step')}{total}  loss {ev['loss']:.4f}{eta}")
                 elif kind == "eval" and ev.get("val_loss") is not None:
                     print(f"  step {ev.get('step')}  held-out loss {ev['val_loss']:.4f}")
+                elif kind == "progress" and ev.get("total"):
+                    _bar(ev["received"], ev["total"], ev.get("speed"))
                 elif kind == "error":
                     print(ev.get("message", ""), file=sys.stderr)
                 elif kind == "status":
+                    if sys.stderr.isatty():
+                        print(file=sys.stderr)  # off the progress bar's line
                     return ev
     except KeyboardInterrupt:
         print("\nStopped following. It carries on in Temper; the app shows it.", file=sys.stderr)
@@ -642,6 +656,96 @@ def stable_key() -> str:
     return key
 
 
+LADDER = ("q8_0", "q6_k", "q5_k_m", "q4_k_m", "iq4_xs", "q3_k_m", "iq3_m", "q2_k")
+
+
+def _pick_quant(c: httpx.Client, repo: str, ggufs: list[dict]) -> tuple[dict, dict | None]:
+    """The best quant that fits this computer at 8K context, by the engine's own estimate; the smallest when none does."""
+    ranked = sorted((g for g in ggufs if g.get("complete", True)), key=lambda g: next((i for i, q in enumerate(LADDER) if q in g["name"].lower()), len(LADDER)))
+    for g in ranked:
+        if not any(q in g["name"].lower() for q in LADDER):
+            continue
+        r = c.post("/api/memory/chat", json={"repo_id": repo, "filename": g["name"], "context": 8192})
+        if r.status_code >= 400:
+            return g, None  # no estimate (a header Temper can't read): take the usual pick
+        est = r.json()
+        if est["verdict"] == "fits":
+            return g, est
+    smallest = min(ggufs, key=lambda g: g["size"])
+    return smallest, None
+
+
+def get_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper get", description="Find a model on Hugging Face and download it.")
+    p.add_argument("query", nargs="+", help="words to search for, or owner/name")
+    p.add_argument("--quant", help="which GGUF to get, like Q8_0 (default: the best that fits this computer)")
+    p.add_argument("--mlx", action="store_true", help="search MLX models instead of GGUFs (Apple Silicon)")
+    p.add_argument("-y", "--yes", action="store_true", help="take the top search result and don't ask")
+    a = p.parse_args(args)
+    query = " ".join(a.query)
+    with _client(running()) as c:
+        if "/" in query and " " not in query:
+            repo = query
+        else:
+            params = {"q": query, "limit": 8, "gguf": not a.mlx, **({"author": "mlx-community"} if a.mlx else {})}
+            found = _check(c.get("/api/models/search", params=params))
+            if not found:
+                raise CliError(f"Nothing on Hugging Face matches {query!r}.")
+            if a.yes or len(found) == 1 or not sys.stdin.isatty():
+                repo = found[0]["id"]
+            else:
+                for i, m in enumerate(found, 1):
+                    print(f"  {i}. {m['id']}  {m.get('downloads') or 0:,} downloads" + ("  (gated)" if m.get("gated") else ""))
+                try:
+                    choice = input(f"Which one? [1-{len(found)}, Enter for 1] ").strip() or "1"
+                except EOFError:
+                    raise CliError("\nNothing chosen.") from None
+                if not choice.isdigit() or not 1 <= int(choice) <= len(found):
+                    raise CliError("Pick one of the numbers.")
+                repo = found[int(choice) - 1]["id"]
+        info = _check(c.get("/api/models/repo", params={"id": repo}))
+        ggufs = info["gguf"]
+        if ggufs:
+            if a.quant:
+                ggufs = [g for g in ggufs if a.quant.lower() in g["name"].lower()]
+                if not ggufs:
+                    raise CliError(f"{repo} has no {a.quant} file. Its GGUFs: {', '.join(g['name'] for g in info['gguf'])}")
+                chosen, est = ggufs[0], None
+            else:
+                chosen, est = _pick_quant(c, repo, ggufs)
+            patterns, size = chosen["parts"], chosen["size"]
+            what = chosen["name"] + (f", which needs about {_size(est['total'])} at 8K context and fits" if est else "")
+        else:
+            chosen = None
+            patterns, size = [], sum(f["size"] or 0 for f in info["files"])
+            what = f"the whole repository ({len(info['files'])} files)"
+        print(f"{repo}: {what}. Downloading {_size(size)}.")
+        job = _check(c.post("/api/models/download", json={"repo_id": repo, "patterns": patterns}))
+        end = follow(c, job["id"], logs=False)
+    if end.get("status") != "done":
+        raise CliError(end.get("error") or f"The download {end.get('status')}.")
+    print(f"Done. `temper load {chosen['name'] if ggufs else repo}` loads it.")
+    return 0
+
+
+def import_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper import", description="Add a model you already have: a GGUF, or a model folder.")
+    p.add_argument("path", help="a .gguf file or a folder holding a model")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--copy", action="store_true", help="copy it into Temper's imports folder (default: use it where it is)")
+    mode.add_argument("--move", action="store_true", help="move it into Temper's imports folder")
+    a = p.parse_args(args)
+    path = os.path.abspath(Path(a.path).expanduser())  # not resolve(): cache files are symlinks to extensionless blobs
+    how = "copy" if a.copy else "move" if a.move else "link"
+    with _client(running()) as c:
+        if how != "link":
+            print(f"{'Copying' if a.copy else 'Moving'} {Path(path).name} into Temper's imports folder...", file=sys.stderr)
+        found = _check(c.post("/api/models/import", json={"path": path, "mode": how}))
+    target = Path(found["path"]).name if found["path"].lower().endswith(".gguf") else shlex.quote(found["path"])
+    print(f"Added {found['name']} ({found['path']}). `temper load {target}` loads it.")
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -718,7 +822,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -726,6 +830,8 @@ USAGE = """usage:
   temper load <model or path> [--quant Q] [--context N] [--alongside] [--ttl S] [--alias NAME] [--gpu-layers N] [--estimate-only] [-y]
   temper ps [--json]
   temper unload <model> | --all
+  temper get <search words | owner/name> [--quant Q] [--mlx] [-y]
+  temper import <file or folder> [--copy | --move]
   temper status [--json]
   temper version
   temper chat ["prompt"] [--system "..."]

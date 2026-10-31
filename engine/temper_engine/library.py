@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import struct
 import time
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -251,6 +253,44 @@ def entries() -> list[dict]:
 
 class ImportRequest(BaseModel):
     path: str
+    # Referenced where it is (the default), or copied or moved into Temper's imports folder first,
+    # for a model on a drive that won't stay plugged in or in a folder that gets cleaned out.
+    mode: Literal["link", "copy", "move"] = "link"
+
+
+def imports_dir() -> Path:
+    return home() / "imports"
+
+
+def bring(path: str, mode: str) -> str:
+    """Copies or moves a model into the imports folder, with a split GGUF's other parts and any projector
+    beside a single GGUF, and returns its new path."""
+    from .storage import models_dir
+
+    src = Path(path)
+    if mode == "move" and src.is_relative_to(models_dir()):
+        raise HTTPException(400, f"{src.name} is in Temper's models folder already; moving it would break the download.")
+    if src.is_dir():
+        items = [src]
+    else:
+        key = SPLIT.sub(".gguf", src.name)
+        siblings = [p for p in src.parent.glob("*.gguf") if p != src and (SPLIT.sub(".gguf", p.name) == key or "mmproj" in p.name.lower())]
+        items = [src, *siblings]
+    dest = imports_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    if (dest / src.name).exists():
+        raise HTTPException(409, f"{src.name} is already in Temper's imports folder ({dest}).")
+    for item in items:
+        if (dest / item.name).exists():
+            continue  # a projector another import brought already
+
+        if mode == "move":
+            shutil.move(str(item), dest / item.name)
+        elif item.is_dir():
+            shutil.copytree(item, dest / item.name)
+        else:
+            shutil.copy2(item, dest / item.name)
+    return str(dest / src.name)
 
 
 def add_entry(path: str, name: str | None = None, settings: dict | None = None) -> dict:
@@ -276,7 +316,10 @@ def settings_for(path: str) -> tuple[str, dict] | None:
 
 @router.post("")
 def add(req: ImportRequest):
-    return add_entry(req.path)
+    if req.mode == "link":
+        return add_entry(req.path)
+    found = inspect(req.path)  # checked before anything is copied
+    return add_entry(bring(found["path"], req.mode))
 
 
 @router.delete("")

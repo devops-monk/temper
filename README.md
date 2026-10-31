@@ -31,6 +31,8 @@ it's `/Applications/Temper.app/Contents/MacOS/temper`; alias it as `temper`):
 
 ```bash
 temper models               # the models on this computer
+temper get qwen3 4b          # search Hugging Face and download the best quant that fits (--quant, --mlx)
+temper import model.gguf     # add a model you have (--copy or --move into Temper's folder)
 temper load Qwen3-4B-GGUF   # load one (a name, a GGUF file name or a path; --quant, --context)
 temper ps                   # what's loaded; temper unload <model> or --all
 temper status               # running or not, loaded models, jobs, disk (--json on models, ps, runs, status)

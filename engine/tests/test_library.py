@@ -89,3 +89,39 @@ def test_hugging_face_cache_paths(tmp_path):
     r = post(snap / "tiny-Q4_0.gguf").json()
     assert r["kind"] == "gguf" and r["name"] == "org/Tiny-GGUF" and r["path"].endswith("tiny-Q4_0.gguf")
     assert post(repo).json()["path"] == str(snap)
+
+
+def test_copy_or_move_into_the_imports_folder(tmp_path):
+    from temper_engine import home
+
+    src = tmp_path / "usb"
+    src.mkdir()
+    gguf(src / "m-Q4_K_M-00001-of-00002.gguf")
+    gguf(src / "m-Q4_K_M-00002-of-00002.gguf")
+    gguf(src / "mmproj-m-f16.gguf")  # a vision model's projector goes with it
+    gguf(src / "other-Q8_0.gguf")
+    r = client.post("/api/models/import", json={"path": str(src / "m-Q4_K_M-00001-of-00002.gguf"), "mode": "copy"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    imports = home() / "imports"
+    assert sorted(p.name for p in imports.iterdir()) == ["m-Q4_K_M-00001-of-00002.gguf", "m-Q4_K_M-00002-of-00002.gguf", "mmproj-m-f16.gguf"]
+    assert r.json()["path"] == str(imports / "m-Q4_K_M-00001-of-00002.gguf") and (src / "m-Q4_K_M-00001-of-00002.gguf").exists()
+    # Twice is refused rather than overwriting.
+    again = client.post("/api/models/import", json={"path": str(src / "m-Q4_K_M-00001-of-00002.gguf"), "mode": "copy"}, headers=AUTH)
+    assert again.status_code == 409 and "already in Temper's imports folder" in again.json()["detail"]
+
+    r = client.post("/api/models/import", json={"path": str(src / "other-Q8_0.gguf"), "mode": "move"}, headers=AUTH)
+    assert r.status_code == 200 and not (src / "other-Q8_0.gguf").exists() and (imports / "other-Q8_0.gguf").exists()
+    # Something that isn't a model is refused before anything is copied.
+    (src / "notes.txt").write_text("hi")
+    bad = client.post("/api/models/import", json={"path": str(src / "notes.txt"), "mode": "copy"}, headers=AUTH)
+    assert bad.status_code == 400 and not (imports / "notes.txt").exists()
+
+
+def test_files_in_the_models_folder_are_never_moved(tmp_path, monkeypatch):
+    from temper_engine import storage
+
+    monkeypatch.setattr(storage, "models_dir", lambda: tmp_path)
+    gguf(tmp_path / "cached-Q4_K_M.gguf")
+    r = client.post("/api/models/import", json={"path": str(tmp_path / "cached-Q4_K_M.gguf"), "mode": "move"}, headers=AUTH)
+    assert r.status_code == 400 and "would break the download" in r.json()["detail"]
+    assert (tmp_path / "cached-Q4_K_M.gguf").exists()

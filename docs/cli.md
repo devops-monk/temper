@@ -13,6 +13,11 @@ On macOS, add `alias temper=/Applications/Temper.app/Contents/MacOS/temper` to y
 ## Models and chat
 
 ```bash
+temper get qwen3 4b instruct       # search Hugging Face, pick from the results, download the best quant that fits
+temper get Qwen/Qwen3-4B-GGUF --quant Q8_0
+temper get qwen3 4b --mlx -y       # MLX models on Apple Silicon; -y takes the top result
+temper import ~/Downloads/model.gguf          # use it where it is
+temper import /Volumes/usb/model.gguf --copy  # or --move, into Temper's own imports folder
 temper models                      # the models on this computer
 temper load Qwen3-4B-GGUF          # a name, a GGUF file name or a path
 temper load my-model --quant Q8_0 --context 32768
