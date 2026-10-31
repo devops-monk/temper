@@ -2,6 +2,7 @@ import { AudioLines, Download, FolderOpen, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, inTauri } from "../lib/engine";
 import { bytes } from "../lib/format";
+import { useT, withNodes } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
@@ -12,6 +13,7 @@ const AUDIO = ["wav", "mp3", "m4a", "aac", "flac", "ogg", "opus", "webm", "aiff"
 
 /** Settings → Speech to text (engine speech.py): installing Whisper, its model, and transcribing a file. */
 export function SpeechSettings() {
+  const t = useT();
   const { speech, refresh } = useSpeech();
   const { jobs, refreshJobs } = useApp();
   const [jobId, setJobId] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export function SpeechSettings() {
     if (status && status !== "running") {
       refresh();
       void refreshJobs();
-      if (status === "failed") setError((events.find((e) => e.event === "status")?.error as string) ?? "It failed; the log says why.");
+      if (status === "failed") setError((events.find((e) => e.event === "status")?.error as string) ?? t("speech.failed"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
@@ -61,31 +63,30 @@ export function SpeechSettings() {
   }
 
   async function remove() {
-    if (!confirm("Remove speech to text? Its environment is deleted; downloaded models stay.")) return;
+    if (!confirm(t("speech.remove_confirm"))) return;
     await api("/api/speech", { method: "DELETE" });
     refresh();
   }
 
   if (!speech) return null;
   return (
-    <Section title="Speech to text">
+    <Section title={t("speech.title")}>
       <div className="flex items-center gap-2 text-[13px]">
         <span className="font-medium">{speech.backend}</span>
-        {speech.installed ? <Badge tone="ok">Installed</Badge> : <Badge>Not installed</Badge>}
+        {speech.installed ? <Badge tone="ok">{t("speech.installed")}</Badge> : <Badge>{t("speech.not_installed")}</Badge>}
         <span className="flex-1" />
         {speech.installed ? (
-          <button className="text-muted hover:text-danger" onClick={() => void remove()} title="Remove speech to text" aria-label="Remove speech to text">
+          <button className="text-muted hover:text-danger" onClick={() => void remove()} title={t("speech.remove")} aria-label={t("speech.remove")}>
             <Trash2 className="size-3.5" />
           </button>
         ) : (
           <Button size="sm" onClick={() => void run("/api/speech/install")} disabled={running}>
-            <Download className="size-3.5" /> Install
+            <Download className="size-3.5" /> {t("speech.install")}
           </Button>
         )}
       </div>
       <p className="mt-1 text-[12px] text-muted">
-        Dictate in Chat with the microphone button, and transcribe recordings into text and subtitles. Whisper runs on this computer; nothing is sent anywhere. Apps can use it at{" "}
-        <span className="font-mono">/v1/audio/transcriptions</span>.
+        {withNodes(t("speech.about"), { path: <span className="font-mono">/v1/audio/transcriptions</span> })}
       </p>
 
       {speech.installed && (
@@ -103,10 +104,10 @@ export function SpeechSettings() {
                 </label>
                 {!m.downloaded &&
                   (fetching ? (
-                    <span className="text-[12px] text-muted">Downloading…</span>
+                    <span className="text-[12px] text-muted">{t("speech.downloading")}</span>
                   ) : (
                     <Button size="sm" variant="ghost" onClick={() => void download(m.id)}>
-                      <Download className="size-3.5" /> Download
+                      <Download className="size-3.5" /> {t("speech.download")}
                     </Button>
                   ))}
               </li>
@@ -121,7 +122,7 @@ export function SpeechSettings() {
         <div className="mt-3 flex flex-col gap-1.5">
           <ProgressBar value={progress ?? null} />
           <p className="truncate font-mono text-[11.5px] text-muted" title={lastLine}>
-            {lastLine ?? "Starting…"}
+            {lastLine ?? t("speech.starting")}
           </p>
         </div>
       )}
@@ -132,6 +133,7 @@ export function SpeechSettings() {
 }
 
 function TranscribeFile({ onStart, busy }: { onStart: (id: string) => void; busy: boolean }) {
+  const t = useT();
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -146,7 +148,7 @@ function TranscribeFile({ onStart, busy }: { onStart: (id: string) => void; busy
 
   async function pick() {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const chosen = await open({ filters: [{ name: "Audio and video", extensions: AUDIO }] });
+    const chosen = await open({ filters: [{ name: t("speech.av"), extensions: AUDIO }] });
     if (typeof chosen === "string") void start(chosen);
   }
 
@@ -154,7 +156,7 @@ function TranscribeFile({ onStart, busy }: { onStart: (id: string) => void; busy
     <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
       {inTauri ? (
         <Button size="sm" onClick={() => void pick()} disabled={busy}>
-          <AudioLines className="size-3.5" /> Transcribe a file…
+          <AudioLines className="size-3.5" /> {t("speech.transcribe_file")}
         </Button>
       ) : (
         <form
@@ -164,9 +166,9 @@ function TranscribeFile({ onStart, busy }: { onStart: (id: string) => void; busy
             if (path.trim()) void start(path.trim());
           }}
         >
-          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="Path to an audio or video file" aria-label="File to transcribe" />
+          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("speech.path")} aria-label={t("speech.file")} />
           <Button size="sm" type="submit" disabled={busy || !path.trim()}>
-            <AudioLines className="size-3.5" /> Transcribe
+            <AudioLines className="size-3.5" /> {t("speech.transcribe")}
           </Button>
         </form>
       )}
@@ -176,6 +178,7 @@ function TranscribeFile({ onStart, busy }: { onStart: (id: string) => void; busy
 }
 
 function Transcript({ events }: { events: { event: string; [k: string]: unknown }[] }) {
+  const t = useT();
   const result = events.find((e) => e.event === "status")?.result as { text?: string; files?: Record<string, string>; language?: string } | undefined;
   if (!result?.files) return null;
   const { files } = result;
@@ -184,7 +187,7 @@ function Transcript({ events }: { events: { event: string; [k: string]: unknown 
       <p className="max-h-40 overflow-y-auto whitespace-pre-wrap">{result.text}</p>
       <div className="mt-2 flex items-center gap-2 text-[12px] text-muted">
         <CopyButton text={result.text ?? ""} />
-        <span className="flex-1">Saved as text, SRT and WebVTT subtitles, and JSON{result.language ? ` (${result.language})` : ""}.</span>
+        <span className="flex-1">{result.language ? t("speech.saved_lang", { language: result.language }) : t("speech.saved")}</span>
         {inTauri && (
           <Button
             size="sm"
@@ -194,7 +197,7 @@ function Transcript({ events }: { events: { event: string; [k: string]: unknown 
               await revealItemInDir(files.txt);
             }}
           >
-            <FolderOpen className="size-3.5" /> Show
+            <FolderOpen className="size-3.5" /> {t("speech.show")}
           </Button>
         )}
       </div>

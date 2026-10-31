@@ -1,21 +1,24 @@
 import { Check, ChevronRight, Circle, Cpu, LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { installEngine } from "../lib/engine";
+import { t as tr, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { SetupProfile, SetupState, SetupStep } from "../lib/types";
 import { LogoMark } from "./Logo";
 import { Badge, Button, CopyButton, Notice, ProgressBar, cx } from "./ui";
 
-const HARDWARE_LABEL = { apple: "Apple Silicon", nvidia: "NVIDIA GPU", amd: "AMD GPU", none: "No supported GPU" } as const;
+const hardwareLabel = (kind: "apple" | "nvidia" | "amd" | "none") => ({ apple: "Apple Silicon", nvidia: "NVIDIA GPU", amd: "AMD GPU", none: tr("setup.no_gpu") })[kind];
 
 function StepIcon({ state }: { state: SetupStep["state"] }) {
-  if (state === "done") return <Check className="size-4 text-ok" aria-label="Done" />;
-  if (state === "running") return <LoaderCircle className="size-4 animate-spin text-accent" aria-label="In progress" />;
-  if (state === "failed") return <X className="size-4 text-danger" aria-label="Failed" />;
-  return <Circle className="size-3.5 text-line" aria-label="Waiting" />;
+  const t = useT();
+  if (state === "done") return <Check className="size-4 text-ok" aria-label={t("setup.done")} />;
+  if (state === "running") return <LoaderCircle className="size-4 animate-spin text-accent" aria-label={t("setup.in_progress")} />;
+  if (state === "failed") return <X className="size-4 text-danger" aria-label={t("setup.failed")} />;
+  return <Circle className="size-3.5 text-line" aria-label={t("setup.waiting")} />;
 }
 
 function Log({ lines, open }: { lines: string[]; open: boolean }) {
+  const t = useT();
   const ref = useRef<HTMLPreElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -23,8 +26,8 @@ function Log({ lines, open }: { lines: string[]; open: boolean }) {
   return (
     <details open={open} className="mt-4 text-[12.5px]">
       <summary className="flex cursor-pointer items-center justify-between text-muted">
-        <span>Details</span>
-        <CopyButton text={lines.join("\n")} label="Copy log" />
+        <span>{t("setup.details")}</span>
+        <CopyButton text={lines.join("\n")} label={t("setup.copy_log")} />
       </summary>
       <pre ref={ref} className="mt-2 h-56 overflow-auto rounded-lg border border-line bg-surface-2 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-muted">
         {lines.join("\n")}
@@ -36,24 +39,25 @@ function Log({ lines, open }: { lines: string[]; open: boolean }) {
 function Chooser({ setup, onInstall }: { setup: SetupState; onInstall: (p: SetupProfile) => void }) {
   const recommended = setup.options.find((o) => o.recommended && o.available)?.id ?? "chat";
   const [choice, setChoice] = useState<SetupProfile>(recommended);
+  const t = useT();
   const hw = setup.hardware;
 
   return (
     <>
-      <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">Set up Temper</h1>
+      <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">{t("setup.title")}</h1>
       <p className="mt-2 text-muted">
-        Temper keeps its engine, Python and the packages that run models, in its own folder. Nothing else on your computer changes.
+        {t("setup.about")}
       </p>
       {hw && (
         <p className="mt-4 flex items-center gap-2 text-[13px]">
           <Cpu className="size-4 text-muted" />
           <span>
-            {hw.name ?? HARDWARE_LABEL[hw.kind]}
-            {hw.name && <span className="text-muted"> ({HARDWARE_LABEL[hw.kind]})</span>}
+            {hw.name ?? hardwareLabel(hw.kind)}
+            {hw.name && <span className="text-muted"> ({hardwareLabel(hw.kind)})</span>}
           </span>
         </p>
       )}
-      <div className="mt-5 flex flex-col gap-2" role="radiogroup" aria-label="What to install">
+      <div className="mt-5 flex flex-col gap-2" role="radiogroup" aria-label={t("setup.what")}>
         {setup.options.map((o) => (
           <button
             key={o.id}
@@ -68,7 +72,7 @@ function Chooser({ setup, onInstall }: { setup: SetupState; onInstall: (p: Setup
           >
             <span className="flex items-center gap-2">
               <span className="font-semibold">{o.label}</span>
-              {o.recommended && o.available && <Badge tone="accent">Recommended</Badge>}
+              {o.recommended && o.available && <Badge tone="accent">{t("setup.recommended")}</Badge>}
               <span className="ml-auto text-[12.5px] text-muted">{o.size}</span>
             </span>
             <span className="mt-0.5 block text-[13px] text-muted">{o.description}</span>
@@ -76,7 +80,7 @@ function Chooser({ setup, onInstall }: { setup: SetupState; onInstall: (p: Setup
         ))}
       </div>
       <Button variant="primary" className="mt-6 w-full" onClick={() => onInstall(choice)}>
-        Install
+        {t("setup.install")}
       </Button>
     </>
   );
@@ -86,16 +90,17 @@ function Progress({ setup, failed, onRetry, onChooseAgain }: { setup: SetupState
   const running = setup.steps.find((s) => s.state === "running");
   const last = [...setup.log].reverse().find((l) => !l.startsWith("$ ") && !l.startsWith("== "));
   const heavy = setup.profile === "train" && setup.hardware?.kind !== "apple";
+  const t = useT();
 
   return (
     <>
-      <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">{failed ? "Setup didn't finish" : "Setting up Temper"}</h1>
+      <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">{t(failed ? "setup.didnt_finish" : "setup.setting_up")}</h1>
       <p className="mt-2 text-muted">
         {failed
-          ? "Fix the problem below and try again. Anything already downloaded is reused."
+          ? t("setup.fix")
           : heavy
-            ? "This downloads about 6 GB of GPU libraries, so it can take a while."
-            : "This takes a minute or two on a typical connection."}
+            ? t("setup.heavy")
+            : t("setup.quick")}
       </p>
       <ol className="mt-6 flex flex-col gap-3">
         {setup.steps.map((step) => (
@@ -122,10 +127,10 @@ function Progress({ setup, failed, onRetry, onChooseAgain }: { setup: SetupState
           </div>
           <div className="mt-4 flex gap-2">
             <Button variant="primary" onClick={onRetry}>
-              Try again
+              {t("setup.retry")}
             </Button>
             <Button variant="ghost" onClick={onChooseAgain}>
-              Choose a different setup <ChevronRight className="size-4" />
+              {t("setup.choose_again")} <ChevronRight className="size-4" />
             </Button>
           </div>
         </>

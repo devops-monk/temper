@@ -1,6 +1,7 @@
 import { ExternalLink, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, inTauri, openExternal } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { Badge, Button, Input, Notice, Section, cx } from "./ui";
 
@@ -31,6 +32,7 @@ async function keychain(command: "hf_token_save" | "hf_token_delete", args?: Rec
 
 /** Settings: the Hugging Face token Temper uses for gated and private models, kept in the system keychain. */
 export function HfAccount({ ready }: { ready: boolean }) {
+  const t = useT();
   const [account, setAccount] = useState<Account | null>(null);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,31 +78,31 @@ export function HfAccount({ ready }: { ready: boolean }) {
 
   const ownToken = account?.source === "temper";
   return (
-    <Section title="Hugging Face account">
+    <Section title={t("hf.title")}>
       <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
-        {!account && <p className="text-muted">{ready ? "Checking…" : "Start the engine to manage your token."}</p>}
+        {!account && <p className="text-muted">{t(ready ? "hf.checking" : "hf.start_engine")}</p>}
         {account?.signed_in && (
           <div className="flex items-center justify-between gap-3">
             <div>
-              <span className="font-medium">{account.name ?? "Signed in"}</span>
-              {account.offline && <span className="text-muted"> (offline, not checked)</span>}
+              <span className="font-medium">{account.name ?? t("hf.signed_in")}</span>
+              {account.offline && <span className="text-muted">{t("hf.offline")}</span>}
               <p className="mt-0.5 text-[12px] text-muted">
-                {ownToken ? (inTauri ? "Token saved in your system keychain." : "Token set for this engine session.") : "Using the token from huggingface-cli login."}
-                {account.orgs && account.orgs.length > 0 && ` Member of ${account.orgs.join(", ")}.`}
+                {t(ownToken ? (inTauri ? "hf.keychain" : "hf.session") : "hf.cli")}
+                {account.orgs && account.orgs.length > 0 && t("hf.member", { orgs: account.orgs.join(", ") })}
               </p>
             </div>
             {ownToken ? (
               <Button size="sm" disabled={busy} onClick={() => void remove()}>
-                Remove token
+                {t("hf.remove")}
               </Button>
             ) : (
-              <Badge>CLI token</Badge>
+              <Badge>{t("hf.cli_badge")}</Badge>
             )}
           </div>
         )}
         {account && !account.signed_in && (
           <p className="text-muted">
-            {account.invalid ? "The saved token no longer works. Add a new one." : "No token. Public models download without one; gated models such as Llama and Gemma need it."}
+            {t(account.invalid ? "hf.invalid" : "hf.none")}
           </p>
         )}
         {account && (!account.signed_in || !ownToken) && (
@@ -111,15 +113,15 @@ export function HfAccount({ ready }: { ready: boolean }) {
               if (token.trim()) void save();
             }}
           >
-            <Input type="password" autoComplete="off" spellCheck={false} placeholder="hf_…" value={token} onChange={(e) => setToken(e.target.value)} className="flex-1" aria-label="Hugging Face token" />
+            <Input type="password" autoComplete="off" spellCheck={false} placeholder="hf_…" value={token} onChange={(e) => setToken(e.target.value)} className="flex-1" aria-label={t("hf.token")} />
             <Button type="submit" variant="primary" disabled={busy || !token.trim()}>
-              {busy ? "Checking…" : "Save token"}
+              {t(busy ? "hf.checking" : "hf.save")}
             </Button>
           </form>
         )}
         {account && !ownToken && (
           <button type="button" className="mt-2 inline-flex items-center gap-1 text-[12px] text-accent hover:underline" onClick={() => void openExternal(TOKENS_URL)}>
-            Create a read token on Hugging Face <ExternalLink className="size-3" />
+            {t("hf.create")} <ExternalLink className="size-3" />
           </button>
         )}
       </div>
@@ -139,6 +141,7 @@ export function HfAccount({ ready }: { ready: boolean }) {
 
 /** Models: checks a repo before download and explains what to do when it's gated or private. */
 export function RepoAccess({ repoId }: { repoId: string }) {
+  const t = useT();
   const go = useApp((a) => a.go);
   const [access, setAccess] = useState<Access | null>(null);
   const [checking, setChecking] = useState(false);
@@ -160,15 +163,15 @@ export function RepoAccess({ repoId }: { repoId: string }) {
       <p>{access.message}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button size="sm" onClick={() => void openExternal(access.url)}>
-          <ExternalLink className="size-3.5" /> Open model page
+          <ExternalLink className="size-3.5" /> {t("hf.open_page")}
         </Button>
         {!access.has_token && (
           <Button size="sm" onClick={() => go("settings")}>
-            Add token in Settings
+            {t("hf.add_token")}
           </Button>
         )}
         <Button size="sm" variant="ghost" disabled={checking} onClick={check}>
-          <RotateCw className={cx("size-3.5", checking && "animate-spin")} /> Check again
+          <RotateCw className={cx("size-3.5", checking && "animate-spin")} /> {t("hf.check_again")}
         </Button>
       </div>
     </Notice>

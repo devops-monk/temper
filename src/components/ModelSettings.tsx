@@ -2,6 +2,7 @@ import { Cpu, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { bytes } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { ChatEstimate } from "./LoadButton";
 import { Button, Field, Input, Select, Toggle, cx } from "./ui";
@@ -42,6 +43,7 @@ const same = (a: LoadSettings, b: LoadSettings) => (Object.keys(a) as (keyof Loa
 
 /** Context length, KV cache, flash attention, GPU offload and speculative decoding for the loaded model, saved per model. */
 export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
+  const t = useT();
   const { runtime, refreshRuntime } = useApp();
   const path = runtime?.state === "ready" || runtime?.state === "failed" ? (runtime.path ?? null) : null;
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -103,51 +105,50 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
   return (
     <div className="flex flex-col gap-3 border-t border-line pt-4">
       <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
-        <Cpu className="size-3.5" /> Model
+        <Cpu className="size-3.5" /> {t("ms.model")}
       </h3>
       {!llama && (
         <p className="text-[12px] text-muted">
-          Running on {engine === "mlx" ? "MLX" : engine === "transformers" ? "Transformers" : engine === "vllm" ? "vLLM" : "SGLang"}
-          {runtime?.adapter ? ", with the fine-tuned adapter on top" : ""}.
+          {t(runtime?.adapter ? "ms.running_on_adapter" : "ms.running_on", { engine: engine === "mlx" ? "MLX" : engine === "transformers" ? "Transformers" : engine === "vllm" ? "vLLM" : "SGLang" })}
         </p>
       )}
       {(llama || parallel) && (
-      <Field label="Context length" hint="How much of the chat the model can see at once. Longer needs more memory.">
+      <Field label={t("ms.context")} hint={t("ms.context_hint")}>
         <Select value={form.context} onChange={(e) => set({ context: Number(e.target.value) })}>
           {contexts.map((c) => (
             <option key={c} value={c}>
-              {c >= 1024 ? `${Math.round(c / 1024)}K` : c} tokens{c === offer.context_max ? " (the model's maximum)" : ""}
+              {t("ms.tokens", { n: c >= 1024 ? `${Math.round(c / 1024)}K` : c })}{c === offer.context_max ? t("ms.max") : ""}
             </option>
           ))}
         </Select>
       </Field>
       )}
       {engine !== "transformers" && (
-      <Field label="KV cache" hint={form.cache_type !== "f16" && !form.flash_attention ? "A quantized cache needs flash attention." : "The memory that holds the context."}>
+      <Field label={t("ms.kv")} hint={t(form.cache_type !== "f16" && !form.flash_attention ? "ms.kv_needs_flash" : "ms.kv_hint")}>
         <Select value={form.cache_type} onChange={(e) => set({ cache_type: e.target.value as LoadSettings["cache_type"] })}>
-          <option value="f16">16-bit (best quality)</option>
-          <option value="q8_0">8-bit (about half the memory)</option>
-          {!parallel && <option value="q4_0">4-bit (about a quarter; may cost quality)</option>}
+          <option value="f16">{t("ms.kv16")}</option>
+          <option value="q8_0">{t("ms.kv8")}</option>
+          {!parallel && <option value="q4_0">{t("ms.kv4")}</option>}
         </Select>
       </Field>
       )}
       {parallel && (
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Tensor parallel" hint="GPUs each layer is split across.">
+          <Field label={t("ms.tp")} hint={t("ms.tp_hint")}>
             <Input type="number" min={1} max={64} value={form.tensor_parallel} onChange={(e) => set({ tensor_parallel: Math.max(1, Number(e.target.value) || 1) })} />
           </Field>
-          <Field label="Pipeline parallel" hint="Groups of layers on separate GPUs.">
+          <Field label={t("ms.pp")} hint={t("ms.pp_hint")}>
             <Input type="number" min={1} max={64} value={form.pipeline_parallel} onChange={(e) => set({ pipeline_parallel: Math.max(1, Number(e.target.value) || 1) })} />
           </Field>
         </div>
       )}
       {llama && <>
-      <Toggle label="Flash attention" checked={form.flash_attention} onChange={(flash_attention) => set({ flash_attention, ...(!flash_attention && { cache_type: "f16" }) })} />
+      <Toggle label={t("ms.flash")} checked={form.flash_attention} onChange={(flash_attention) => set({ flash_attention, ...(!flash_attention && { cache_type: "f16" }) })} />
       {layers > 0 && (
         <label className="block">
           <span className="mb-1 flex justify-between text-[13px]">
-            <span className="font-medium">GPU offload</span>
-            <span className="text-[12px] text-muted">{form.gpu_layers >= layers ? "All layers" : `${form.gpu_layers} of ${layers} layers`}</span>
+            <span className="font-medium">{t("ms.offload")}</span>
+            <span className="text-[12px] text-muted">{form.gpu_layers >= layers ? t("ms.all_layers") : t("ms.some_layers", { n: form.gpu_layers, total: layers })}</span>
           </span>
           <input
             type="range"
@@ -156,12 +157,12 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
             value={Math.min(form.gpu_layers, layers)}
             onChange={(e) => set({ gpu_layers: Number(e.target.value) >= layers ? ALL_LAYERS : Number(e.target.value) })}
             className="w-full accent-[var(--accent)]"
-            aria-label="Layers on the GPU"
+            aria-label={t("ms.layers_gpu")}
           />
-          <span className="text-[12px] text-muted">Layers left on the CPU free GPU memory but run slower.</span>
+          <span className="text-[12px] text-muted">{t("ms.cpu_hint")}</span>
         </label>
       )}
-      <Field label="Speculative decoding" hint="Drafts tokens ahead so the model checks several at once. Replies are the same, often faster.">
+      <Field label={t("ms.spec")} hint={t("ms.spec_hint")}>
         <Select
           value={speedValue}
           onChange={(e) => {
@@ -169,11 +170,11 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
             set(v.startsWith("draft:") ? { speculation: "draft", draft: v.slice(6) } : { speculation: v as LoadSettings["speculation"], draft: null });
           }}
         >
-          <option value="none">Off</option>
-          <option value="ngram">Prompt lookup (no extra model)</option>
-          {offer.mtp && <option value="mtp">The model's own MTP layers</option>}
+          <option value="none">{t("ms.off")}</option>
+          <option value="ngram">{t("ms.ngram")}</option>
+          {offer.mtp && <option value="mtp">{t("ms.mtp")}</option>}
           {offer.drafts.length > 0 && (
-            <optgroup label="Draft model">
+            <optgroup label={t("ms.draft_model")}>
               {offer.drafts.map((d) => (
                 <option key={d.path} value={`draft:${d.path}`}>
                   {d.label} ({bytes(d.size)})
@@ -183,40 +184,40 @@ export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
           )}
         </Select>
       </Field>
-      {offer.drafts.length === 0 && form.speculation === "none" && <p className="-mt-2 text-[12px] text-muted">No draft model here shares this model's tokenizer. A small model from the same family (for example its 0.6B or 1B size) can draft for it.</p>}
+      {offer.drafts.length === 0 && form.speculation === "none" && <p className="-mt-2 text-[12px] text-muted">{t("ms.no_draft")}</p>}
       {(form.speculation === "draft" || form.speculation === "mtp") && (
-        <Field label="Tokens drafted at a time">
+        <Field label={t("ms.draft_max")}>
           <Input type="number" min={1} max={64} value={form.draft_max} onChange={(e) => set({ draft_max: Math.max(1, Math.min(64, Number(e.target.value) || 1)) })} />
         </Field>
       )}
       </>}
       {stats && runtime?.settings?.speculation !== "none" && stats.drafted ? (
         <p className={cx("text-[12px]", (stats.accepted ?? 0) / stats.drafted < 0.4 ? "text-straw" : "text-muted")}>
-          Last reply: {stats.speed.toFixed(1)} tokens/s, {Math.round(((stats.accepted ?? 0) / stats.drafted) * 100)}% of {stats.drafted} drafted tokens accepted.
-          {(stats.accepted ?? 0) / stats.drafted < 0.4 && " So few are accepted that drafting likely slows replies; try fewer tokens at a time, prompt lookup, or Off."}
+          {t("ms.last_spec", { speed: stats.speed.toFixed(1), pct: Math.round(((stats.accepted ?? 0) / stats.drafted) * 100), n: stats.drafted })}
+          {(stats.accepted ?? 0) / stats.drafted < 0.4 && t("ms.few_accepted")}
         </p>
       ) : stats ? (
-        <p className="text-[12px] text-muted">Last reply: {stats.speed.toFixed(1)} tokens/s.</p>
+        <p className="text-[12px] text-muted">{t("ms.last", { speed: stats.speed.toFixed(1) })}</p>
       ) : null}
       {changed && (
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-2.5">
           {estimate && llama && (
             <p className={cx("text-[12px]", estimate.verdict === "too_large" ? "text-danger" : estimate.verdict === "tight" ? "text-straw" : "text-muted")}>
-              Needs about {bytes(estimate.total)} of the {bytes(estimate.budget.total)} this computer can give it.
+              {t("ms.needs", { size: bytes(estimate.total), budget: bytes(estimate.budget.total) })}
             </p>
           )}
           <div className="flex gap-2">
             <Button size="sm" variant="primary" onClick={() => void apply()} disabled={saving}>
-              <RotateCcw className="size-3.5" /> {saving ? "Reloading…" : "Reload with these"}
+              <RotateCcw className="size-3.5" /> {t(saving ? "ms.reloading" : "ms.reload")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setForm(offer.settings)} disabled={saving}>
-              Undo
+              {t("ms.undo")}
             </Button>
           </div>
         </div>
       )}
       {error && <p className="text-[12px] text-danger">{error}</p>}
-      <p className="text-[12px] text-muted">Saved for this model.</p>
+      <p className="text-[12px] text-muted">{t("ms.saved")}</p>
     </div>
   );
 }
