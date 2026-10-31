@@ -214,3 +214,38 @@ def test_preference_losses():
     assert m.item() == pytest.approx(2.0 * (-1 + 2) - 0.5)
     orpo, m = mlx_pref.objective_loss("orpo", 0.1, 0, mx.array([-1.0]), mx.array([-3.0]), mx.array([2]), mx.array([2]))
     assert m.item() > 0 and orpo.item() > 0.5  # includes the chosen reply's own loss (0.5 a token)
+
+
+def test_kto_examples_from_unpaired_and_paired_rows():
+    from temper_engine import preference
+
+    rows = [
+        {"prompt": "hi", "completion": "hello", "label": True},
+        {"prompt": "hi", "completion": [{"role": "assistant", "content": "go away"}], "label": "bad"},
+        {"prompt": "q", "chosen": "good", "rejected": "worse"},
+        {"prompt": "q", "completion": "x", "label": "maybe"},  # unreadable label: skipped
+    ]
+    out = preference.examples(rows)
+    assert [(r, g) for _, r, g in out] == [("hello", True), ("go away", False), ("good", True), ("worse", False)]
+    assert out[0][0] == [{"role": "user", "content": "hi"}]
+    assert preference.is_preference({"prompt": "", "completion": "", "label": True})
+    with pytest.raises(ValueError, match="both good and bad"):
+        preference.examples(rows[:1])
+
+
+def test_kto_loss():
+    pytest.importorskip("mlx_lm")
+    import mlx.core as mx
+
+    from temper_engine import mlx_pref
+
+    same = mx.array([-5.0, -5.0])
+    good = mx.array([True, False])
+    loss, margin = mlx_pref.objective_loss("kto", 0.1, 0, same, same, None, None, same, same, good)
+    assert loss.item() == pytest.approx(0.5) and margin.tolist() == [0, 0]  # unchanged from the start: no preference yet
+    # The good reply became likelier and the bad one less likely, with no drift on mismatched prompts.
+    better, m = mlx_pref.objective_loss("kto", 0.1, 0, mx.array([-3.0, -8.0]), same, None, None, same, same, good)
+    assert better.item() < 0.5 and all(x > 0 for x in m.tolist())
+    # Drift (the KL term) is clamped at zero and has to be beaten: a good reply only as likely as the drift doesn't win.
+    drift, m = mlx_pref.objective_loss("kto", 0.1, 0, mx.array([-3.0, -3.0]), mx.array([-3.0, -3.0]), None, None, same, same, good)
+    assert m.tolist() == pytest.approx([0, 0])

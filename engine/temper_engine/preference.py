@@ -3,6 +3,8 @@
 Rows hold a prompt, a chosen reply and a rejected one, in either common shape:
   {"prompt": "...", "chosen": "...", "rejected": "..."}                  (prompt as text or turns)
   {"chosen": [turns ending in the good reply], "rejected": [... the bad one]}
+KTO also takes unpaired rows, each one reply marked good or bad:
+  {"prompt": "...", "completion": "...", "label": true}                   (completion as text or turns)
 
 Objectives (OBJECTIVES), all trained as LoRA adapters:
   dpo    Direct Preference Optimization: raise the chosen reply's likelihood relative to the starting
@@ -11,6 +13,9 @@ Objectives (OBJECTIVES), all trained as LoRA adapters:
          on the odds of the rejected one. Needs no reference model.
   simpo  Simple Preference Optimization: compares the replies' average per-token likelihood, with a
          target margin `gamma`. Needs no reference model.
+  kto    Kahneman-Tversky Optimization: learns from single replies marked good or bad, so it needs no
+         pairs. Like DPO it compares against the starting model; `beta` works the same way. Paired rows
+         count as one good and one bad example.
 
 No third-party imports: the trainers (train_worker on MLX or GPU) do the maths.
 """
@@ -23,12 +28,18 @@ OBJECTIVES = {
     "dpo": {"beta": 0.1},
     "orpo": {"beta": 0.1},
     "simpo": {"beta": 2.0, "gamma": 0.5},
+    "kto": {"beta": 0.1},
 }
+LABELS = {"true": True, "1": True, "yes": True, "good": True, "false": False, "0": False, "no": False, "bad": False}
 PROMPT_COLUMNS = ("prompt", "question", "instruction", "input")
 
 
 def is_preference(columns) -> bool:
-    return {"chosen", "rejected"} <= set(columns)
+    return {"chosen", "rejected"} <= set(columns) or is_unpaired(columns)
+
+
+def is_unpaired(columns) -> bool:
+    return {"completion", "label"} <= set(columns)
 
 
 def _turns(value) -> list[dict]:
@@ -87,4 +98,37 @@ def pairs(rows: list[dict]) -> list[tuple[list[dict], str, str]]:
             out.append(p)
     if not out:
         raise ValueError("No usable preference rows: each needs a prompt, a chosen reply and a different rejected one.")
+    return out
+
+
+def to_example(row: dict) -> tuple[list[dict], str, bool]:
+    """(prompt turns, reply, whether it's good) from an unpaired row."""
+    label = row["label"]
+    good = label if isinstance(label, bool) else LABELS.get(str(label).strip().lower())
+    if good is None:
+        raise ValueError(f"label {label!r} isn't true or false")
+    before, reply = _reply(row["completion"])
+    prompt = before if any(t["role"] == "user" for t in before) else _prompt(row)
+    if not reply.strip():
+        raise ValueError("the reply is empty")
+    return prompt, reply, good
+
+
+def examples(rows: list[dict]) -> list[tuple[list[dict], str, bool]]:
+    """Single replies marked good or bad, for KTO: unpaired rows as they are, pairs as one of each."""
+    out = []
+    for row in rows:
+        try:
+            if is_unpaired(row):
+                out.append(to_example(row))
+            else:
+                prompt, chosen, rejected = to_pair(row)
+                if chosen != rejected:
+                    out += [(prompt, chosen, True), (prompt, rejected, False)]
+        except (ValueError, TypeError, KeyError):
+            continue
+    if not out:
+        raise ValueError("No usable rows: each needs a prompt and a reply marked good or bad (completion and label), or a chosen and a rejected reply.")
+    if len({good for _, _, good in out}) < 2:
+        raise ValueError("KTO needs both good and bad examples; every row here has the same label.")
     return out

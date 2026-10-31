@@ -34,6 +34,12 @@ A computer without either can still chat, prepare datasets and export, but not t
 | DPO | pairs of a better and a worse reply | steer preferences after SFT: tone, safety, fewer wrong answers |
 | ORPO | the same pairs | do SFT and preference training in one pass, without a reference model |
 | SimPO | the same pairs | a lighter DPO that doesn't need a reference model and favours shorter replies less |
+| KTO | single replies marked good or bad | learn from thumbs up and down, when nobody compared two replies side by side |
+
+KTO rows have a prompt, a `completion` and a `label` of true (good) or false (bad), such as
+`{"prompt": "...", "completion": "...", "label": false}`; the completion may also be a conversation ending in
+the reply. Pairs work as well, each counting as one good and one bad example. Good and bad examples are
+weighted to count equally however many there are of each.
 
 `pref_beta` sets how far a preference objective may move the model from where it started; leave it at the default unless replies drift.
 

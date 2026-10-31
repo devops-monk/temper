@@ -1,13 +1,17 @@
-"""Preference training on Apple Silicon: DPO, ORPO and SimPO as LoRA adapters, with MLX.
+"""Preference training on Apple Silicon: DPO, ORPO, SimPO and KTO as LoRA adapters, with MLX.
 
 mlx-lm trains only by next-token loss, so this is a small trainer of its own built from mlx-lm's
 pieces (its model loading, LoRA layers and gradient checkpointing). It saves adapters exactly as
 mlx-lm does, so chatting with a run, its checkpoints and export work the same as for fine-tuning.
 
 Each pair is two sequences, prompt + chosen and prompt + rejected, rendered as the model sees them
-at inference (chat_render). Only reply tokens count. DPO compares against the starting model: LoRA
-starts as a no-op (its B matrices are zero), so the starting model's log-likelihoods are measured
+at inference (chat_render). Only reply tokens count. DPO and KTO compare against the starting model:
+LoRA starts as a no-op (its B matrices are zero), so the starting model's log-likelihoods are measured
 once, before the first step.
+
+KTO trains on single replies marked good or bad. Its second sequence is the same reply after another
+example's prompt: how much more likely the model finds replies regardless of prompt estimates how far
+it has drifted from the start (the KL term), which a good reply has to beat and a bad one fall below.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ LORA_LAYERS = 16  # the last 16 layers, as mlx-lm fine-tuning does
 VAL_BATCHES = 25
 
 Pair = tuple[list[dict], str, str]
+Example = tuple[list[dict], str, bool]  # KTO: a reply and whether it's good
 
 
 def encode(tokenizer, prompt: list[dict], reply: str, limit: int) -> tuple[list[int], int]:
@@ -61,8 +66,19 @@ def log_sigmoid(x: mx.array) -> mx.array:
     return -mx.logaddexp(0, -x)
 
 
-def objective_loss(objective: str, beta: float, gamma: float, c, r, nc, nr, ref_c=None, ref_r=None):
-    """(loss, margin per pair) for chosen and rejected log-likelihoods `c`, `r` over `nc`, `nr` tokens."""
+def objective_loss(objective: str, beta: float, gamma: float, c, r, nc, nr, ref_c=None, ref_r=None, good=None, weights=(1.0, 1.0)):
+    """(loss, margin per pair) for chosen and rejected log-likelihoods `c`, `r` over `nc`, `nr` tokens.
+
+    For KTO, `c` is each reply after its own prompt, `r` the same reply after another prompt, `good`
+    which replies are good and `weights` how much good and bad ones count.
+    """
+    if objective == "kto":
+        reward = c - ref_c
+        kl = mx.stop_gradient(mx.maximum((r - ref_r).mean(), 0))
+        sign = mx.where(good, 1.0, -1.0)
+        margin = beta * (reward - kl) * sign
+        weight = mx.where(good, weights[0], weights[1])
+        return (weight * (1 - mx.sigmoid(margin))).mean(), margin
     if objective == "dpo":
         margin = beta * ((c - ref_c) - (r - ref_r))
         return -log_sigmoid(margin).mean(), margin
@@ -76,7 +92,7 @@ def objective_loss(objective: str, beta: float, gamma: float, c, r, nc, nr, ref_
     return -avg_c.mean() - beta * log_sigmoid(margin).mean(), margin
 
 
-def train(cfg: dict, out: Path, train_pairs: list[Pair], valid_pairs: list[Pair], emit: Callable[..., None], steps: int, eval_every: int, save_every: int) -> None:
+def train(cfg: dict, out: Path, train_pairs: list[Pair] | list[Example], valid_pairs: list[Pair] | list[Example], emit: Callable[..., None], steps: int, eval_every: int, save_every: int) -> None:
     from mlx_lm import load
     from mlx_lm.tuner.trainer import grad_checkpoint
     from mlx_lm.tuner.utils import linear_to_lora_layers
@@ -96,14 +112,27 @@ def train(cfg: dict, out: Path, train_pairs: list[Pair], valid_pairs: list[Pair]
         model.load_weights(str(cfg["resume_from"]), strict=False)
     grad_checkpoint(model.layers[0])
 
-    emit("phase", name="Preparing pairs")
     limit = cfg["max_seq_length"]
-    enc = lambda ps: [(encode(tokenizer, p, c, limit), encode(tokenizer, p, r, limit)) for p, c, r in ps]  # noqa: E731
+    kto = objective == "kto"
+    if kto:
+        emit("phase", name="Preparing examples")
+
+        def enc(xs):  # each reply after its own prompt, and after the next example's
+            return [(encode(tokenizer, p, reply, limit), encode(tokenizer, xs[(i + 1) % len(xs)][0], reply, limit)) for i, (p, reply, _) in enumerate(xs)]
+
+        labels = {"train": [g for _, _, g in train_pairs], "valid": [g for _, _, g in valid_pairs]}
+        good = sum(labels["train"])
+        # Good and bad examples count equally overall, however many there are of each.
+        weights = (1.0, good / max(len(train_pairs) - good, 1))
+    else:
+        emit("phase", name="Preparing pairs")
+        enc = lambda ps: [(encode(tokenizer, p, c, limit), encode(tokenizer, p, r, limit)) for p, c, r in ps]  # noqa: E731
+        labels, weights = {"train": [], "valid": []}, (1.0, 1.0)
     train_set, valid_set = enc(train_pairs), enc(valid_pairs)
     size = cfg["batch_size"]
 
     ref: dict[tuple[str, int], tuple[float, float]] = {}
-    if objective == "dpo":
+    if objective in ("dpo", "kto"):
         # The starting model's likelihoods: LoRA is still a no-op here.
         emit("phase", name="Measuring the starting model")
         for name, items in (("train", train_set), ("valid", valid_set)):
@@ -115,10 +144,10 @@ def train(cfg: dict, out: Path, train_pairs: list[Pair], valid_pairs: list[Pair]
                 for j in range(k):
                     ref[(name, i + j)] = (total[j].item(), total[k + j].item())
 
-    def loss_fn(model, ids, lengths, starts, ref_c, ref_r):
+    def loss_fn(model, ids, lengths, starts, ref_c, ref_r, good):
         total, n = reply_logps(model, ids, lengths, starts)
         k = total.shape[0] // 2
-        loss, margin = objective_loss(objective, beta, gamma, total[:k], total[k:], n[:k], n[k:], ref_c, ref_r)
+        loss, margin = objective_loss(objective, beta, gamma, total[:k], total[k:], n[:k], n[k:], ref_c, ref_r, good, weights)
         return loss, margin
 
     grad_fn = nn.value_and_grad(model, loss_fn)
@@ -127,7 +156,8 @@ def train(cfg: dict, out: Path, train_pairs: list[Pair], valid_pairs: list[Pair]
         chunk = [items[i] for i in idx]
         ids, lengths, starts = batch([c for c, _ in chunk] + [r for _, r in chunk])
         refs = [ref.get((name, i), (0.0, 0.0)) for i in idx]
-        return ids, lengths, starts, mx.array([a for a, _ in refs]), mx.array([b for _, b in refs])
+        good = mx.array([labels[name][i] for i in idx]) if kto else None
+        return ids, lengths, starts, mx.array([a for a, _ in refs]), mx.array([b for _, b in refs]), good
 
     warmup = min(cfg["warmup_steps"], max(steps - 1, 0))
     lr = cfg["learning_rate"]

@@ -62,7 +62,7 @@ def model_card(run: dict, repo: str, files: list[str]) -> str:
         front.append("library_name: peft")
     front.append("---")
 
-    what = {"sft": "fine-tuned", "dpo": "preference-trained (DPO)", "orpo": "preference-trained (ORPO)", "simpo": "preference-trained (SimPO)"}[objective]
+    what = {"sft": "fine-tuned", "dpo": "preference-trained (DPO)", "orpo": "preference-trained (ORPO)", "simpo": "preference-trained (SimPO)", "kto": "preference-trained (KTO)"}[objective]
     body = [f"# {repo.split('/')[-1]}", "", f"A {what} version of [{base}](https://huggingface.co/{base}), made with Temper."]
     if gguf:
         body += ["", "## Use it", "", "The GGUF files run in llama.cpp, Ollama, LM Studio and Temper:", "", "```sh", f"llama-server -hf {repo}", "```"]

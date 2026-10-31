@@ -65,12 +65,13 @@ const DEFAULTS: Form = {
 /** On Apple Silicon, MLX needs MLX-format weights; these community conversions mirror the defaults. */
 const MLX_DEFAULT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit";
 
-/** What a run learns (engine preference.py for the last three). */
+/** What a run learns (engine preference.py for all but the first). */
 const OBJECTIVES = {
   sft: { label: "Supervised fine-tuning", note: "Learns to write the replies in the data." },
   dpo: { label: "DPO", note: "Learns which of two replies is better, from rows with a prompt, a chosen and a rejected reply. Stays close to the starting model." },
   orpo: { label: "ORPO", note: "Fine-tunes on the chosen replies while pushing away from the rejected ones, in one step. Same rows as DPO." },
   simpo: { label: "SimPO", note: "Compares the two replies' average likelihood, with a margin. Same rows as DPO; uses less memory." },
+  kto: { label: "KTO", note: "Learns from single replies marked good or bad (rows with a prompt, a completion and a true or false label), so no pairs are needed. Pairs work too." },
 } as const;
 const SFT_LR = 0.0002;
 const PREFERENCE_LR = 0.00005; // preference objectives move further per step

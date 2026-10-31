@@ -426,21 +426,24 @@ def train_mlx(cfg: dict, out: Path) -> None:
     emit("result", adapter=str(adapter), base_model=cfg["base_model"])
 
 
-# ---------------------------------------------------------------- preference training (DPO, ORPO, SimPO)
+# ---------------------------------------------------------------- preference training (DPO, ORPO, SimPO, KTO)
 
 
 def preference_pairs(cfg: dict) -> tuple[list, list]:
-    """Training and held-out (prompt, chosen, rejected) pairs; 5% held out when there's no evaluation file."""
-    from .preference import pairs
+    """Training and held-out (prompt, chosen, rejected) pairs, or for KTO (prompt, reply, good) examples;
+    5% held out when there's no evaluation file."""
+    from .preference import examples, pairs
 
-    train = pairs(load_rows(cfg))
+    read = examples if cfg["objective"] == "kto" else pairs
+    train = read(load_rows(cfg))
     random.Random(cfg["seed"]).shuffle(train)
     if cfg.get("eval_dataset"):
-        valid = pairs(load_rows(cfg, cfg["eval_dataset"]))
+        valid = read(load_rows(cfg, cfg["eval_dataset"]))
     else:
         n = max(1, len(train) // 20) if len(train) > 1 else 0
         valid, train = train[:n], train[n:]
-    first = {"prompt": train[0][0], "chosen": train[0][1], "rejected": train[0][2]}
+    keys = ("prompt", "completion", "label") if cfg["objective"] == "kto" else ("prompt", "chosen", "rejected")
+    first = dict(zip(keys, train[0]))
     emit("dataset", rows=len(train), format="preference", sample=json.dumps(first, ensure_ascii=False)[:1500], eval_rows=len(valid))
     provenance(cfg, texts=[json.dumps(p, ensure_ascii=False) for p in train])
     return train, valid
@@ -494,9 +497,18 @@ def train_gpu_preference(cfg: dict, out: Path) -> None:
         random_state=cfg["seed"],
     )
     emit("phase", name="Preparing dataset")
+    objective = cfg["objective"]
     train, valid = preference_pairs(cfg)
 
     def rows(pairs: list) -> Dataset:
+        if objective == "kto":  # (prompt, reply, good)
+            cols = {"prompt": [], "completion": [], "label": []}
+            for prompt, reply, good in pairs:
+                head, tail = chat_render.render(tokenizer, prompt + [{"role": "assistant", "content": reply}])
+                cols["prompt"].append(head)
+                cols["completion"].append(tail)
+                cols["label"].append(good)
+            return Dataset.from_dict(cols)
         cols = {"prompt": [], "chosen": [], "rejected": []}
         for prompt, chosen, rejected in pairs:
             head, good = chat_render.render(tokenizer, prompt + [{"role": "assistant", "content": chosen}])
@@ -506,11 +518,10 @@ def train_gpu_preference(cfg: dict, out: Path) -> None:
             cols["rejected"].append(bad)
         return Dataset.from_dict(cols)
 
-    objective = cfg["objective"]
     params = OBJECTIVES[objective]
     beta = cfg.get("pref_beta") or params["beta"]
     steps = preference_steps(cfg, len(train))
-    Config, Trainer = _trl_trainer({"dpo": "DPO", "orpo": "ORPO", "simpo": "CPO"}[objective])
+    Config, Trainer = _trl_trainer({"dpo": "DPO", "orpo": "ORPO", "simpo": "CPO", "kto": "KTO"}[objective])
     args = dict(
         output_dir=str(out / "checkpoints"), per_device_train_batch_size=cfg["batch_size"], gradient_accumulation_steps=cfg["grad_accum"],
         warmup_steps=cfg["warmup_steps"], num_train_epochs=cfg["epochs"], max_steps=cfg["max_steps"] or -1, learning_rate=cfg["learning_rate"],
@@ -519,11 +530,14 @@ def train_gpu_preference(cfg: dict, out: Path) -> None:
     )
     if objective == "simpo":
         args.update(loss_type="simpo", cpo_alpha=0.0, simpo_gamma=params["gamma"])  # SimPO is CPO without its NLL term
+    if objective == "kto":
+        good = sum(g for _, _, g in train)
+        args.update(desirable_weight=1.0, undesirable_weight=good / max(len(train) - good, 1))  # good and bad count equally
     accepted = inspect.signature(Config.__init__).parameters  # only what this TRL version takes
     if valid:
         args["eval_strategy" if "eval_strategy" in accepted else "evaluation_strategy"] = "steps"
         args["eval_steps"] = eval_every(steps)
-    extra = {"ref_model": None} if objective == "dpo" else {}  # a LoRA model's reference is itself with the adapter off
+    extra = {"ref_model": None} if objective in ("dpo", "kto") else {}  # a LoRA model's reference is itself with the adapter off
     trainer = Trainer(
         model=model,
         args=Config(**{k: v for k, v in args.items() if k in accepted}),

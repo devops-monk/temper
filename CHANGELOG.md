@@ -65,7 +65,7 @@ Temper now makes pictures, listens and speaks, and runs like a service your othe
   web pages and YouTube transcripts.
 
 ### Training and export
-- Preference training (DPO, ORPO, SimPO), full and embedding training on Apple Silicon, and training text
+- Preference training (DPO, ORPO, SimPO, and KTO from replies marked good or bad), full and embedding training on Apple Silicon, and training text
   from documents.
 - Batch size, LoRA rank and context fitted to this computer; a token preview; loss on replies only.
 - Evaluation while training (sample replies, early stopping), run history, checkpoints, resuming and

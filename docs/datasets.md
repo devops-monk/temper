@@ -41,6 +41,15 @@ The DPO, ORPO and SimPO objectives learn from pairs of answers, a better one and
 
 Rows may also hold `chosen` and `rejected` as whole conversations ending in each reply.
 
+KTO learns from single answers marked good or bad, such as ratings collected from users, so nobody has to
+compare two answers:
+
+```json
+{"prompt": "Explain recursion", "completion": "An answer…", "label": true}
+```
+
+The label may be `true`/`false`, `1`/`0`, `yes`/`no` or `good`/`bad`. KTO also takes the pairs above.
+
 ## Making data with Recipes
 
 Have documents but no examples? **Recipes** uses a model to write training examples from PDFs, Word files,

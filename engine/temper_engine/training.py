@@ -50,8 +50,9 @@ class TrainConfig(BaseModel):
     dataset_format: Literal["auto", "messages", "sharegpt", "alpaca", "text"] = "auto"
     max_samples: int | None = Field(default=2000, ge=1)
     method: Literal["lora", "qlora", "full"] = "qlora"
-    # sft: learn to write the replies. dpo, orpo, simpo: learn which of two replies is better (preference.py).
-    objective: Literal["sft", "dpo", "orpo", "simpo"] = "sft"
+    # sft: learn to write the replies. dpo, orpo, simpo: learn which of two replies is better; kto: from
+    # single replies marked good or bad (preference.py).
+    objective: Literal["sft", "dpo", "orpo", "simpo", "kto"] = "sft"
     pref_beta: float | None = Field(default=None, gt=0)  # the objective's beta; None for its usual value
     # Continued pretraining: train the token embeddings and output head too, for new vocabulary or a new language.
     train_embeddings: bool = False
@@ -354,14 +355,14 @@ def preview_tokens(req: TokenPreview):
         raise HTTPException(404, "The dataset has no rows.")
     row = rows[min(req.row, len(rows) - 1)]
     if preference.is_preference(row):
-        fmt = "preference"  # shown with its chosen reply
+        fmt = "preference"  # shown with its chosen (or only) reply
     else:
         fmt = req.dataset_format if req.dataset_format != "auto" else formats.detect_format(list(row))
     if fmt is None:
         raise HTTPException(422, f"Couldn't tell the dataset's format from its columns ({', '.join(sorted(row))}). Prepare it on the Datasets page first.")
     try:
         if fmt == "preference":
-            prompt, chosen, _ = preference.to_pair(row)
+            prompt, chosen, _ = preference.to_example(row) if preference.is_unpaired(row) else preference.to_pair(row)
             conv = prompt + [{"role": "assistant", "content": chosen}]
         else:
             conv = formats.to_messages(row, fmt)
