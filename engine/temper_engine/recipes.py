@@ -231,6 +231,8 @@ def run(req: RunRequest):
     uses_local = any(m.get("provider", "local") == "local" for m in recipe.models)
     if uses_local and manager.state != "ready":
         raise HTTPException(409, "Recipes with the “local” provider use the model loaded for chat. Load one on the Models page, or switch the model to a cloud provider.")
+    if uses_local and manager.engine == "cloud":
+        raise HTTPException(409, f"Chat's model, {manager.model}, is a cloud provider's. Set the recipe's model to that provider instead of “local”, or load a model on this computer.")
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     work = home() / "recipe-runs" / f"{slug(recipe.name)}-{stamp}"

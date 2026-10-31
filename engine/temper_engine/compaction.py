@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import attachments, skills, tools
+from . import attachments, providers, skills, tools
 from .engines import translate
 from .instructions import with_instructions
 from .runtime import RuntimeManager, manager
@@ -71,6 +71,13 @@ def _post(server: RuntimeManager, path: str, body: dict, timeout: float = 60) ->
         raise HTTPException(502, f"The model's server didn't answer: {e}") from e
 
 
+def _cloud(server: RuntimeManager):
+    cloud = providers.target(server.path)
+    if not cloud:
+        raise HTTPException(409, f"The provider of {server.model} was removed. Load another model.")
+    return cloud
+
+
 def count(server: RuntimeManager, messages: list[dict], specs: list[dict] | None = None) -> int:
     """Prompt tokens for `messages` (and the `specs` of tools offered natively), as the model will see them."""
     if not messages:
@@ -84,7 +91,7 @@ def count(server: RuntimeManager, messages: list[dict], specs: list[dict] | None
             content = "\n".join(p.get("text", "") for p in content if p.get("type") == "text")
         plain.append({"role": m["role"], "content": content or ""})
     if server.engine != "llama.cpp":
-        return _count_local(server, plain) + media
+        return _count_local(server, plain) + media  # a cloud model's is estimated, as it has no tokenizer here
     prompt = _post(server, "/apply-template", {"messages": plain, **({"tools": specs} if specs else {})})["prompt"]
     return len(_post(server, "/tokenize", {"content": prompt, "add_special": True, "parse_special": True})["tokens"]) + media
 
@@ -99,6 +106,8 @@ def _tokenizer(folder: str):
 def _count_local(server: RuntimeManager, messages: list[dict]) -> int:
     """Other engines have no tokenize endpoint, so the model folder's own tokenizer counts (no PyTorch needed)."""
     try:
+        if not server.folder:
+            raise ValueError("no tokenizer")
         ids = _tokenizer(server.folder).apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
     except Exception:  # no transformers, or a template that wants something else: roughly, so compaction still kicks in
         return int(sum(len(str(m["content"])) for m in messages) / CHARS_PER_TOKEN) + 8 * len(messages)
@@ -156,7 +165,10 @@ def summarise(server: RuntimeManager, earlier: str | None, messages: list[dict])
             "temperature": 0.2,
             "chat_template_kwargs": {"enable_thinking": False},  # templates without the switch ignore it
         }
-        reply = _post(server, "/v1/chat/completions", translate(server.engine, body), timeout=600)
+        if server.engine == "cloud":
+            reply = providers.complete(_cloud(server), body)
+        else:
+            reply = _post(server, "/v1/chat/completions", translate(server.engine, body), timeout=600)
         summary = (reply["choices"][0]["message"].get("content") or "").strip() or summary
     if not summary:
         raise HTTPException(502, "The model returned an empty summary.")
@@ -173,6 +185,8 @@ def _model_max(server: RuntimeManager) -> int | None:
 
     if server.folder:
         return engines.context_max(server.folder)
+    if server.engine == "cloud":
+        return None
     meta = model_settings._meta(server.path) if server.path else {}
     return meta.get(f"{meta.get('general.architecture')}.context_length")
 
@@ -242,7 +256,7 @@ def prepare(req: Prepare):
     if used := skills.mentioned(req.messages, req.project):
         system = "\n\n".join(t for t in (system, skills.prompt(used)) if t)
     # llama-server takes tools natively; other engines are offered them in the system prompt.
-    native = server.engine == "llama.cpp"
+    native = server.engine in ("llama.cpp", "cloud")
     offered = tools.offer(req.tools) if req.tools else None
     specs = offered.specs() if offered and native else None
     if offered and not native:

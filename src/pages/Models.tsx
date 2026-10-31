@@ -2,6 +2,7 @@ import { ChevronDown, Download, FileUp, FlaskConical, FolderUp, Heart, Lock, Pau
 import { useCallback, useEffect, useState } from "react";
 import { CatalogView } from "../components/Catalog";
 import { useDevices } from "../components/Devices";
+import { listed, useProviders } from "../components/Providers";
 import { CHAT_CONTEXT, type ChatEstimate, LoadButton, folderEngine, useEngines } from "../components/LoadButton";
 import { RepoAccess } from "../components/HfAccount";
 import { sourceName, useHubSource } from "../components/HubSource";
@@ -375,6 +376,47 @@ function DeviceModels() {
             : [
                 <li key={d.id} className="px-4 py-2 text-muted">
                   {d.name}: {d.error}
+                </li>,
+              ],
+        )}
+      </ul>
+    </div>
+  );
+}
+
+/** Cloud providers' listed models (Connect → Cloud providers), ready to use in chat. */
+function CloudModels() {
+  const { providers } = useProviders();
+  const go = useApp((s) => s.go);
+  const t = useT();
+  if (!providers.length) return null;
+  return (
+    <div className="mx-7 mt-6 mb-6">
+      <h2 className="text-[13px] font-semibold">{t("models.cloud")}</h2>
+      <p className="mt-0.5 mb-2 text-[12px] text-muted">
+        {t("models.cloud_hint")}{" "}
+        <button className="underline hover:text-text" onClick={() => go("connect")}>
+          {t("connect.providers")}
+        </button>
+      </p>
+      <ul className="divide-y divide-line rounded-lg border border-line bg-surface text-[13px]">
+        {providers.flatMap((p) =>
+          p.online || p.models.length
+            ? listed(p)
+                .slice(0, 12)
+                .map((m) => (
+                  <li key={`${p.id}/${m}`} className="flex items-center gap-2 px-4 py-2">
+                    <span className="font-medium">{m}</span>
+                    <span className="text-muted">{t("models.from_provider", { provider: p.name })}</span>
+                    <span className="flex-1" />
+                    <span className="font-mono text-[11.5px] text-muted">{`${m}@${p.name}`}</span>
+                    <CopyButton text={`${m}@${p.name}`} />
+                    <LoadButton path={`${m}@${p.name}`} name={`${m}@${p.name}`} label={t("providers.use")} />
+                  </li>
+                ))
+            : [
+                <li key={p.id} className="px-4 py-2 text-muted">
+                  {p.name}: {p.error}
                 </li>,
               ],
         )}
@@ -768,6 +810,7 @@ export function ModelsPage() {
           <>
             <LocalModels version={version} onImported={imported} />
             <DeviceModels />
+            <CloudModels />
           </>
         )}
       </div>

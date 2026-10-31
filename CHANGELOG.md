@@ -13,6 +13,8 @@ Temper now makes pictures, listens and speaks, and runs like a service your othe
   replies that keep generating when the window closes, a prompt queue, a prompt library and AGENTS.md.
 - Tools: chat models can call tools, run Python and JavaScript in a sandbox (asking first), and use MCP
   servers. Small models' broken tool calls are repaired.
+- Cloud providers: OpenAI, Anthropic, Google, OpenRouter or any OpenAI-compatible API next to local
+  models, in chat, compare mode and the API, as `<model>@<provider>`.
 - Find in chat, keyboard shortcuts, interface zoom, and the app in English, Hindi, Spanish, Chinese and
   Japanese.
 

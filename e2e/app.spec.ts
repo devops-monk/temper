@@ -73,3 +73,43 @@ test("Settings shows statistics and privacy, with crash reports off until turned
   await page.getByRole("button", { name: "Take the tour" }).click();
   await expect(page.getByRole("dialog").getByRole("heading", { name: "Welcome to Temper" })).toBeVisible();
 });
+
+test("a cloud provider's model answers in chat", async ({ page }) => {
+  // A stand-in for an OpenAI-compatible provider, answering with the key it was given.
+  const { createServer } = await import("node:http");
+  const seen: { auth?: string; model?: string }[] = [];
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      if (req.headers.authorization !== "Bearer sk-e2e-0123456789") return void res.writeHead(401).end();
+      if (req.url === "/v1/models") return void res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ data: [{ id: "cloud-model" }] }));
+      const ask = JSON.parse(body);
+      seen.push({ auth: req.headers.authorization, model: ask.model });
+      const chunk = (d: object) => `data: ${JSON.stringify({ choices: [{ index: 0, delta: d }] })}\n\n`;
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.end(chunk({ role: "assistant", content: "Hello from " }) + chunk({ content: "the cloud." }) + "data: [DONE]\n\n");
+    });
+  });
+  await new Promise<void>((ok) => server.listen(18799, "127.0.0.1", ok));
+  try {
+    await seenTour(page);
+    const errors = watchErrors(page);
+    await page.goto("/#connect");
+    await page.getByLabel("Provider", { exact: true }).selectOption("custom");
+    await page.getByLabel("API key", { exact: true }).fill("sk-e2e-0123456789");
+    await page.getByLabel("Name", { exact: true }).fill("mock");
+    await page.getByLabel("The API's address").fill("http://127.0.0.1:18799/v1");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText("Connected")).toBeVisible();
+    await page.getByRole("button", { name: "Use in chat" }).first().click();
+    const box = page.getByPlaceholder("Message the model");
+    await box.fill("hi");
+    await box.press("Enter");
+    await expect(page.getByText("Hello from the cloud.")).toBeVisible({ timeout: 15_000 });
+    expect(seen.at(-1)?.model).toBe("cloud-model");
+    expect(errors).toEqual([]);
+  } finally {
+    server.close();
+  }
+});

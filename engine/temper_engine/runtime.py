@@ -148,10 +148,12 @@ class RuntimeManager:
         }
 
     def load(self, req: LoadRequest, restore: list[tuple[int, str]] | None = None) -> None:
-        from . import engines, model_settings
+        from . import engines, model_settings, providers
 
         if restore is None:
             self.forget_suspended()  # loading something else replaces what was suspended
+        if cloud := providers.target(req.path):
+            return self._load_cloud(req, cloud)
 
         folder = engines.local_folder(req.path)
         engine = req.engine or engines.default_engine(folder or req.path)
@@ -213,6 +215,15 @@ class RuntimeManager:
             cmd = engines.command(engine, folder, settings, self.port, req.adapter)
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
         self._supervise(self.proc)
+
+    def _load_cloud(self, req: LoadRequest, cloud) -> None:
+        """Makes a cloud provider's model chat's (providers.py): nothing starts here, route() sends its requests there."""
+        self.unload()
+        with self.lock:
+            self._start(req, "cloud", None)
+            self.port = None
+            self.model, self.path, self.state = cloud.model, cloud.model, "ready"
+            self.modalities, self.context = dict(cloud.modalities), cloud.context
 
     def _supervise(self, proc: subprocess.Popen) -> None:
         proc.owner = self  # type: ignore[attr-defined]  # swap() hands the server to another manager
@@ -278,6 +289,8 @@ class RuntimeManager:
         to disk first, so resume() loads it again with the context already processed."""
         if self.state != "ready" or not self.request:
             raise HTTPException(409, "No model is loaded.")
+        if self.engine == "cloud":  # it holds nothing on this computer's GPU
+            return self.status()
         slots: list[tuple[int, str]] = []
         if self.engine == "llama.cpp":
             try:
@@ -418,23 +431,31 @@ def v1_models():
     # Then what a request can load by naming it (on_demand.py), skipping what's loaded under another name.
     loaded = {s.path for s in servers if s.state == "ready"} | {*pool.aliases}
     data += [m for m in listing() if m["id"] not in loaded and m["id"] not in {d["id"] for d in data}]
-    from . import devices
+    from . import devices, providers
 
-    return {"object": "list", "data": data + devices.listing()}
+    return {"object": "list", "data": data + devices.listing() + providers.listing()}
 
 
 def route(body: dict) -> tuple[RuntimeManager, str, dict]:
     """The server a chat request goes to, its URL, and the request as that server takes it.
 
-    A linked device's model is passed to that device (devices.py, with its key in `server.headers`).
+    A cloud provider's model goes to the provider, and a linked device's to that device (providers.py and
+    devices.py, with the key in `server.headers`).
     Compare mode's and alongside models are asked for by path or name, and a model on this computer that
     isn't loaded loads first (on_demand.py, which may take minutes: async callers use aroute). Anything else
     goes to chat's model. Attachments are expanded into what the model reads, and refused if it can't see or hear them.
     """
-    from . import devices, on_demand
+    from . import devices, on_demand, providers
     from .compare import pool
 
     model = body.get("model")
+    # A cloud provider's model, named or loaded for chat, goes to the provider (providers.py).
+    if cloud := providers.target(model or (manager.path if manager.engine == "cloud" and manager.state == "ready" else None)):
+        if isinstance(body.get("messages"), list):
+            from . import attachments
+
+            body["messages"] = attachments.expand(body["messages"])
+        return cloud, cloud.url, providers.translate(cloud, body)
     # A linked device's model goes there (devices.py), unless a device passed this request on already.
     if not body.pop(devices.HOP, False) and (remote := devices.target(model, lambda: on_demand.loaded(model) or on_demand.resolve(model) is not None)):
         return remote, f"{remote.base}/v1/chat/completions", devices.forwarded(body, remote)

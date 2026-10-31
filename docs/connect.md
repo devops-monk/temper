@@ -148,6 +148,21 @@ the laptop has that model, and on the desktop if only the desktop has it. When b
 any app using the API can use the desktop's. The key is kept in `devices.json` in Temper's folder, readable
 only by you; revoke it on the desktop to cut the link off.
 
+## Cloud providers
+
+Under **Connect → Cloud providers**, add OpenAI, Anthropic, Google (Gemini), OpenRouter or any other
+OpenAI-compatible API (Together, Groq, a vLLM server elsewhere) with your own API key. Temper checks the key
+by listing the provider's models. Tick the ones you want listed; with none ticked, all of them are.
+
+A provider's models are named `<model>@<provider>`, like `gpt-4.1@openai` or `claude-sonnet-5-5@anthropic`.
+**Use in chat**, on Connect or the Models page, makes one chat's model. Nothing loads on this computer, and
+tools, attachments and compaction work as they do with a local model. Compare mode and the API take the same
+names, so you can put a local model next to a cloud one, or point an app at Temper and switch between them.
+
+Requests to a cloud model go to that provider, under its terms and with its charges. Only the parameters
+every OpenAI-compatible API takes are sent: llama.cpp's own sampling settings, such as top-k and min-p, are
+left out. The keys are kept in `providers.json` in Temper's folder, readable only by you.
+
 ## Apps that expect Ollama or llama.cpp
 
 Some apps only look for Ollama (port 11434) or a llama.cpp server (port 8080). Under **Connect →

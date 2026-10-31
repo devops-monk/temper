@@ -45,7 +45,8 @@ const same = (a: LoadSettings, b: LoadSettings) => (Object.keys(a) as (keyof Loa
 export function ModelSettings({ stats }: { stats: ReplyStats | null }) {
   const t = useT();
   const { runtime, refreshRuntime } = useApp();
-  const path = runtime?.state === "ready" || runtime?.state === "failed" ? (runtime.path ?? null) : null;
+  // A cloud provider's model has no load settings here (engine providers.py).
+  const path = (runtime?.state === "ready" || runtime?.state === "failed") && runtime.engine !== "cloud" ? (runtime.path ?? null) : null;
   const [offer, setOffer] = useState<Offer | null>(null);
   const [form, setForm] = useState<LoadSettings | null>(null);
   const [estimate, setEstimate] = useState<ChatEstimate | null>(null);

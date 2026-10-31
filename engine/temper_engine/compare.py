@@ -104,7 +104,7 @@ class Pool:
                 if limit and now - self.servers[path].used > limit:
                     self.drop(path)
             chat_idle = self.ttl.get(manager.path, kept_idle) if manager.path else kept_idle
-            if chat_idle and manager.state == "ready" and now - manager.used > chat_idle:
+            if chat_idle and manager.state == "ready" and manager.engine != "cloud" and now - manager.used > chat_idle:  # a cloud model holds no memory here
                 manager.unload()
 
     def status(self, kept: bool | None = None) -> list[dict]:

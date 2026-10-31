@@ -157,7 +157,7 @@ async def _run(gen: Generation, body: dict, names: list[str], approve: list[str]
     try:
         server, _, _ = await aroute(dict(body))
         # llama-server takes the tools natively; other engines were offered them in the system prompt (compaction.py).
-        native = server.engine in ("llama.cpp", "remote")  # a linked device's Temper does its own offering
+        native = server.engine in ("llama.cpp", "remote", "cloud")  # a linked device's Temper does its own offering
         offered = await asyncio.to_thread(tools.offer, names)  # connects the chat's MCP servers
         approve = [*approve, *offered.approve()]
         messages = list(body["messages"])

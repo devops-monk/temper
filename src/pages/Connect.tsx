@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
 import { Decisions } from "../components/Decisions";
 import { Devices } from "../components/Devices";
+import { Providers } from "../components/Providers";
 import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
 import { OnDemand } from "../components/OnDemand";
@@ -247,6 +248,14 @@ export function ConnectPage() {
             {withNodes(t("connect.linked_hint"), { name: code("model@device") })}
           </p>
           <Devices />
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">{t("connect.providers")}</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">
+            {withNodes(t("connect.providers_hint"), { name: code("model@provider") })}
+          </p>
+          <Providers />
         </div>
 
         <div className="mt-8 max-w-[760px]">
