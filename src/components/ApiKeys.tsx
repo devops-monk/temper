@@ -1,6 +1,7 @@
 import { KeyRound, Trash2 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api } from "../lib/engine";
+import { t as tr, useT } from "../lib/i18n";
 import { Button, CopyButton, Input, Notice, Toggle, cx } from "./ui";
 
 /** An API key as the engine lists it (api_keys.py): the whole key is only in the reply that makes it. */
@@ -35,11 +36,11 @@ interface LogEntry {
 }
 
 function ago(t: number | null): string {
-  if (!t) return "never";
+  if (!t) return tr("keys.never");
   const s = Math.max(0, Date.now() / 1000 - t);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 60) return tr("keys.just_now");
+  if (s < 3600) return tr("keys.min_ago", { n: Math.floor(s / 60) });
+  if (s < 86400) return tr("keys.h_ago", { n: Math.floor(s / 3600) });
   return new Date(t * 1000).toLocaleDateString();
 }
 
@@ -47,6 +48,7 @@ const count = (n: number) => (n >= 10_000 ? `${(n / 1000).toFixed(n >= 100_000 ?
 
 /** Named keys for /v1, made, copied once and revoked here. */
 export function ApiKeys() {
+  const t = useT();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("");
   const [made, setMade] = useState<{ name: string; key: string } | null>(null);
@@ -55,8 +57,8 @@ export function ApiKeys() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    const timer = setInterval(load, 5000);
+    return () => clearInterval(timer);
   }, [load]);
 
   async function create() {
@@ -72,7 +74,7 @@ export function ApiKeys() {
   }
 
   async function revoke(k: ApiKey) {
-    if (!confirm(`Revoke "${k.name}"? Apps using it will stop working.`)) return;
+    if (!confirm(t("keys.revoke_confirm", { name: k.name }))) return;
     await api(`/api/keys/${k.id}`, { method: "DELETE" });
     if (made?.name === k.name) setMade(null);
     load();
@@ -88,10 +90,10 @@ export function ApiKeys() {
         }}
       >
         <span className="w-64">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name it after the app or device" aria-label="New key's name" maxLength={60} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("keys.name_placeholder")} aria-label={t("keys.name_label")} maxLength={60} />
         </span>
         <Button type="submit" disabled={!name.trim()}>
-          <KeyRound className="size-3.5" /> Create key
+          <KeyRound className="size-3.5" /> {t("keys.create")}
         </Button>
         {error && <span className="text-[12px] text-danger">{error}</span>}
       </form>
@@ -100,7 +102,7 @@ export function ApiKeys() {
         <div className="mt-3">
           <Notice tone="info">
             <div className="flex flex-wrap items-center gap-2">
-              <span>Copy the key for {made.name} now. Temper keeps only a fingerprint of it, so it can't show it again.</span>
+              <span>{t("keys.copy_now", { name: made.name })}</span>
               <span className="font-mono text-[12.5px] break-all text-text">{made.key}</span>
               <CopyButton text={made.key} />
             </div>
@@ -112,11 +114,11 @@ export function ApiKeys() {
         <table className="mt-3 w-full text-[13px]">
           <thead className="text-left text-[12px] text-muted">
             <tr>
-              <th className="py-1.5 font-medium">Name</th>
-              <th className="font-medium">Key</th>
-              <th className="font-medium">Last used</th>
-              <th className="text-right font-medium">Requests</th>
-              <th className="text-right font-medium">Tokens in / out</th>
+              <th className="py-1.5 font-medium">{t("keys.name")}</th>
+              <th className="font-medium">{t("keys.key")}</th>
+              <th className="font-medium">{t("keys.last_used")}</th>
+              <th className="text-right font-medium">{t("keys.requests")}</th>
+              <th className="text-right font-medium">{t("keys.tokens")}</th>
               <th />
             </tr>
           </thead>
@@ -131,7 +133,7 @@ export function ApiKeys() {
                   {count(k.input_tokens)} / {count(k.output_tokens)}
                 </td>
                 <td className="w-8 text-right">
-                  <button className="text-muted hover:text-danger" onClick={() => void revoke(k)} title="Revoke" aria-label={`Revoke ${k.name}`}>
+                  <button className="text-muted hover:text-danger" onClick={() => void revoke(k)} title={t("keys.revoke")} aria-label={t("keys.revoke_named", { name: k.name })}>
                     <Trash2 className="size-3.5" />
                   </button>
                 </td>
@@ -146,6 +148,7 @@ export function ApiKeys() {
 
 /** The last requests to /v1, from any key or Temper itself, refreshed every few seconds. */
 export function ApiMonitor() {
+  const t = useT();
   const [log, setLog] = useState<LogEntry[]>([]);
   const [content, setContent] = useState(false);
 
@@ -153,30 +156,30 @@ export function ApiMonitor() {
     // With content on, each poll keeps the engine recording prompts and replies; off, it stops and drops them.
     const load = () => void api<LogEntry[]>(`/api/keys/log?limit=50&content=${content}`).then(setLog, () => {});
     load();
-    const t = setInterval(load, content ? 1500 : 3000);
-    return () => clearInterval(t);
+    const timer = setInterval(load, content ? 1500 : 3000);
+    return () => clearInterval(timer);
   }, [content]);
 
   return (
     <div>
       <div className="mb-2 max-w-sm">
-        <Toggle checked={content} onChange={setContent} label="Show prompts and replies" />
+        <Toggle checked={content} onChange={setContent} label={t("keys.show_content")} />
       </div>
-      {content && <p className="mb-2 text-[12px] text-muted">Recorded from now on while this is open, in memory only. Turning it off or leaving the page forgets them.</p>}
+      {content && <p className="mb-2 text-[12px] text-muted">{t("keys.content_hint")}</p>}
       {!log.length ? (
-        <p className="text-[13px] text-muted">No requests yet. They show up here as apps use the API.</p>
+        <p className="text-[13px] text-muted">{t("keys.no_requests")}</p>
       ) : (
         <div className="max-h-96 overflow-y-auto rounded-lg border border-line">
           <table className="w-full text-[12.5px]">
             <thead className="sticky top-0 bg-surface text-left text-[12px] text-muted">
               <tr>
-                <th className="px-3 py-1.5 font-medium">Time</th>
-                <th className="font-medium">From</th>
-                <th className="font-medium">Request</th>
-                <th className="font-medium">Model</th>
-                <th className="text-right font-medium">Tokens</th>
-                <th className="text-right font-medium">Speed</th>
-                <th className="px-3 text-right font-medium">Status</th>
+                <th className="px-3 py-1.5 font-medium">{t("keys.time")}</th>
+                <th className="font-medium">{t("keys.from")}</th>
+                <th className="font-medium">{t("keys.request")}</th>
+                <th className="font-medium">{t("keys.model")}</th>
+                <th className="text-right font-medium">{t("keys.tokens_short")}</th>
+                <th className="text-right font-medium">{t("keys.speed")}</th>
+                <th className="px-3 text-right font-medium">{t("keys.status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +195,7 @@ export function ApiMonitor() {
                       {e.model ?? ""}
                     </td>
                     <td className="text-right tabular-nums">{e.input_tokens != null ? `${e.input_tokens} → ${e.output_tokens ?? 0}` : ""}</td>
-                    <td className="text-right text-muted tabular-nums" title={e.first_ms != null ? `First token after ${(e.first_ms / 1000).toFixed(1)} s` : undefined}>
+                    <td className="text-right text-muted tabular-nums" title={e.first_ms != null ? t("keys.first_token", { s: (e.first_ms / 1000).toFixed(1) }) : undefined}>
                       {e.tokens_per_second != null ? `${e.tokens_per_second}/s` : ""}
                     </td>
                     <td className={cx("px-3 text-right tabular-nums", e.status == null ? "text-muted" : e.status >= 400 ? "text-danger" : "")}>

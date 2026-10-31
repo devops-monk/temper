@@ -1,6 +1,7 @@
 import { Link2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { Badge, Button, CopyButton, Input, cx } from "./ui";
 
 /** A linked computer running Temper, as the engine lists it (engine devices.py). Its key is never sent back. */
@@ -30,6 +31,7 @@ export function useDevices(every = 30_000): { devices: Device[]; reload: (fresh?
 /** Connect → Linked devices: other computers' models, used from this one. */
 export function Devices() {
   const { devices, reload } = useDevices();
+  const t = useT();
   const [url, setUrl] = useState("");
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
@@ -53,7 +55,7 @@ export function Devices() {
   }
 
   async function unlink(d: Device) {
-    if (!confirm(`Unlink ${d.name}? Its models stop showing here. The key stays valid on ${d.name} until you revoke it there.`)) return;
+    if (!confirm(t("devices.unlink_confirm", { name: d.name }))) return;
     await api(`/api/devices/${d.id}`, { method: "DELETE" });
     reload();
   }
@@ -73,16 +75,16 @@ export function Devices() {
         }}
       >
         <span className="w-56">
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.20:8765" aria-label="The other computer's address" />
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.20:8765" aria-label={t("devices.address")} />
         </span>
         <span className="w-56">
-          <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="An API key made there" aria-label="Its API key" type="password" />
+          <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder={t("devices.key_placeholder")} aria-label={t("devices.key")} type="password" />
         </span>
         <span className="w-36">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (optional)" aria-label="What to call it" maxLength={40} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("devices.name_placeholder")} aria-label={t("devices.name")} maxLength={40} />
         </span>
         <Button type="submit" disabled={busy || !url.trim() || !key.trim()}>
-          <Link2 className="size-3.5" /> {busy ? "Linking…" : "Link"}
+          <Link2 className="size-3.5" /> {busy ? t("devices.linking") : t("devices.link")}
         </Button>
       </form>
       {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
@@ -94,13 +96,13 @@ export function Devices() {
               <div className="flex items-center gap-2">
                 <span className="font-medium">{d.name}</span>
                 <span className="font-mono text-[12px] text-muted">{d.url}</span>
-                {d.online ? <Badge tone="ok">Online</Badge> : <Badge tone="warn">Offline</Badge>}
+                {d.online ? <Badge tone="ok">{t("devices.online")}</Badge> : <Badge tone="warn">{t("devices.offline")}</Badge>}
                 <span className="flex-1" />
-                <label className="flex items-center gap-1.5 text-[12px] text-muted" title="Answers for models both computers have">
+                <label className="flex items-center gap-1.5 text-[12px] text-muted" title={t("devices.preferred_title")}>
                   <input type="checkbox" checked={d.preferred} onChange={() => void prefer(d.preferred ? null : d)} />
-                  Preferred
+                  {t("devices.preferred")}
                 </label>
-                <button className="text-muted hover:text-danger" onClick={() => void unlink(d)} title={`Unlink ${d.name}`} aria-label={`Unlink ${d.name}`}>
+                <button className="text-muted hover:text-danger" onClick={() => void unlink(d)} title={t("devices.unlink", { name: d.name })} aria-label={t("devices.unlink", { name: d.name })}>
                   <Trash2 className="size-3.5" />
                 </button>
               </div>
@@ -108,7 +110,7 @@ export function Devices() {
               {d.models.length > 0 && (
                 <ul className="mt-1.5 flex flex-wrap gap-1.5">
                   {d.models.map((m) => (
-                    <li key={m.id} className={cx("flex items-center gap-1 rounded border border-line px-1.5 py-0.5 font-mono text-[11.5px]", !m.loaded && "text-muted")} title={m.loaded ? "Loaded there" : "Loads there when asked for"}>
+                    <li key={m.id} className={cx("flex items-center gap-1 rounded border border-line px-1.5 py-0.5 font-mono text-[11.5px]", !m.loaded && "text-muted")} title={t(m.loaded ? "devices.loaded_there" : "devices.loads_there")}>
                       {m.id}@{d.name}
                       <CopyButton text={`${m.id}@${d.name}`} />
                     </li>

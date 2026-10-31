@@ -1,6 +1,7 @@
 import qrcode from "qrcode-generator";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { Button, CopyButton, Input, Notice, Toggle } from "./ui";
 
 /** The engine's LAN listener (lan.py). */
@@ -14,6 +15,7 @@ interface Lan {
 }
 
 function Qr({ text }: { text: string }) {
+  const t = useT();
   const svg = useMemo(() => {
     const qr = qrcode(0, "M");
     qr.addData(text);
@@ -21,11 +23,12 @@ function Qr({ text }: { text: string }) {
     return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
   }, [text]);
   // Dark modules on white whatever the theme, so phone cameras read it.
-  return <div className="size-36 shrink-0 rounded-md bg-white p-1" role="img" aria-label={`QR code for ${text}`} dangerouslySetInnerHTML={{ __html: svg }} />;
+  return <div className="size-36 shrink-0 rounded-md bg-white p-1" role="img" aria-label={t("lan.qr", { text })} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 /** Turns the model API on for other devices on the home network, with the address as text and a QR code. */
 export function LanAccess() {
+  const t = useT();
   const [lan, setLan] = useState<Lan | null>(null);
   const [port, setPort] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,16 +59,16 @@ export function LanAccess() {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-4">
-        <Toggle checked={lan.enabled && lan.running} onChange={(on) => void save(on)} label="Serve the model API on this network" />
+        <Toggle checked={lan.enabled && lan.running} onChange={(on) => void save(on)} label={t("lan.serve")} />
         <label className="flex items-center gap-2 text-[13px] text-muted">
-          Port
+          {t("discovery.port")}
           <span className="w-24">
-            <Input value={port} onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))} inputMode="numeric" aria-label="Network port" disabled={busy} />
+            <Input value={port} onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))} inputMode="numeric" aria-label={t("lan.port_label")} disabled={busy} />
           </span>
         </label>
         {lan.enabled && lan.running && Number(port) !== lan.port && (
           <Button size="sm" onClick={() => void save(true)} disabled={busy}>
-            Use this port
+            {t("lan.use_port")}
           </Button>
         )}
       </div>
@@ -84,12 +87,11 @@ export function LanAccess() {
             </div>
             {lan.addresses.length > 1 && (
               <p className="mt-1 text-[12px] text-muted">
-                Also on {lan.addresses.slice(1).map((a) => `http://${a}:${lan.port}/v1`).join(", ")}
+                {t("lan.also_on", { addresses: lan.addresses.slice(1).map((a) => `http://${a}:${lan.port}/v1`).join(", ") })}
               </p>
             )}
             <p className="mt-3 text-muted">
-              Scan it on a phone, or type it into an app on another computer as the OpenAI or Anthropic base URL, with an API key from below. Only the model API is served; Temper itself can
-              only be managed from this computer. Devices on the same Wi-Fi or wired network can reach it, so turn it off on networks you don't trust.
+              {t("lan.hint")}
             </p>
           </div>
         </div>

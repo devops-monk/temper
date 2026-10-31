@@ -1,6 +1,7 @@
 import { Loader2, Pencil, Play, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/engine";
+import { type Key, t as tr, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { Badge, Button, CopyButton, Field, Input, Select } from "./ui";
 
@@ -24,23 +25,24 @@ interface Answer {
   seconds: number;
 }
 
-const KINDS: [Kind, string][] = [
-  ["yes_no", "Yes or no"],
-  ["choice", "One of a set"],
-  ["labels", "Labels that apply"],
-  ["score", "A score"],
+const KINDS: [Kind, Key][] = [
+  ["yes_no", "decide.yes_no"],
+  ["choice", "decide.choice"],
+  ["labels", "decide.labels"],
+  ["score", "decide.score"],
 ];
-const KIND_LABEL = Object.fromEntries(KINDS) as Record<Kind, string>;
+const KIND_LABEL = Object.fromEntries(KINDS) as Record<Kind, Key>;
 
 const BLANK = { name: "", question: "", kind: "yes_no" as Kind, choices: "", low: 1, high: 10, instructions: "", classifier: "" };
 
 function shown(a: Answer["answer"]) {
-  return a === true ? "Yes" : a === false ? "No" : Array.isArray(a) ? a.join(", ") || "None" : String(a);
+  return a === true ? tr("decide.yes") : a === false ? tr("decide.no") : Array.isArray(a) ? a.join(", ") || tr("decide.none") : String(a);
 }
 
 /** Connect → Decisions: questions saved by name that apps answer with one request, and a place to try them. */
 export function Decisions() {
   const { engine } = useApp();
+  const t = useT();
   const [saved, setSaved] = useState<Decision[]>([]);
   const [form, setForm] = useState(BLANK);
   const [text, setText] = useState("");
@@ -89,80 +91,80 @@ export function Decisions() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 text-[13px]">
-        <Field label="Question">
-          <Input value={form.question} onChange={(e) => set({ question: e.target.value })} placeholder="Is this email asking for a refund?" />
+        <Field label={t("decide.question")}>
+          <Input value={form.question} onChange={(e) => set({ question: e.target.value })} placeholder={t("decide.question_placeholder")} />
         </Field>
         <div className="flex flex-wrap items-end gap-3">
           {classifiers.length > 0 && (
-            <Field label="Answered by">
+            <Field label={t("decide.answered_by")}>
               <Select
                 value={form.classifier}
                 onChange={(e) => set({ classifier: e.target.value, kind: e.target.value && !["yes_no", "choice"].includes(form.kind) ? "choice" : form.kind })}
-                aria-label="Answered by"
+                aria-label={t("decide.answered_by")}
                 className="w-48"
               >
-                <option value="">The loaded model</option>
+                <option value="">{t("decide.loaded_model")}</option>
                 {classifiers.map((c) => (
                   <option key={c.name} value={c.name}>
-                    Classifier {c.name}
+                    {t("decide.classifier", { name: c.name })}
                   </option>
                 ))}
               </Select>
             </Field>
           )}
-          <Field label="Answer">
-            <Select value={form.kind} onChange={(e) => set({ kind: e.target.value as Kind })} aria-label="Kind of answer" className="w-44">
+          <Field label={t("decide.answer")}>
+            <Select value={form.kind} onChange={(e) => set({ kind: e.target.value as Kind })} aria-label={t("decide.kind")} className="w-44">
               {KINDS.filter(([k]) => !byClassifier || k === "yes_no" || k === "choice").map(([k, label]) => (
                 <option key={k} value={k}>
-                  {label}
+                  {t(label)}
                 </option>
               ))}
             </Select>
           </Field>
           {byClassifier && form.kind === "choice" && (
-            <p className="pb-2 text-[12px] text-muted">Its labels: {classifiers.find((c) => c.name === form.classifier)?.labels.join(", ")}</p>
+            <p className="pb-2 text-[12px] text-muted">{t("decide.its_labels", { labels: classifiers.find((c) => c.name === form.classifier)?.labels.join(", ") ?? "" })}</p>
           )}
           {!byClassifier && (form.kind === "choice" || form.kind === "labels") && (
             <div className="min-w-[240px] flex-1">
-              <Field label={form.kind === "choice" ? "Choices" : "Labels"}>
-                <Input value={form.choices} onChange={(e) => set({ choices: e.target.value })} placeholder="low, normal, urgent" aria-label="Comma-separated choices" />
+              <Field label={t(form.kind === "choice" ? "decide.choices" : "decide.labels_field")}>
+                <Input value={form.choices} onChange={(e) => set({ choices: e.target.value })} placeholder="low, normal, urgent" aria-label={t("decide.choices_label")} />
               </Field>
             </div>
           )}
           {form.kind === "score" && (
-            <Field label="From – to">
+            <Field label={t("decide.range")}>
               <div className="flex items-center gap-1.5">
-                <Input type="number" value={form.low} onChange={(e) => set({ low: +e.target.value })} className="w-20" aria-label="Lowest score" />
+                <Input type="number" value={form.low} onChange={(e) => set({ low: +e.target.value })} className="w-20" aria-label={t("decide.lowest")} />
                 <span className="text-muted">–</span>
-                <Input type="number" value={form.high} onChange={(e) => set({ high: +e.target.value })} className="w-20" aria-label="Highest score" />
+                <Input type="number" value={form.high} onChange={(e) => set({ high: +e.target.value })} className="w-20" aria-label={t("decide.highest")} />
               </div>
             </Field>
           )}
         </div>
         {!byClassifier && (
-          <Field label="How to decide" hint="Optional: definitions, examples and edge cases, in plain words.">
+          <Field label={t("decide.how")} hint={t("decide.how_hint")}>
             <textarea
               value={form.instructions}
               onChange={(e) => set({ instructions: e.target.value })}
               rows={2}
               className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-accent"
-              placeholder="Urgent means customers can't pay or sign in."
+              placeholder={t("decide.how_placeholder")}
             />
           </Field>
         )}
-        <Field label="Try it on">
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-accent" placeholder="Some text to decide about" />
+        <Field label={t("decide.try_on")}>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-accent" placeholder={t("decide.try_placeholder")} />
         </Field>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => void act("try")} disabled={!ready || !!busy}>
-            {busy === "try" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} Decide
+            {busy === "try" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} {t("decide.decide")}
           </Button>
           <span className="flex-1" />
           <div className="w-56">
-            <Input value={form.name} onChange={(e) => set({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-") })} placeholder="name, such as refund-request" aria-label="Name to save it as" />
+            <Input value={form.name} onChange={(e) => set({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-") })} placeholder={t("decide.name_placeholder")} aria-label={t("decide.name")} />
           </div>
           <Button variant="primary" onClick={() => void act("save")} disabled={!ready || !form.name || !!busy}>
-            <Save className="size-3.5" /> Save
+            <Save className="size-3.5" /> {t("decide.save")}
           </Button>
         </div>
         {answer && (
@@ -180,24 +182,24 @@ export function Decisions() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[12.5px] font-medium">{d.name}</span>
-                  <Badge>{KIND_LABEL[d.kind]}</Badge>
+                  <Badge>{t(KIND_LABEL[d.kind])}</Badge>
                 </div>
                 <p className="truncate text-[12px] text-muted">
                   {d.question}
                   {d.choices.length > 0 && ` (${d.choices.join(", ")})`}
                   {d.kind === "score" && ` (${d.scale[0]}–${d.scale[1]})`}
-                  {d.classifier && ` · classifier ${d.classifier}`}
+                  {d.classifier && ` · ${t("decide.by_classifier", { name: d.classifier })}`}
                 </p>
               </div>
               <CopyButton text={curl(d.name)} label="curl" />
-              <button className="text-muted hover:text-text" onClick={() => edit(d)} title="Edit" aria-label={`Edit ${d.name}`}>
+              <button className="text-muted hover:text-text" onClick={() => edit(d)} title={t("decide.edit")} aria-label={t("decide.edit_named", { name: d.name })}>
                 <Pencil className="size-3.5" />
               </button>
               <button
                 className="text-muted hover:text-danger"
                 onClick={() => void api<{ decisions: Decision[] }>(`/api/decisions/${d.name}`, { method: "DELETE" }).then((r) => setSaved(r.decisions))}
-                title="Delete"
-                aria-label={`Delete ${d.name}`}
+                title={t("decide.delete")}
+                aria-label={t("decide.delete_named", { name: d.name })}
               >
                 <Trash2 className="size-3.5" />
               </button>
