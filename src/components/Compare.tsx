@@ -383,7 +383,7 @@ export function Compare({ settings }: { settings: { system: string } }) {
             }}
             rows={Math.min(8, Math.max(1, draft.split("\n").length))}
             placeholder={`Message ${columns.length} models`}
-            className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
+            className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted"
             aria-label="Message"
           />
           {busy ? (

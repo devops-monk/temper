@@ -293,7 +293,7 @@ function Row({ item, folders, run }: { item: Item; folders: string[]; run: (p: P
 
   return (
     <li className="group flex items-center gap-3 px-4 py-2.5">
-      <button onClick={() => void patch({ favourite: !item.favourite })} className={cx(item.favourite ? "text-straw" : "text-muted/50 hover:text-muted")} title={item.favourite ? "Remove from favourites" : "Add to favourites"}>
+      <button onClick={() => void patch({ favourite: !item.favourite })} className={cx(item.favourite ? "text-straw" : "text-muted hover:text-text")} title={item.favourite ? "Remove from favourites" : "Add to favourites"}>
         <Star className={cx("size-4", item.favourite && "fill-current")} aria-label={item.favourite ? "Favourite" : "Not a favourite"} />
       </button>
       <div className="min-w-0 flex-1">

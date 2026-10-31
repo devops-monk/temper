@@ -143,7 +143,7 @@ function NewRun({ onStarted }: { onStarted: (id: string) => void }) {
         onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.currentTarget.form?.requestSubmit()}
         rows={3}
         placeholder={t("research.placeholder")}
-        className="w-full resize-y rounded-xl border border-line bg-surface px-4 py-3 text-[14px] placeholder:text-muted/70 focus:border-accent focus:outline-none"
+        className="w-full resize-y rounded-xl border border-line bg-surface px-4 py-3 text-[14px] placeholder:text-muted focus:border-accent focus:outline-none"
       />
       <div className="flex items-center gap-2">
         <Select value={depth} onChange={(e) => setDepth(e.target.value as Run["depth"])} className="w-auto" aria-label={t("research.depth")}>

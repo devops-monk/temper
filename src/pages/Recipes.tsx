@@ -72,7 +72,7 @@ function TextArea({ value, onChange, rows = 3, placeholder, mono }: { value: str
       placeholder={placeholder}
       spellCheck={!mono}
       className={cx(
-        "w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-text placeholder:text-muted/70 focus:border-accent focus:outline-none",
+        "w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-text placeholder:text-muted focus:border-accent focus:outline-none",
         mono && "font-mono text-[12px]",
       )}
     />

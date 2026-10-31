@@ -36,7 +36,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
     <input
       {...props}
       className={cx(
-        "h-9 w-full rounded-md border border-line bg-surface px-3 text-text placeholder:text-muted/70 focus:border-accent focus:outline-none",
+        "h-9 w-full rounded-md border border-line bg-surface px-3 text-text placeholder:text-muted focus:border-accent focus:outline-none",
         className,
       )}
     />

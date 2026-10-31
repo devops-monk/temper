@@ -156,7 +156,7 @@ function NewBase({ onDone }: { onDone: (made: boolean) => void }) {
           onChange={(e) => setUrls(e.target.value)}
           rows={2}
           placeholder="https://www.youtube.com/watch?v=…"
-          className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 font-mono text-[12.5px] placeholder:text-muted/70 focus:border-accent focus:outline-none"
+          className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 font-mono text-[12.5px] placeholder:text-muted focus:border-accent focus:outline-none"
         />
       </Field>
       {error && <p className="text-[12px] text-danger">{error}</p>}

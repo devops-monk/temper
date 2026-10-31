@@ -95,7 +95,7 @@ export function GlobalInstructions() {
         rows={6}
         placeholder={t("instr.placeholder")}
         aria-label={t("instr.title")}
-        className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12.5px] placeholder:text-muted/70 focus:border-accent focus:outline-none"
+        className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12.5px] placeholder:text-muted focus:border-accent focus:outline-none"
       />
       <div className="mt-2 flex items-center gap-3">
         <Button

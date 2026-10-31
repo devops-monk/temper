@@ -49,7 +49,7 @@ export function StatusBar() {
           <span className="flex items-center gap-1.5">
             <Cpu className="size-3.5" />
             {gpu ? gpu.name : system.cpu.name}
-            <span className="text-muted/70">{BACKEND_LABEL[system.backend]}</span>
+            <span className="text-muted">{BACKEND_LABEL[system.backend]}</span>
           </span>
           <span className="flex items-center gap-1.5" title={gpu?.unified_memory ? t("status.unified") : t("status.gpu_memory")}>
             <HardDrive className="size-3.5" />

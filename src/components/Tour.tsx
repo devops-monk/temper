@@ -92,11 +92,21 @@ export function Tour() {
     : { left: "50%", top: "40%", width: CARD + 40, transform: "translate(-50%, -50%)" };
 
   return (
-    <div className="fixed inset-0 z-[60]" onKeyDown={(e) => {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowRight") next();
-      else if (e.key === "ArrowLeft") back();
-    }}>
+    <div
+      className="fixed inset-0 z-[60]"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close();
+        else if (e.key === "ArrowRight") next();
+        else if (e.key === "ArrowLeft") back();
+        else if (e.key === "Tab") {
+          // Keep focus in the card: the app behind it is dimmed and out of reach.
+          const items = [...(card.current?.querySelectorAll<HTMLElement>("button") ?? [])];
+          const at = items.indexOf(document.activeElement as HTMLElement);
+          e.preventDefault();
+          items[(at + (e.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
+        }
+      }}
+    >
       {rect ? (
         <div
           className="pointer-events-none absolute rounded-lg outline-2 outline-accent transition-all duration-200 outline-solid"

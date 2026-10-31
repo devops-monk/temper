@@ -828,7 +828,7 @@ export function ChatPage() {
                     rows={Math.min(8, Math.max(1, draft.split("\n").length))}
                     placeholder={!ready ? t("chat.placeholder_first") : busy ? t("chat.placeholder_queue") : t("chat.placeholder")}
                     disabled={!ready}
-                    className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted/70"
+                    className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted"
                     aria-label="Message"
                   />
                   {busy && (
@@ -893,7 +893,7 @@ export function ChatPage() {
               onChange={(e) => set("system")(e.target.value)}
               rows={4}
               placeholder="You are a helpful assistant."
-              className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 placeholder:text-muted/70 focus:border-accent focus:outline-none"
+              className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 placeholder:text-muted focus:border-accent focus:outline-none"
             />
           </Field>
           <ProjectFolder project={project} onChange={setProject} />

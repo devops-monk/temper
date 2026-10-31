@@ -27,7 +27,7 @@ const pairs = (text: string, sep: "=" | ":") =>
       .map((line) => [line.slice(0, line.indexOf(sep)).trim(), line.slice(line.indexOf(sep) + 1).trim()]),
   );
 
-const textarea = "w-full resize-y rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12.5px] placeholder:text-muted/70 focus:border-accent focus:outline-none";
+const textarea = "w-full resize-y rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12.5px] placeholder:text-muted focus:border-accent focus:outline-none";
 
 /** Settings: the MCP servers chat models can use, each with its tools and their approval. */
 export function McpServers() {

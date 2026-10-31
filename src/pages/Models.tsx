@@ -133,7 +133,7 @@ function RepoFiles({ id }: { id: string }) {
               <td className="py-1.5 pr-3 font-mono text-[12px]">{quantLabel(f.name)}</td>
               <td className="py-1.5 pr-3 text-muted tabular-nums">
                 {bytes(f.size)}
-                {f.parts.length > 1 && <span className="text-muted/70"> in {f.parts.length} parts</span>}
+                {f.parts.length > 1 && <span className="text-muted"> in {f.parts.length} parts</span>}
               </td>
               <td className="py-1.5 pr-3" title={f2.title}>
                 {f2.label && <Badge tone={f2.tone}>{f2.label}</Badge>}
