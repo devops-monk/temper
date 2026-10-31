@@ -2,6 +2,7 @@ import { Layers, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { bytes } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Budget, Verdict } from "./MemoryEstimate";
 import { Button } from "./ui";
@@ -68,8 +69,9 @@ export function folderEngine(engines: Engine[] | null, format: "mlx" | "hf"): En
 
 /** Loads a model in chat, asking first when the memory estimate says it won't fit. A GGUF runs on llama.cpp; a folder (or a
  * cached Hugging Face id) on `engine`, with a fine-tuning run's `adapter` on top. */
-export function LoadButton({ path, name, engine, adapter, label = "Load" }: { path: string; name: string; engine?: string; adapter?: string; label?: string }) {
+export function LoadButton({ path, name, engine, adapter, label }: { path: string; name: string; engine?: string; adapter?: string; label?: string }) {
   const { refreshRuntime, go, runtime } = useApp();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const loaded = runtime?.state === "ready" && runtime.model === name;
   const beside = runtime?.alongside?.some((m) => m.path === path);
@@ -82,7 +84,7 @@ export function LoadButton({ path, name, engine, adapter, label = "Load" }: { pa
     const est = await api<ChatEstimate>("/api/memory/chat", { json: { path } }).catch(() => null);
     if (est?.verdict === "too_large") {
       const tips = est.advice.length ? `\n\n${est.advice.join("\n")}` : "";
-      if (!confirm(`${name} needs about ${bytes(est.total)}, and this computer can give it ${bytes(est.budget.total)}. Loading may fail or make your computer very slow.${tips}\n\nLoad anyway?`)) return;
+      if (!confirm(`${t("load.too_large", { name, need: bytes(est.total), total: bytes(est.budget.total) })}${tips}\n\n${t("load.anyway")}`)) return;
     }
     try {
       await api("/api/runtime/load", { json: { path, name, engine, adapter, alongside } });
@@ -97,12 +99,12 @@ export function LoadButton({ path, name, engine, adapter, label = "Load" }: { pa
     <span className="flex items-center gap-2">
       {error && <span className="max-w-[260px] truncate text-[12px] text-danger" title={error}>{error}</span>}
       {canAdd && (
-        <Button size="sm" variant="ghost" onClick={() => void load(true)} title={`Load next to ${runtime?.model}; both answer on Temper's API, and you can switch chat between them`}>
-          <Layers className="size-3.5" /> Alongside
+        <Button size="sm" variant="ghost" onClick={() => void load(true)} title={t("load.alongside_title", { model: runtime?.model ?? "" })}>
+          <Layers className="size-3.5" /> {t("load.alongside")}
         </Button>
       )}
       <Button size="sm" variant={loaded ? "secondary" : "primary"} onClick={() => (loaded ? go("chat") : void load(false))}>
-        <Play className="size-3.5" /> {loaded ? "Open chat" : beside ? "Use in chat" : label}
+        <Play className="size-3.5" /> {loaded ? t("load.open_chat") : beside ? t("load.use_in_chat") : (label ?? t("load.load"))}
       </Button>
     </span>
   );

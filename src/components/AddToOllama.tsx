@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { ollamaName } from "../lib/format";
+import { useT } from "../lib/i18n";
 import { useJob } from "../lib/useJob";
 import { Button, Input } from "./ui";
 
@@ -8,6 +9,7 @@ let installed: Promise<boolean> | null = null;
 
 /** Adds a GGUF to Ollama (engine ollama.create), when Ollama is installed: asks for a name, then follows the job. */
 export function AddToOllama({ path }: { path: string }) {
+  const t = useT();
   const [show, setShow] = useState(false);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(() => ollamaName(path));
@@ -32,25 +34,25 @@ export function AddToOllama({ path }: { path: string }) {
   }
 
   if (job && status !== "failed") {
-    return <span className="text-[12.5px] text-muted">{status === "done" ? `In Ollama as ${name}` : "Adding to Ollama…"}</span>;
+    return <span className="text-[12.5px] text-muted">{status === "done" ? t("ollama.in_ollama", { name }) : t("ollama.adding")}</span>;
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {open ? (
         <>
           <span className="w-48">
-            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-7 text-[12.5px]" aria-label="Name in Ollama" spellCheck={false} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-7 text-[12.5px]" aria-label={t("ollama.name")} spellCheck={false} />
           </span>
           <Button size="sm" onClick={() => void add()} disabled={!name.trim()}>
-            Add
+            {t("ollama.add")}
           </Button>
         </>
       ) : (
-        <Button size="sm" onClick={() => setOpen(true)} title="Copy this model into Ollama, so apps that use Ollama can run it">
-          Add to Ollama
+        <Button size="sm" onClick={() => setOpen(true)} title={t("ollama.add_title")}>
+          {t("ollama.add_to")}
         </Button>
       )}
-      {(error || status === "failed") && <span className="text-[12px] text-danger">{error ?? "Ollama couldn't add it; see the job's output."}</span>}
+      {(error || status === "failed") && <span className="text-[12px] text-danger">{error ?? t("ollama.failed")}</span>}
     </span>
   );
 }
