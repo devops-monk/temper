@@ -67,7 +67,8 @@ Temper now makes pictures, listens and speaks, and runs like a service your othe
 ### Training and export
 - Preference training (DPO, ORPO, SimPO, and KTO from replies marked good or bad), full and embedding training on Apple Silicon, and training text
   from documents.
-- Batch size, LoRA rank and context fitted to this computer; a token preview; loss on replies only.
+- Batch size, LoRA rank and context fitted to this computer; a token preview; loss on replies only; a chat
+  template of your choice, so base models can learn conversations.
 - Evaluation while training (sample replies, early stopping), run history, checkpoints, resuming and
   chatting with any checkpoint.
 - Exports to Ollama and the MLX format, importance-matrix quants, and publishing fine-tunes, exports and

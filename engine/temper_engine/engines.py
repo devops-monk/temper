@@ -20,7 +20,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from . import hardware, home, prefs
+from . import chat_render, hardware, home, prefs
 from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/runtime/engines", tags=["runtime"])
@@ -196,10 +196,15 @@ def command(engine: str, path: str, settings: dict, port: int, adapter: str | No
         why = supported(engine)
         raise HTTPException(409, why or f"{ENGINES[engine]['name']} isn't installed. Install it in Settings → Engines, then load the model again.")
     host = ["--host", "127.0.0.1", "--port", str(port)]
+    # A run that replaced the model's chat template keeps it beside its adapter (chat_render).
+    template = Path(adapter) / chat_render.TEMPLATE_FILE if adapter else None
+    template = template if template and template.is_file() else None
     if engine == "mlx":
         cmd = [python, "-m", "mlx_lm", "server", "--model", path, *host]
         if adapter:
             cmd += ["--adapter-path", adapter]
+        if template:
+            cmd += ["--chat-template", template.read_text(encoding="utf-8")]
         if settings["cache_type"] != "f16":
             cmd += ["--kv-bits", "8" if settings["cache_type"] == "q8_0" else "4"]
         return cmd
@@ -213,6 +218,8 @@ def command(engine: str, path: str, settings: dict, port: int, adapter: str | No
             cmd += ["--kv-cache-dtype", "fp8"]
         if adapter:
             cmd += ["--enable-lora", "--lora-modules", f"{SERVED}={adapter}"]
+        if template:
+            cmd += ["--chat-template", str(template)]
         return cmd
     if engine == "sglang":
         cmd = [python, "-m", "sglang.launch_server", "--model-path", path, *host, "--served-model-name", SERVED, "--context-length", str(settings["context"]),
@@ -221,6 +228,8 @@ def command(engine: str, path: str, settings: dict, port: int, adapter: str | No
             cmd += ["--kv-cache-dtype", "fp8_e5m2"]
         if adapter:
             cmd += ["--lora-paths", f"{SERVED}={adapter}"]
+        if template:
+            cmd += ["--chat-template", str(template)]
         return cmd
     raise HTTPException(400, f"Unknown engine {engine}.")
 

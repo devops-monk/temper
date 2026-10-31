@@ -25,6 +25,8 @@ interface Form {
   method: "qlora" | "lora" | "full";
   objective: keyof typeof OBJECTIVES;
   train_embeddings: boolean;
+  /** "" for the model's own, a name from /api/train/templates, or Jinja of your own. */
+  chat_template: string;
   max_seq_length: number;
   lora_r: number;
   lora_alpha: number;
@@ -49,6 +51,7 @@ const DEFAULTS: Form = {
   method: "qlora",
   objective: "sft",
   train_embeddings: false,
+  chat_template: "",
   max_seq_length: 2048,
   lora_r: 16,
   lora_alpha: 16,
@@ -378,7 +381,7 @@ export function TrainPage() {
     setError(null);
     setStarting(true);
     try {
-      const job = await api<Job>("/api/train", { json: { ...form, name: form.name || null } });
+      const job = await api<Job>("/api/train", { json: { ...form, name: form.name || null, chat_template: form.chat_template.trim() || null } });
       setSelected(job.id);
       await refreshJobs();
     } catch (e) {
@@ -539,6 +542,7 @@ export function TrainPage() {
                 </>
               )}
               {form.objective !== "sft" && form.method === "full" && <Notice>Preference training trains adapters: choose QLoRA or LoRA.</Notice>}
+              <ChatTemplate value={form.chat_template} onChange={set("chat_template")} />
             </div>
           </Section>
 
@@ -626,5 +630,49 @@ export function TrainPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+interface Template {
+  id: string;
+  label: string;
+  about: string;
+}
+
+const OWN_TEMPLATE = "{% for message in messages %}<|{{ message['role'] }}|>\n{{ message['content'] }}\n{% endfor %}{% if add_generation_prompt %}<|assistant|>\n{% endif %}";
+
+/** The chat template a run renders conversations with: the model's own, a named one, or Jinja of your own (engine chat_render.py). */
+function ChatTemplate({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [templates, setTemplates] = useState<Template[]>([]);
+  useEffect(() => void api<Template[]>("/api/train/templates").then(setTemplates, () => {}), []);
+  const named = templates.find((t) => t.id === value);
+  const custom = value !== "" && !named && templates.length > 0;
+  const hint = named
+    ? `${named.about} Chatting with the run and its exports use it too.`
+    : custom
+      ? "Jinja, as in a tokenizer_config.json: it gets messages (each with role and content), add_generation_prompt, bos_token and eos_token."
+      : "The model's own. Choose another to train a base model on conversations, or to change the format a model answers in.";
+  return (
+    <Field label="Chat template" hint={hint}>
+      <Select value={custom ? "custom" : value} onChange={(e) => onChange(e.target.value === "custom" ? OWN_TEMPLATE : e.target.value)} aria-label="Chat template">
+        <option value="">The model&apos;s own</option>
+        {templates.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.label}
+          </option>
+        ))}
+        <option value="custom">Your own…</option>
+      </Select>
+      {custom && (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          rows={5}
+          aria-label="Your chat template"
+          className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-text [font-variant-ligatures:none] focus:border-accent focus:outline-none"
+        />
+      )}
+    </Field>
   );
 }

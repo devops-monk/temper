@@ -104,6 +104,7 @@ def train(cfg: dict, out: Path, train_pairs: list[Pair] | list[Example], valid_p
 
     emit("phase", name="Loading model")
     model, tokenizer = load(cfg["base_model"])
+    chat_render.use(tokenizer, cfg.get("chat_template"))
     model.freeze()
     lora = {"rank": cfg["lora_r"], "scale": cfg["lora_alpha"] / cfg["lora_r"], "dropout": cfg["lora_dropout"]}
     layers = min(LORA_LAYERS, len(model.layers))
@@ -230,4 +231,5 @@ def train(cfg: dict, out: Path, train_pairs: list[Pair] | list[Example], valid_p
         if step % save_every == 0 and step != steps:
             save(adapter / f"{step:07d}_adapters.safetensors")
     save(adapter / "adapters.safetensors")
+    chat_render.save(adapter, cfg.get("chat_template"))
     emit("result", adapter=str(adapter), base_model=cfg["base_model"])

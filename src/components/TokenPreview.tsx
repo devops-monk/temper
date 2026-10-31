@@ -11,6 +11,7 @@ export interface PreviewSource {
   dataset_config: string;
   dataset_format: string;
   max_seq_length: number;
+  chat_template: string;
 }
 
 interface Preview {
@@ -28,13 +29,13 @@ export function TokenPreview({ source, onClose }: { source: PreviewSource; onClo
   const [row, setRow] = useState(0);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { base_model, dataset, dataset_split, dataset_config, dataset_format, max_seq_length } = source;
+  const { base_model, dataset, dataset_split, dataset_config, dataset_format, max_seq_length, chat_template } = source;
 
   useEffect(() => {
     let stale = false;
     // Waits for typing in the form to settle.
     const t = setTimeout(() => {
-      api<Preview>("/api/train/preview", { json: { base_model, dataset, dataset_split, dataset_config: dataset_config || null, dataset_format, max_seq_length, row } }).then(
+      api<Preview>("/api/train/preview", { json: { base_model, dataset, dataset_split, dataset_config: dataset_config || null, dataset_format, max_seq_length, chat_template: chat_template || null, row } }).then(
         (p) => !stale && (setPreview(p), setError(null)),
         (e: Error) => !stale && (setPreview(null), setError(e.message)),
       );
@@ -43,7 +44,7 @@ export function TokenPreview({ source, onClose }: { source: PreviewSource; onClo
       stale = true;
       clearTimeout(t);
     };
-  }, [base_model, dataset, dataset_split, dataset_config, dataset_format, max_seq_length, row]);
+  }, [base_model, dataset, dataset_split, dataset_config, dataset_format, max_seq_length, chat_template, row]);
 
   const cut = preview ? Math.max(0, preview.count - preview.max_seq_length) : 0;
   const trained = preview ? Math.min(preview.count, preview.max_seq_length) - Math.min(preview.masked, preview.max_seq_length) : 0;

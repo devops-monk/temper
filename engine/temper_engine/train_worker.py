@@ -162,6 +162,7 @@ def train_gpu(cfg: dict, out: Path) -> None:
         load_in_4bit=cfg["method"] == "qlora",
         full_finetuning=full,
     )
+    chat_render.use(tokenizer, cfg.get("chat_template"))
     if not full:
         model = FastLanguageModel.get_peft_model(
             model,
@@ -279,6 +280,7 @@ def train_gpu(cfg: dict, out: Path) -> None:
     target = out / ("model" if full else "adapter")
     model.save_pretrained(str(target))
     tokenizer.save_pretrained(str(target))
+    chat_render.save(target, cfg.get("chat_template"))
     emit("result", adapter=str(target), base_model=cfg["base_model"])
 
 
@@ -342,7 +344,10 @@ def train_mlx(cfg: dict, out: Path) -> None:
         valid = [formats.record(c) for c in conversations(cfg, load_rows(cfg, cfg["eval_dataset"]))[1]]
         n_valid = 0
     else:
-        n_valid = max(1, len(records) // 20)  # hold out 5% to report validation loss
+        # Hold out 5% to report validation loss: at least a batch, which mlx-lm needs, when there's room for one.
+        n_valid = max(1, len(records) // 20)
+        if n_valid < cfg["batch_size"] and len(records) >= 2 * cfg["batch_size"]:
+            n_valid = cfg["batch_size"]
         valid = records[:n_valid]
     data_dir = out / "data"
     data_dir.mkdir(exist_ok=True)
@@ -397,6 +402,9 @@ def train_mlx(cfg: dict, out: Path) -> None:
         env["TEMPER_SAMPLES"] = str(out / "samples.json")
     if cfg.get("early_stopping"):
         env["TEMPER_EARLY_STOP"] = str(PATIENCE)
+    if cfg.get("chat_template"):
+        (out / chat_render.TEMPLATE_FILE).write_text(cfg["chat_template"], encoding="utf-8")
+        env["TEMPER_CHAT_TEMPLATE"] = str(out / chat_render.TEMPLATE_FILE)
     emit("phase", name="Training", total_steps=iters)
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
@@ -423,6 +431,7 @@ def train_mlx(cfg: dict, out: Path) -> None:
             emit("eval", **metrics)
     if proc.wait() != 0:
         raise RuntimeError(f"mlx_lm lora failed: {last[:300]}")
+    chat_render.save(adapter, cfg.get("chat_template"))
     emit("result", adapter=str(adapter), base_model=cfg["base_model"])
 
 
@@ -486,6 +495,7 @@ def train_gpu_preference(cfg: dict, out: Path) -> None:
     from .preference import OBJECTIVES
 
     model, tokenizer = FastLanguageModel.from_pretrained(model_name=cfg["base_model"], max_seq_length=cfg["max_seq_length"], load_in_4bit=cfg["method"] == "qlora")
+    chat_render.use(tokenizer, cfg.get("chat_template"))
     model = FastLanguageModel.get_peft_model(
         model,
         r=cfg["lora_r"],
@@ -552,6 +562,7 @@ def train_gpu_preference(cfg: dict, out: Path) -> None:
     target = out / "adapter"
     model.save_pretrained(str(target))
     tokenizer.save_pretrained(str(target))
+    chat_render.save(target, cfg.get("chat_template"))
     emit("result", adapter=str(target), base_model=cfg["base_model"])
 
 

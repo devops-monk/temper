@@ -8,6 +8,7 @@ resumed from a checkpoint, or chatted with at any checkpoint.
 
 from __future__ import annotations
 
+import copy
 import functools
 import json
 import re
@@ -56,6 +57,8 @@ class TrainConfig(BaseModel):
     pref_beta: float | None = Field(default=None, gt=0)  # the objective's beta; None for its usual value
     # Continued pretraining: train the token embeddings and output head too, for new vocabulary or a new language.
     train_embeddings: bool = False
+    # Replace the model's chat template: a name from chat_render.TEMPLATES, a .jinja file or Jinja text.
+    chat_template: str | None = None
     max_seq_length: int = Field(default=2048, ge=128, le=262144)
     lora_r: int = Field(default=16, ge=1, le=512)
     lora_alpha: int = Field(default=16, ge=1)
@@ -125,6 +128,10 @@ def start(cfg: TrainConfig):
     dataset = Path(cfg.dataset).expanduser()
     if cfg.eval_dataset is None and dataset.suffix == ".jsonl" and dataset.with_suffix(".eval.jsonl").is_file():
         cfg.eval_dataset = str(dataset.with_suffix(".eval.jsonl"))
+    try:
+        cfg.chat_template = chat_render.template(cfg.chat_template)  # the run keeps the text itself
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     if cfg.objective != "sft" and (cfg.method == "full" or cfg.train_embeddings):
         raise HTTPException(400, "Preference training trains LoRA adapters. Choose LoRA or QLoRA, without training the embeddings.")
     if cfg.early_stopping and trainer != "mlx" and not cfg.eval_dataset:
@@ -216,6 +223,12 @@ def summary(d: Path) -> dict:
         "dataset_sha256": prov.get("dataset_sha256"),
         "checkpoints": len(checkpoints(d)),
     }
+
+
+@router.get("/templates")
+def templates():
+    """The chat templates a run can use instead of the model's own."""
+    return [{"id": k, "label": v["label"], "about": v["about"]} for k, v in chat_render.TEMPLATES.items()]
 
 
 @router.get("/runs")
@@ -343,6 +356,7 @@ class TokenPreview(BaseModel):
     dataset_format: str = "auto"
     max_seq_length: int = 2048
     row: int = Field(default=0, ge=0, le=99)
+    chat_template: str | None = None
 
 
 @router.post("/preview")
@@ -369,8 +383,15 @@ def preview_tokens(req: TokenPreview):
     except (ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(422, f"Row {req.row + 1} can't be used: {e}") from e
     tok = _tokenizer(req.base_model)
+    try:
+        template = chat_render.template(req.chat_template)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if template:
+        tok = copy.copy(tok)  # leaves the cached tokenizer as it is
+        chat_render.use(tok, template)
     if not isinstance(conv, str) and not tok.chat_template:
-        raise HTTPException(422, f"{req.base_model} has no chat template, so it can't be trained on conversations. Choose an instruct model, or prepare the data as plain text.")
+        raise HTTPException(422, f"{req.base_model} has no chat template, so it can't be trained on conversations. Choose a chat template for the run or an instruct model, or prepare the data as plain text.")
     ids, masked = tokens_for(tok, conv)
     shown = ids[:4000]
     return {

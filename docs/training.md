@@ -46,6 +46,14 @@ weighted to count equally however many there are of each.
 Preference objectives train an adapter, so they need LoRA or QLoRA. Run them on a model you have already
 trained with SFT, or on an instruct model.
 
+**Chat template:** conversations are written out with the model's own chat template, exactly as it sees them
+when you chat. Choose another under *Method → Chat template* to train a base model (which has none) on
+conversations, or to change the format a model answers in: ChatML, Llama 3, Gemma, a plain-text
+Instruction / Response layout that any model can learn, or Jinja of your own (`chat_template` in the API: a
+name, a `.jinja` file or the template itself). The run keeps the template beside its adapter, so chatting
+with the run and its MLX and GGUF exports use it too. Templates whose special tokens the model doesn't have
+(ChatML on a Llama, say) still work, but the tokens are learnt as ordinary text.
+
 **Continued pretraining:** turn on *Train embeddings* with a `text` dataset to teach new vocabulary or a new
 language. It trains the token embeddings and output head as well as the adapter, so it needs more memory.
 On a Mac it needs the 16-bit version of the model.

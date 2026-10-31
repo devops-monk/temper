@@ -9,7 +9,8 @@ leaves them frozen): continued pretraining that teaches new words or a new langu
 At each evaluation, with TEMPER_SAMPLES naming a JSON file of prompts, the model answers them and
 the replies are printed as `TEMPER {"event": "sample", ...}` lines for the worker to pass on. With
 TEMPER_EARLY_STOP set to a count, training stops once validation loss hasn't improved for that many
-evaluations, and the adapter saved is the one from the best evaluation.
+evaluations, and the adapter saved is the one from the best evaluation. With TEMPER_CHAT_TEMPLATE
+naming a file, its Jinja replaces the model's chat template.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from mlx_lm import lora
 from mlx_lm.tuner import datasets
 from mlx_lm.tuner.callbacks import TrainingCallback
 
-from .chat_render import render
+from .chat_render import render, use
 
 _original = datasets.ChatDataset.process
 
@@ -39,6 +40,18 @@ def _process(self, d):
 
 
 datasets.ChatDataset.process = _process
+
+_load = lora.load
+
+
+def _load_with_template(*args, **kw):
+    model, tokenizer = _load(*args, **kw)
+    if os.environ.get("TEMPER_CHAT_TEMPLATE"):
+        use(tokenizer, Path(os.environ["TEMPER_CHAT_TEMPLATE"]).read_text(encoding="utf-8"))
+    return model, tokenizer
+
+
+lora.load = _load_with_template
 
 _train_model = lora.train_model
 

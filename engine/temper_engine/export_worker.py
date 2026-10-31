@@ -12,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import llamacpp
+from . import chat_render, llamacpp
 from .jobs import emit_from_worker as emit
 from .llamacpp import run_streamed
 
@@ -58,6 +58,7 @@ def export_mlx(cfg: dict, out: Path) -> None:
         # Without --dequantize the merged model keeps the base model's quantization (often 4-bit): small, and what
         # mlx-lm, LM Studio and Temper's MLX engine run.
         run_streamed([sys.executable, "-m", "mlx_lm", "fuse", "--model", cfg["base_model"], "--adapter-path", cfg["adapter"], "--save-path", str(out / "mlx")])
+        keep_template(cfg, out / "mlx")
         advance()
     if "merged_16bit" in cfg["formats"] or "gguf" in cfg["formats"]:
         merged = out / "merged_16bit"
@@ -65,12 +66,26 @@ def export_mlx(cfg: dict, out: Path) -> None:
         # --dequantize writes 16-bit weights even when the base model is 4-bit, which GGUF conversion needs.
         run_streamed([sys.executable, "-m", "mlx_lm", "fuse", "--model", cfg["base_model"], "--adapter-path", cfg["adapter"],
                       "--save-path", str(merged), "--dequantize"])
+        keep_template(cfg, merged)
         advance()
         if "gguf" in cfg["formats"]:
             export_gguf(merged, out / "gguf", cfg)
             advance()
             if "merged_16bit" not in cfg["formats"]:
                 shutil.rmtree(merged)  # only needed as the converter's input
+
+
+def keep_template(cfg: dict, model_dir: Path) -> None:
+    """mlx-lm fuse copies the base model's tokenizer; a run that replaced its chat template keeps that one."""
+    text = chat_render.saved(cfg["adapter"])
+    if not text:
+        return
+    (model_dir / chat_render.TEMPLATE_FILE).write_text(text, encoding="utf-8")
+    path = model_dir / "tokenizer_config.json"
+    if path.is_file():
+        config = json.loads(path.read_text(encoding="utf-8"))
+        config["chat_template"] = text
+        path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def export_gguf(model_dir: Path, dest: Path, cfg: dict) -> None:
