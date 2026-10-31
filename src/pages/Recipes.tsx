@@ -3,22 +3,24 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { Badge, Button, EmptyState, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { GeneratedDataset, Job, Recipe, RecipeColumn, RecipeSeed } from "../lib/types";
 import { useJob } from "../lib/useJob";
 
 type ColumnType = RecipeColumn["column_type"];
 
-const COLUMN_TYPES: { type: ColumnType; label: string; note: string }[] = [
-  { type: "llm-text", label: "Generated text", note: "The model writes free text from a prompt." },
-  { type: "llm-structured", label: "Generated fields", note: "The model fills named fields, such as question and answer." },
-  { type: "llm-code", label: "Generated code", note: "The model writes code in one language." },
-  { type: "llm-judge", label: "Grade", note: "The model scores other columns against your criteria." },
-  { type: "sampler", label: "Random choice", note: "Picks a value from a list, to vary the rows." },
-  { type: "expression", label: "Template", note: "Combines other columns with {{ name }} placeholders." },
-  { type: "validation", label: "Code check", note: "Lints a code column and records whether it passes." },
+const COLUMN_TYPES: { type: ColumnType; label: Key; note: Key }[] = [
+  { type: "llm-text", label: "recipes.t_text", note: "recipes.t_text_note" },
+  { type: "llm-structured", label: "recipes.t_structured", note: "recipes.t_structured_note" },
+  { type: "llm-code", label: "recipes.t_code", note: "recipes.t_code_note" },
+  { type: "llm-judge", label: "recipes.t_judge", note: "recipes.t_judge_note" },
+  { type: "sampler", label: "recipes.t_sampler", note: "recipes.t_sampler_note" },
+  { type: "expression", label: "recipes.t_expression", note: "recipes.t_expression_note" },
+  { type: "validation", label: "recipes.t_validation", note: "recipes.t_validation_note" },
 ];
-const TYPE_LABEL = Object.fromEntries(COLUMN_TYPES.map((t) => [t.type, t.label])) as Record<ColumnType, string>;
+const TYPE_LABEL = Object.fromEntries(COLUMN_TYPES.map((x) => [x.type, x.label])) as Record<ColumnType, Key>;
+const STATE: Record<string, Key> = { done: "job.done", failed: "job.failed", cancelled: "job.cancelled" };
 
 const CODE_LANGS = ["python", "javascript", "typescript", "go", "rust", "java", "cpp", "csharp", "bash", "sql:sqlite", "sql:postgres", "sql:mysql", "sql:ansi"];
 const DOC_EXTENSIONS = ["pdf", "docx", "txt", "md", "html", "htm", "csv", "json", "jsonl"];
@@ -81,6 +83,7 @@ function TextArea({ value, onChange, rows = 3, placeholder, mono }: { value: str
 
 /** Edits a value as JSON; keeps the text while it's invalid and only commits parsed values. */
 function JsonField({ value, onChange, rows = 5 }: { value: unknown; onChange: (v: unknown) => void; rows?: number }) {
+  const t = useT();
   const [text, setText] = useState(() => JSON.stringify(value, null, 2));
   const [error, setError] = useState<string | null>(null);
   return (
@@ -89,17 +92,17 @@ function JsonField({ value, onChange, rows = 5 }: { value: unknown; onChange: (v
         value={text}
         rows={rows}
         mono
-        onChange={(t) => {
-          setText(t);
+        onChange={(v) => {
+          setText(v);
           try {
-            onChange(JSON.parse(t));
+            onChange(JSON.parse(v));
             setError(null);
           } catch (e) {
             setError((e as Error).message);
           }
         }}
       />
-      {error && <span className="mt-1 block text-xs text-danger">Not valid JSON yet: {error}</span>}
+      {error && <span className="mt-1 block text-xs text-danger">{t("recipes.invalid_json", { error })}</span>}
     </div>
   );
 }
@@ -129,6 +132,7 @@ function ColumnCard({
   onMove: (delta: number) => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   const set = (patch: Record<string, unknown>) => onChange({ ...column, ...patch });
   const type = column.column_type;
   const llm = type.startsWith("llm");
@@ -140,16 +144,16 @@ function ColumnCard({
   return (
     <div className="rounded-lg border border-line bg-surface p-3.5">
       <div className="mb-3 flex items-center gap-2">
-        <Input value={column.name} onChange={(e) => set({ name: e.target.value.replace(/\s+/g, "_") })} className="h-8 max-w-[200px] font-mono text-[12.5px]" aria-label="Column name" />
-        <Badge tone={llm ? "accent" : "neutral"}>{TYPE_LABEL[type] ?? type}</Badge>
+        <Input value={column.name} onChange={(e) => set({ name: e.target.value.replace(/\s+/g, "_") })} className="h-8 max-w-[200px] font-mono text-[12.5px]" aria-label={t("recipes.column_name")} />
+        <Badge tone={llm ? "accent" : "neutral"}>{TYPE_LABEL[type] ? t(TYPE_LABEL[type]) : type}</Badge>
         <span className="ml-auto flex items-center">
-          <Button size="sm" variant="ghost" onClick={() => onMove(-1)} disabled={index === 0} aria-label="Move up">
+          <Button size="sm" variant="ghost" onClick={() => onMove(-1)} disabled={index === 0} aria-label={t("recipes.move_up")}>
             <ArrowUp className="size-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onMove(1)} disabled={index === count - 1} aria-label="Move down">
+          <Button size="sm" variant="ghost" onClick={() => onMove(1)} disabled={index === count - 1} aria-label={t("recipes.move_down")}>
             <ArrowDown className="size-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={onRemove} aria-label={`Remove ${column.name}`}>
+          <Button size="sm" variant="ghost" onClick={onRemove} aria-label={t("recipes.remove_named", { name: column.name })}>
             <Trash2 className="size-3.5" />
           </Button>
         </span>
@@ -157,11 +161,11 @@ function ColumnCard({
       <div className="flex flex-col gap-3">
         {llm && (
           <>
-            <Field label="Prompt" hint="Use {{ column_name }} to insert another column's value.">
+            <Field label={t("recipes.prompt")} hint={t("recipes.prompt_hint")}>
               <TextArea value={String(column.prompt ?? "")} onChange={(v) => set({ prompt: v })} rows={4} />
             </Field>
             {aliases.length > 1 && (
-              <Field label="Model">
+              <Field label={t("recipes.model")}>
                 <Select value={String(column.model_alias)} onChange={(e) => set({ model_alias: e.target.value })}>
                   {aliases.map((a) => (
                     <option key={a}>{a}</option>
@@ -172,7 +176,7 @@ function ColumnCard({
           </>
         )}
         {type === "llm-code" && (
-          <Field label="Language">
+          <Field label={t("recipes.language")}>
             <Select value={String(column.code_lang)} onChange={(e) => set({ code_lang: e.target.value })}>
               {CODE_LANGS.map((l) => (
                 <option key={l}>{l}</option>
@@ -182,7 +186,7 @@ function ColumnCard({
         )}
         {type === "llm-structured" &&
           (simpleFields ? (
-            <Field label="Fields" hint={<>Comma-separated. Use them as {"{{ "}{column.name}.field{" }}"} in later columns.</>}>
+            <Field label={t("recipes.fields")} hint={t("recipes.fields_hint", { name: column.name })}>
               <Input
                 defaultValue={Object.keys(schema!.properties!).join(", ")}
                 onBlur={(e) => {
@@ -195,41 +199,41 @@ function ColumnCard({
               />
             </Field>
           ) : (
-            <Field label="Output schema (JSON Schema)">
+            <Field label={t("recipes.schema")}>
               <JsonField value={column.output_format} onChange={(v) => set({ output_format: v })} />
             </Field>
           ))}
         {type === "llm-judge" && (
-          <Field label="Scores" hint="Each score has a name, a description and the options the model picks from.">
+          <Field label={t("recipes.scores")} hint={t("recipes.scores_hint")}>
             <JsonField value={column.scores} onChange={(v) => set({ scores: v })} rows={7} />
           </Field>
         )}
         {type === "sampler" &&
           (column.sampler_type === "category" ? (
-            <Field label="Values" hint="One per line. Each row picks one at random.">
+            <Field label={t("recipes.values")} hint={t("recipes.values_hint")}>
               <TextArea value={(params.values ?? []).map(String).join("\n")} onChange={(v) => set({ params: { ...params, values: lines(v), weights: undefined } })} rows={4} />
             </Field>
           ) : (
-            <Field label={`Parameters (${String(column.sampler_type)})`}>
+            <Field label={t("recipes.parameters", { type: String(column.sampler_type) })}>
               <JsonField value={column.params} onChange={(v) => set({ params: v })} />
             </Field>
           ))}
         {type === "expression" && (
-          <Field label="Template" hint="Jinja: {{ column }}, {{ fields.question }}, {% if %} … {% endif %}.">
+          <Field label={t("recipes.template")} hint={t("recipes.template_hint")}>
             <TextArea value={String(column.expr ?? "")} onChange={(v) => set({ expr: v })} rows={3} mono />
           </Field>
         )}
         {type === "validation" && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Column to check">
+            <Field label={t("recipes.column_to_check")}>
               <Select value={String((column.target_columns as string[])[0] ?? "")} onChange={(e) => set({ target_columns: [e.target.value] })}>
-                <option value="">Choose…</option>
+                <option value="">{t("recipes.choose")}</option>
                 {codeColumns.map((c) => (
                   <option key={c}>{c}</option>
                 ))}
               </Select>
             </Field>
-            <Field label="Language">
+            <Field label={t("recipes.language")}>
               <Select value={validatorParams.code_lang ?? "python"} onChange={(e) => set({ validator_params: { ...validatorParams, code_lang: e.target.value } })}>
                 {CODE_LANGS.map((l) => (
                   <option key={l}>{l}</option>
@@ -238,39 +242,40 @@ function ColumnCard({
             </Field>
           </div>
         )}
-        <Toggle checked={!column.drop} onChange={(keep) => set({ drop: !keep })} label="Keep this column in the dataset" />
+        <Toggle checked={!column.drop} onChange={(keep) => set({ drop: !keep })} label={t("recipes.keep")} />
       </div>
     </div>
   );
 }
 
 function AddColumn({ onAdd }: { onAdd: (type: ColumnType) => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   if (!open)
     return (
       <Button onClick={() => setOpen(true)} className="w-full border-dashed">
-        <Plus className="size-4" /> Add column
+        <Plus className="size-4" /> {t("recipes.add_column")}
       </Button>
     );
   return (
     <div className="rounded-lg border border-line bg-surface-2 p-2">
       <div className="mb-1 flex items-center justify-between px-1.5">
-        <span className="text-[13px] font-medium">Add a column</span>
-        <Button size="sm" variant="ghost" onClick={() => setOpen(false)} aria-label="Close">
+        <span className="text-[13px] font-medium">{t("recipes.add_a_column")}</span>
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)} aria-label={t("recipes.close")}>
           <X className="size-3.5" />
         </Button>
       </div>
-      {COLUMN_TYPES.map((t) => (
+      {COLUMN_TYPES.map((x) => (
         <button
-          key={t.type}
+          key={x.type}
           onClick={() => {
-            onAdd(t.type);
+            onAdd(x.type);
             setOpen(false);
           }}
           className="block w-full rounded-md px-2.5 py-1.5 text-left hover:bg-surface"
         >
-          <span className="font-medium">{t.label}</span>
-          <span className="block text-[12.5px] text-muted">{t.note}</span>
+          <span className="font-medium">{t(x.label)}</span>
+          <span className="block text-[12.5px] text-muted">{t(x.note)}</span>
         </button>
       ))}
     </div>
@@ -280,10 +285,11 @@ function AddColumn({ onAdd }: { onAdd: (type: ColumnType) => void }) {
 // ------------------------------------------------------------------ source and model
 
 function SeedEditor({ seed, onChange }: { seed: RecipeSeed | null; onChange: (s: RecipeSeed | null) => void }) {
+  const t = useT();
   const kinds: [RecipeSeed["type"] | "none", string][] = [
-    ["none", "None"],
-    ["documents", "Documents"],
-    ["file", "File"],
+    ["none", t("recipes.s_none")],
+    ["documents", t("recipes.s_documents")],
+    ["file", t("recipes.s_file")],
     ["hf", "Hugging Face"],
   ];
   const current = seed?.type ?? "none";
@@ -291,20 +297,20 @@ function SeedEditor({ seed, onChange }: { seed: RecipeSeed | null; onChange: (s:
 
   async function addPaths(directory: boolean) {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open(directory ? { directory: true, multiple: true } : { multiple: true, filters: [{ name: "Documents", extensions: DOC_EXTENSIONS }] });
+    const picked = await open(directory ? { directory: true, multiple: true } : { multiple: true, filters: [{ name: t("recipes.s_documents"), extensions: DOC_EXTENSIONS }] });
     const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
     if (paths.length && seed) onChange({ ...seed, sources: [...sources, ...paths] });
   }
 
   async function browseFile() {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const file = await open({ filters: [{ name: "Datasets", extensions: ["jsonl", "json", "csv", "parquet"] }] });
+    const file = await open({ filters: [{ name: t("recipes.datasets"), extensions: ["jsonl", "json", "csv", "parquet"] }] });
     if (typeof file === "string" && seed) onChange({ ...seed, path: file });
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex rounded-md border border-line bg-surface p-0.5" role="radiogroup" aria-label="Source">
+      <div className="flex rounded-md border border-line bg-surface p-0.5" role="radiogroup" aria-label={t("recipes.source")}>
         {kinds.map(([kind, label]) => (
           <button
             key={kind}
@@ -321,27 +327,27 @@ function SeedEditor({ seed, onChange }: { seed: RecipeSeed | null; onChange: (s:
           </button>
         ))}
       </div>
-      {!seed && <p className="text-[13px] text-muted">Rows are built only from random choices and the model.</p>}
+      {!seed && <p className="text-[13px] text-muted">{t("recipes.no_seed")}</p>}
       {seed?.type === "documents" && (
         <>
-          <Field label="Files, folders and links" hint="One per line: PDF, Word, text or Markdown files, folders, web pages, or a GitHub repository URL. Columns can use {{ chunk_text }} and {{ source_file }}.">
+          <Field label={t("recipes.sources")} hint={t("recipes.sources_hint")}>
             <TextArea value={sources.join("\n")} onChange={(v) => onChange({ ...seed, sources: v.split("\n") })} rows={4} placeholder={"~/Documents/handbook.pdf\nhttps://github.com/owner/repo"} mono />
           </Field>
           {inTauri && (
             <div className="flex gap-2">
               <Button size="sm" onClick={() => void addPaths(false)}>
-                <FilePlus className="size-3.5" /> Add files
+                <FilePlus className="size-3.5" /> {t("recipes.add_files")}
               </Button>
               <Button size="sm" onClick={() => void addPaths(true)}>
-                <FolderPlus className="size-3.5" /> Add folder
+                <FolderPlus className="size-3.5" /> {t("recipes.add_folder")}
               </Button>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Chunk size" hint="Characters per chunk.">
+            <Field label={t("recipes.chunk_size")} hint={t("recipes.chunk_size_hint")}>
               <Input type="number" min={200} step={100} value={seed.chunk_size ?? 1200} onChange={(e) => onChange({ ...seed, chunk_size: Number(e.target.value) })} />
             </Field>
-            <Field label="Overlap" hint="Characters shared by neighbours.">
+            <Field label={t("recipes.overlap")} hint={t("recipes.overlap_hint")}>
               <Input type="number" min={0} step={50} value={seed.chunk_overlap ?? 200} onChange={(e) => onChange({ ...seed, chunk_overlap: Number(e.target.value) })} />
             </Field>
           </div>
@@ -349,13 +355,13 @@ function SeedEditor({ seed, onChange }: { seed: RecipeSeed | null; onChange: (s:
       )}
       {(seed?.type === "file" || seed?.type === "hf") && (
         <Field
-          label={seed.type === "file" ? "Dataset file" : "Dataset"}
-          hint={seed.type === "file" ? "A .jsonl, .json, .csv or .parquet file. Its columns can be used as {{ name }}." : "A Hugging Face dataset id, such as yahma/alpaca-cleaned. Its parquet files are used."}
+          label={t(seed.type === "file" ? "recipes.dataset_file" : "recipes.dataset")}
+          hint={t(seed.type === "file" ? "recipes.file_hint" : "recipes.hf_hint")}
         >
           <div className="flex gap-2">
             <Input value={seed.path ?? ""} onChange={(e) => onChange({ ...seed, path: e.target.value })} spellCheck={false} className="font-mono text-[12.5px]" />
             {seed.type === "file" && inTauri && (
-              <Button onClick={() => void browseFile()} aria-label="Choose a file" className="px-2.5">
+              <Button onClick={() => void browseFile()} aria-label={t("recipes.choose_file")} className="px-2.5">
                 <FilePlus className="size-4" />
               </Button>
             )}
@@ -363,10 +369,10 @@ function SeedEditor({ seed, onChange }: { seed: RecipeSeed | null; onChange: (s:
         </Field>
       )}
       {seed && (
-        <Field label="Order">
+        <Field label={t("recipes.order")}>
           <Select value={seed.sampling ?? "ordered"} onChange={(e) => onChange({ ...seed, sampling: e.target.value as RecipeSeed["sampling"] })}>
-            <option value="ordered">In order</option>
-            <option value="shuffle">Shuffled</option>
+            <option value="ordered">{t("recipes.in_order")}</option>
+            <option value="shuffle">{t("recipes.shuffled")}</option>
           </Select>
         </Field>
       )}
@@ -375,6 +381,7 @@ function SeedEditor({ seed, onChange }: { seed: RecipeSeed | null; onChange: (s:
 }
 
 function ModelEditor({ recipe, onChange }: { recipe: Recipe; onChange: (r: Recipe) => void }) {
+  const t = useT();
   const runtime = useApp((s) => s.runtime);
   const setModel = (i: number, patch: Partial<Recipe["models"][number]>) => onChange({ ...recipe, models: recipe.models.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
   const setProvider = (i: number, patch: Partial<Recipe["providers"][number]>) => onChange({ ...recipe, providers: recipe.providers.map((p, j) => (j === i ? { ...p, ...patch } : p)) });
@@ -385,11 +392,11 @@ function ModelEditor({ recipe, onChange }: { recipe: Recipe; onChange: (r: Recip
         <div key={i} className="flex flex-col gap-3">
           {recipe.models.length > 1 && <span className="font-mono text-[12.5px] text-muted">{m.alias}</span>}
           <Field
-            label="Provider"
-            hint={m.provider === "local" ? (runtime?.state === "ready" ? <>Uses {runtime.model}, the model loaded for chat.</> : "Uses the model loaded for chat. Load one on the Models page first.") : undefined}
+            label={t("recipes.provider")}
+            hint={m.provider === "local" ? (runtime?.state === "ready" ? t("recipes.uses_loaded", { model: runtime.model ?? "" }) : t("recipes.uses_chat_model")) : undefined}
           >
             <Select value={m.provider} onChange={(e) => setModel(i, { provider: e.target.value })}>
-              <option value="local">Chat model on this computer</option>
+              <option value="local">{t("recipes.local")}</option>
               {recipe.providers.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.name}
@@ -398,15 +405,15 @@ function ModelEditor({ recipe, onChange }: { recipe: Recipe; onChange: (r: Recip
             </Select>
           </Field>
           {m.provider !== "local" && (
-            <Field label="Model name" hint="As the provider names it, such as gpt-5-mini.">
+            <Field label={t("recipes.model_name")} hint={t("recipes.model_name_hint")}>
               <Input value={m.model} onChange={(e) => setModel(i, { model: e.target.value })} spellCheck={false} />
             </Field>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Temperature">
+            <Field label={t("recipes.temperature")}>
               <Input type="number" min={0} max={2} step={0.1} value={m.temperature ?? 0.7} onChange={(e) => setModel(i, { temperature: Number(e.target.value) })} />
             </Field>
-            <Field label="Max tokens">
+            <Field label={t("recipes.max_tokens")}>
               <Input type="number" min={16} step={64} value={m.max_tokens ?? 1024} onChange={(e) => setModel(i, { max_tokens: Number(e.target.value) })} />
             </Field>
           </div>
@@ -415,20 +422,20 @@ function ModelEditor({ recipe, onChange }: { recipe: Recipe; onChange: (r: Recip
       {recipe.providers.map((p, i) => (
         <div key={i} className="rounded-lg border border-line bg-surface p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[13px] font-medium">Cloud provider</span>
-            <Button size="sm" variant="ghost" onClick={() => onChange({ ...recipe, providers: recipe.providers.filter((_, j) => j !== i), models: recipe.models.map((m) => (m.provider === p.name ? { ...m, provider: "local" } : m)) })} aria-label="Remove provider">
+            <span className="text-[13px] font-medium">{t("recipes.cloud_provider")}</span>
+            <Button size="sm" variant="ghost" onClick={() => onChange({ ...recipe, providers: recipe.providers.filter((_, j) => j !== i), models: recipe.models.map((m) => (m.provider === p.name ? { ...m, provider: "local" } : m)) })} aria-label={t("recipes.remove_provider")}>
               <Trash2 className="size-3.5" />
             </Button>
           </div>
           <div className="flex flex-col gap-2">
-            <Input value={p.name} onChange={(e) => setProvider(i, { name: e.target.value })} placeholder="Name, e.g. openai" aria-label="Provider name" />
-            <Input value={p.endpoint} onChange={(e) => setProvider(i, { endpoint: e.target.value })} placeholder="https://api.openai.com/v1" aria-label="Endpoint" spellCheck={false} />
-            <Input type="password" value={p.api_key ?? ""} onChange={(e) => setProvider(i, { api_key: e.target.value })} placeholder="API key" aria-label="API key" autoComplete="off" />
+            <Input value={p.name} onChange={(e) => setProvider(i, { name: e.target.value })} placeholder={t("recipes.provider_name_placeholder")} aria-label={t("recipes.provider_name")} />
+            <Input value={p.endpoint} onChange={(e) => setProvider(i, { endpoint: e.target.value })} placeholder="https://api.openai.com/v1" aria-label={t("recipes.endpoint")} spellCheck={false} />
+            <Input type="password" value={p.api_key ?? ""} onChange={(e) => setProvider(i, { api_key: e.target.value })} placeholder={t("recipes.api_key")} aria-label={t("recipes.api_key")} autoComplete="off" />
           </div>
         </div>
       ))}
       <Button size="sm" onClick={() => onChange({ ...recipe, providers: [...recipe.providers, { name: uniqueName("provider", recipe.providers.map((p) => p.name)), endpoint: "", api_key: "" }] })} className="self-start">
-        <Plus className="size-3.5" /> Add an OpenAI-compatible provider
+        <Plus className="size-3.5" /> {t("recipes.add_provider")}
       </Button>
     </div>
   );
@@ -470,6 +477,7 @@ function RowsTable({ columns, rows }: { columns: string[]; rows: Record<string, 
 }
 
 function RecipeRun({ job }: { job: Job }) {
+  const t = useT();
   const { go, setPendingDataset } = useApp();
   const { events, status } = useJob(job.id);
   const state = status ?? job.status;
@@ -485,12 +493,12 @@ function RecipeRun({ job }: { job: Job }) {
     <div className="rounded-lg border border-line bg-surface p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="truncate font-medium">{job.title}</span>
-        <Badge tone={state === "done" ? "ok" : state === "failed" ? "warn" : "neutral"}>{state === "running" ? (phase ?? "Starting") : state}</Badge>
+        <Badge tone={state === "done" ? "ok" : state === "failed" ? "warn" : "neutral"}>{state === "running" ? (phase ?? t("recipes.starting")) : STATE[state] ? t(STATE[state]) : state}</Badge>
       </div>
       {state === "running" && <ProgressBar value={progress ?? null} temper />}
       {seed && (
         <p className="mt-2 text-[12.5px] text-muted">
-          Read {String(seed.documents)} documents into {String(seed.chunks)} chunks.
+          {t("recipes.read_docs", { documents: String(seed.documents), chunks: String(seed.chunks) })}
         </p>
       )}
       {state === "failed" && error && (
@@ -502,7 +510,7 @@ function RecipeRun({ job }: { job: Job }) {
       {state === "done" && output && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="primary" onClick={() => { setPendingDataset({ source: output }); go("train"); }}>
-            <FlaskConical className="size-3.5" /> Train on these {result?.count ?? ""} rows
+            <FlaskConical className="size-3.5" /> {t("recipes.train_rows", { n: result?.count ?? "" })}
           </Button>
           <span className="truncate font-mono text-[11.5px] text-muted" title={output}>
             {output}
@@ -511,7 +519,7 @@ function RecipeRun({ job }: { job: Job }) {
       )}
       {logs.length > 0 && (
         <details className="mt-2 text-[12.5px]">
-          <summary className="cursor-pointer text-muted">Output</summary>
+          <summary className="cursor-pointer text-muted">{t("recipes.output")}</summary>
           <pre className="mt-2 max-h-48 overflow-auto font-mono text-[11.5px] whitespace-pre-wrap text-muted">{logs.slice(-200).join("\n")}</pre>
         </details>
       )}
@@ -522,12 +530,13 @@ function RecipeRun({ job }: { job: Job }) {
 // ------------------------------------------------------------------ gallery
 
 function Gallery({ templates, saved, datasets, onOpen, onDelete }: { templates: Recipe[]; saved: Recipe[]; datasets: GeneratedDataset[]; onOpen: (r: Recipe, fromTemplate: boolean) => void; onDelete: (r: Recipe) => void }) {
+  const t = useT();
   const { go, setPendingDataset } = useApp();
   const card = (r: Recipe, fromTemplate: boolean, aside?: ReactNode) => (
     <div key={r.id ?? r.name} className="flex flex-col rounded-lg border border-line bg-surface p-4">
       <button onClick={() => onOpen(r, fromTemplate)} className="text-left">
         <span className="font-semibold">{r.name}</span>
-        <span className="mt-1 block text-[13px] text-muted">{r.description || `${r.columns.length} columns`}</span>
+        <span className="mt-1 block text-[13px] text-muted">{r.description || t("recipes.columns_n", { n: r.columns.length })}</span>
       </button>
       {aside && <div className="mt-3 flex items-center justify-between gap-2 text-[12.5px] text-muted">{aside}</div>}
     </div>
@@ -535,15 +544,15 @@ function Gallery({ templates, saved, datasets, onOpen, onDelete }: { templates: 
   return (
     <div className="mx-auto max-w-[1040px] px-7 py-5">
       {saved.length > 0 && (
-        <Section title="Your recipes">
+        <Section title={t("recipes.yours")}>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
             {saved.map((r) =>
               card(
                 r,
                 false,
                 <>
-                  <span>Saved {relativeDate(r.updated)}</span>
-                  <Button size="sm" variant="ghost" onClick={() => onDelete(r)} aria-label={`Delete ${r.name}`}>
+                  <span>{t("recipes.saved_when", { when: relativeDate(r.updated) })}</span>
+                  <Button size="sm" variant="ghost" onClick={() => onDelete(r)} aria-label={t("recipes.delete_named", { name: r.name })}>
                     <Trash2 className="size-3.5" />
                   </Button>
                 </>,
@@ -552,11 +561,11 @@ function Gallery({ templates, saved, datasets, onOpen, onDelete }: { templates: 
           </div>
         </Section>
       )}
-      <Section title="Start from a template">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">{templates.map((t) => card(t, true))}</div>
+      <Section title={t("recipes.templates")}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">{templates.map((x) => card(x, true))}</div>
       </Section>
       {datasets.length > 0 && (
-        <Section title="Generated datasets">
+        <Section title={t("recipes.generated")}>
           <div className="rounded-lg border border-line bg-surface">
             {datasets.map((d) => (
               <div key={d.path} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
@@ -564,10 +573,10 @@ function Gallery({ templates, saved, datasets, onOpen, onDelete }: { templates: 
                   {d.name}
                 </span>
                 <span className="text-[12.5px] text-muted tabular-nums">
-                  {d.rows} rows · {bytes(d.size)}
+                  {t("recipes.rows_n", { n: d.rows })} · {bytes(d.size)}
                 </span>
                 <Button size="sm" onClick={() => { setPendingDataset({ source: d.path }); go("train"); }}>
-                  <FlaskConical className="size-3.5" /> Train
+                  <FlaskConical className="size-3.5" /> {t("recipes.train")}
                 </Button>
               </div>
             ))}
@@ -581,6 +590,7 @@ function Gallery({ templates, saved, datasets, onOpen, onDelete }: { templates: 
 // ------------------------------------------------------------------ page
 
 export function RecipesPage() {
+  const t = useT();
   const { jobs, refreshJobs } = useApp();
   const [templates, setTemplates] = useState<Recipe[]>([]);
   const [saved, setSaved] = useState<Recipe[]>([]);
@@ -592,8 +602,8 @@ export function RecipesPage() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const [t, s, d] = await Promise.all([api<Recipe[]>("/api/recipes/templates"), api<Recipe[]>("/api/recipes"), api<GeneratedDataset[]>("/api/recipes/datasets")]);
-    setTemplates(t);
+    const [tpl, s, d] = await Promise.all([api<Recipe[]>("/api/recipes/templates"), api<Recipe[]>("/api/recipes"), api<GeneratedDataset[]>("/api/recipes/datasets")]);
+    setTemplates(tpl);
     setSaved(s);
     setDatasets(d);
   }, []);
@@ -647,7 +657,7 @@ export function RecipesPage() {
   if (!recipe)
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Recipes" description="Generate training data with a model: from your documents, from topics you choose, or from data you already have." />
+        <PageHeader title={t("nav.recipes")} description={t("recipes.description")} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error && (
             <div className="mx-7 mt-5">
@@ -682,23 +692,23 @@ export function RecipesPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title={recipe.name || "Untitled recipe"}
+        title={recipe.name || t("recipes.untitled")}
         description={recipe.description}
         actions={
           <>
             <Button variant="ghost" onClick={() => setRecipe(null)}>
-              <ArrowLeft className="size-4" /> All recipes
+              <ArrowLeft className="size-4" /> {t("recipes.all")}
             </Button>
             <Button onClick={() => void save()}>
-              <Save className="size-4" /> {savedAt ? "Saved" : "Save"}
+              <Save className="size-4" /> {t(savedAt ? "recipes.saved" : "recipes.save")}
             </Button>
             <Button onClick={() => void run("preview")} disabled={busy}>
-              <Play className="size-4" /> Preview 3 rows
+              <Play className="size-4" /> {t("recipes.preview")}
             </Button>
             <span className="flex items-center gap-1.5">
-              <Input type="number" min={1} max={100000} value={rows} onChange={(e) => setRows(Math.max(1, Number(e.target.value)))} className="h-9 w-24" aria-label="Rows to generate" />
+              <Input type="number" min={1} max={100000} value={rows} onChange={(e) => setRows(Math.max(1, Number(e.target.value)))} className="h-9 w-24" aria-label={t("recipes.rows_to_generate")} />
               <Button variant="primary" onClick={() => void run("create")} disabled={busy}>
-                <ChefHat className="size-4" /> Generate dataset
+                <ChefHat className="size-4" /> {t("recipes.generate")}
               </Button>
             </span>
           </>
@@ -706,26 +716,26 @@ export function RecipesPage() {
       />
       <div className="flex min-h-0 flex-1">
         <div className="w-[440px] shrink-0 overflow-y-auto border-r border-line px-7 pb-8">
-          <Section title="Recipe">
+          <Section title={t("recipes.recipe")}>
             <div className="flex flex-col gap-3">
-              <Field label="Name">
+              <Field label={t("recipes.name")}>
                 <Input value={recipe.name} onChange={(e) => edit({ ...recipe, name: e.target.value })} />
               </Field>
-              <Field label="Description">
+              <Field label={t("recipes.description_field")}>
                 <Input value={recipe.description} onChange={(e) => edit({ ...recipe, description: e.target.value })} />
               </Field>
             </div>
           </Section>
-          <Section title="Source">
+          <Section title={t("recipes.source")}>
             <SeedEditor seed={recipe.seed} onChange={(seed) => edit({ ...recipe, seed })} />
           </Section>
-          <Section title="Model">
+          <Section title={t("recipes.model")}>
             <ModelEditor recipe={recipe} onChange={edit} />
           </Section>
-          <Section title="Columns" aside={<span className="text-[12.5px] text-muted">Built top to bottom</span>}>
+          <Section title={t("recipes.columns")} aside={<span className="text-[12.5px] text-muted">{t("recipes.top_to_bottom")}</span>}>
             {available.length > 0 && (
               <p className="mb-3 text-[12.5px] text-muted">
-                Available in prompts:{" "}
+                {t("recipes.available")}{" "}
                 {available.map((n) => (
                   <code key={n} className="mr-1 rounded bg-surface-2 px-1 font-mono text-[11.5px]">
                     {`{{ ${n} }}`}
@@ -769,8 +779,8 @@ export function RecipesPage() {
               ))}
             </div>
           ) : (
-            <EmptyState icon={<ChefHat className="size-8" />} title="Preview before you generate">
-              Preview builds 3 rows so you can check the prompts. When they look right, generate the full dataset and train on it.
+            <EmptyState icon={<ChefHat className="size-8" />} title={t("recipes.empty")}>
+              {t("recipes.empty_hint")}
             </EmptyState>
           )}
         </div>
