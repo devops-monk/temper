@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "../lib/i18n";
 
 export interface Sample {
   step: number;
@@ -9,14 +10,15 @@ export interface Sample {
 
 /** The model's replies to held-out prompts at each evaluation; a slider steps back through them. */
 export function SampleReplies({ samples }: { samples: Sample[] }) {
+  const t = useT();
   const steps = [...new Set(samples.map((s) => s.step))];
   const [picked, setPicked] = useState<number | null>(null);
   const step = picked ?? steps[steps.length - 1];
   return (
     <div className="rounded-lg border border-line bg-surface p-3 text-[13px]">
       <div className="mb-2 flex items-center gap-3">
-        <span className="font-medium">Sample replies</span>
-        <span className="text-[12px] text-muted">at step {step}</span>
+        <span className="font-medium">{t("samples.title")}</span>
+        <span className="text-[12px] text-muted">{t("samples.at_step", { step })}</span>
         {steps.length > 1 && (
           <input
             type="range"
@@ -25,7 +27,7 @@ export function SampleReplies({ samples }: { samples: Sample[] }) {
             value={steps.indexOf(step)}
             onChange={(e) => setPicked(Number(e.target.value) === steps.length - 1 ? null : steps[Number(e.target.value)])}
             className="ml-auto w-40 accent-[var(--accent)]"
-            aria-label="Evaluation step"
+            aria-label={t("samples.step")}
           />
         )}
       </div>
@@ -35,10 +37,10 @@ export function SampleReplies({ samples }: { samples: Sample[] }) {
           .map((s, i) => (
             <div key={i} className="space-y-1">
               <p className="line-clamp-2 text-muted">{s.prompt}</p>
-              <p className="max-h-40 overflow-y-auto whitespace-pre-wrap">{s.reply || <span className="text-muted">(no reply)</span>}</p>
+              <p className="max-h-40 overflow-y-auto whitespace-pre-wrap">{s.reply || <span className="text-muted">{t("samples.no_reply")}</span>}</p>
               {s.expected && (
                 <details className="text-[12px] text-muted">
-                  <summary className="cursor-pointer">Reply in the data</summary>
+                  <summary className="cursor-pointer">{t("samples.expected")}</summary>
                   <p className="mt-1 whitespace-pre-wrap">{s.expected}</p>
                 </details>
               )}

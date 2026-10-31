@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { useT } from "../lib/i18n";
 
 interface Point {
   step: number;
@@ -9,6 +10,7 @@ interface Point {
  * to blue as training proceeds. */
 export function LossChart({ points, totalSteps, what = "loss" }: { points: Point[]; totalSteps: number | null; what?: "loss" | "reward" }) {
   const id = useId();
+  const t = useT();
   const W = 560;
   const H = 180;
   const pad = { l: 40, r: 12, t: 12, b: 24 };
@@ -16,7 +18,7 @@ export function LossChart({ points, totalSteps, what = "loss" }: { points: Point
   if (points.length < 2) {
     return (
       <div className="flex h-[180px] items-center justify-center rounded-lg border border-dashed border-line text-[13px] text-muted">
-        The {what} curve appears after the first few steps.
+        {t(what === "loss" ? "chart.loss_soon" : "chart.reward_soon")}
       </div>
     );
   }
@@ -33,7 +35,7 @@ export function LossChart({ points, totalSteps, what = "loss" }: { points: Point
   const last = points[points.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${what === "loss" ? "Loss" : "Reward"} ${last.loss.toFixed(3)} at step ${last.step}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={t(what === "loss" ? "chart.loss_label" : "chart.reward_label", { value: last.loss.toFixed(3), step: last.step })}>
       <defs>
         <linearGradient id={id} x1={pad.l} x2={W - pad.r} gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#E3BE63" />
@@ -42,11 +44,11 @@ export function LossChart({ points, totalSteps, what = "loss" }: { points: Point
           <stop offset="1" stopColor="#4F86E8" />
         </linearGradient>
       </defs>
-      {ticks.map((t) => (
-        <g key={t}>
-          <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray="2 4" />
-          <text x={pad.l - 6} y={y(t) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">
-            {t.toFixed(2)}
+      {ticks.map((tick) => (
+        <g key={tick}>
+          <line x1={pad.l} x2={W - pad.r} y1={y(tick)} y2={y(tick)} stroke="var(--line)" strokeDasharray="2 4" />
+          <text x={pad.l - 6} y={y(tick) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">
+            {tick.toFixed(2)}
           </text>
         </g>
       ))}
@@ -54,7 +56,7 @@ export function LossChart({ points, totalSteps, what = "loss" }: { points: Point
         0
       </text>
       <text x={W - pad.r} y={H - 6} textAnchor="end" fontSize="10.5" fill="var(--muted)">
-        step {maxStep}
+        {t("chart.step", { n: maxStep })}
       </text>
       <path d={d} fill="none" stroke={`url(#${id})`} strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={x(last.step)} cy={y(last.loss)} r="3.5" fill="var(--surface)" stroke={`url(#${id})`} strokeWidth="2" />

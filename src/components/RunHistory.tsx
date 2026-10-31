@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, MessageSquare, RotateCcw, StepForward } from
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
+import { type Key, useT } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { useEngines } from "./LoadButton";
 import { SampleReplies, type Sample } from "./SampleReplies";
@@ -41,12 +42,14 @@ interface Detail extends Run {
 // Line colours for compared runs, in the order they're ticked.
 const COLORS = ["#E3BE63", "#4F86E8", "#C9864A", "#8D65CB", "#5BAE7E", "#D9667A"];
 
+const STATE: Record<string, Key> = { done: "job.done", failed: "job.failed", cancelled: "job.cancelled" };
 const short = (p: string | null | undefined) => (p ? p.split(/[\\/]/).pop()! : "");
 const fixed = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(3));
 
 /** Every run Temper has trained, newest first: what went in, how it went, and its checkpoints to chat with or carry on from. */
 export function RunHistory({ tick }: { tick: number }) {
   const { refreshJobs, go } = useApp();
+  const t = useT();
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [compare, setCompare] = useState<string[]>([]);
@@ -73,14 +76,14 @@ export function RunHistory({ tick }: { tick: number }) {
   const toggle = (id: string) => setCompare((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
 
   return (
-    <Section title="Past runs" aside={compare.length === 1 ? <span className="text-[12px] text-muted">Tick another run to compare</span> : undefined}>
+    <Section title={t("runs.title")} aside={compare.length === 1 ? <span className="text-[12px] text-muted">{t("runs.tick_another")}</span> : undefined}>
       {compare.length > 1 && <Compare ids={compare} runs={runs} />}
       {error && <Notice tone="error">{error}</Notice>}
       <ul className="divide-y divide-line rounded-lg border border-line">
         {runs.map((r) => (
           <li key={r.id}>
             <div className="flex items-center gap-3 px-3 py-2 text-[13px]">
-              <input type="checkbox" checked={compare.includes(r.id)} onChange={() => toggle(r.id)} aria-label={`Compare ${r.name ?? r.id}`} title="Compare" />
+              <input type="checkbox" checked={compare.includes(r.id)} onChange={() => toggle(r.id)} aria-label={t("runs.compare_named", { name: r.name ?? r.id })} title={t("runs.compare")} />
               <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" onClick={() => setOpen(open === r.id ? null : r.id)}>
                 {open === r.id ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
                 <span className="min-w-0">
@@ -90,11 +93,11 @@ export function RunHistory({ tick }: { tick: number }) {
                   </span>
                 </span>
               </button>
-              <Badge tone={r.status === "done" ? "ok" : r.status === "running" ? "accent" : r.status === "failed" ? "warn" : "neutral"}>{r.status}</Badge>
-              <span className="w-20 text-right tabular-nums text-muted" title="Steps">
+              <Badge tone={r.status === "done" ? "ok" : r.status === "running" ? "accent" : r.status === "failed" ? "warn" : "neutral"}>{r.status in STATE ? t(STATE[r.status]) : r.status}</Badge>
+              <span className="w-20 text-right tabular-nums text-muted" title={t("runs.steps")}>
                 {r.steps ? `${r.steps}${r.total_steps ? `/${r.total_steps}` : ""}` : "—"}
               </span>
-              <span className="w-24 text-right tabular-nums" title="Training loss / validation loss">
+              <span className="w-24 text-right tabular-nums" title={t("runs.losses")}>
                 {fixed(r.loss)}
                 {r.val_loss != null && <span className="text-muted"> / {fixed(r.val_loss)}</span>}
               </span>
@@ -112,6 +115,7 @@ function RunDetail({ run, onAct, onChat }: { run: Run; onAct: (call: Promise<unk
   const [detail, setDetail] = useState<Detail | null>(null);
   const { engines } = useEngines();
   const { refreshRuntime } = useApp();
+  const t = useT();
   useEffect(() => {
     api<Detail>(`/api/train/runs/${run.id}`).then(setDetail, () => setDetail(null));
   }, [run.id, run.steps]);
@@ -130,61 +134,62 @@ function RunDetail({ run, onAct, onChat }: { run: Run; onAct: (call: Promise<unk
   return (
     <div className="space-y-3 border-t border-line bg-surface-2/40 px-9 py-3 text-[12.5px]">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        <dt className="text-muted">Base model</dt>
+        <dt className="text-muted">{t("train.base_model")}</dt>
         <dd className="break-all">
           {run.base_model}
           {typeof prov.base_revision === "string" && <span className="text-muted"> @ {prov.base_revision.slice(0, 10)}</span>}
         </dd>
-        <dt className="text-muted">Dataset</dt>
+        <dt className="text-muted">{t("train.dataset")}</dt>
         <dd className="break-all">
           {run.dataset}
           {run.dataset_sha256 && <span className="text-muted" title={run.dataset_sha256}> · sha256 {run.dataset_sha256.slice(0, 12)}</span>}
         </dd>
-        <dt className="text-muted">Method</dt>
+        <dt className="text-muted">{t("train.method")}</dt>
         <dd>
-          {run.objective && run.objective !== "sft" ? `${run.objective.toUpperCase()} preference training, ` : ""}
-          {run.method} on {run.backend === "mlx" ? "MLX" : "GPU"}
+          {run.objective && run.objective !== "sft" ? `${t(["grpo", "dr_grpo", "dapo"].includes(run.objective) ? "train.rl_obj" : "train.pref_obj", { name: run.objective.toUpperCase() })}, ` : ""}
+          {t("runs.method_on", { method: run.method ?? "", backend: run.backend === "mlx" ? "MLX" : "GPU" })}
         </dd>
         {versions.length > 0 && (
           <>
-            <dt className="text-muted">Libraries</dt>
+            <dt className="text-muted">{t("runs.libraries")}</dt>
             <dd className="text-muted">{versions.map(([k, v]) => `${k} ${v}`).join(", ")}</dd>
           </>
         )}
       </dl>
       {detail?.best && (
         <p>
-          {detail.best.stopped_at ? `Stopped early at step ${detail.best.stopped_at}. ` : ""}Kept the adapter from step {detail.best.step}, validation loss {detail.best.val_loss.toFixed(3)}.
+          {detail.best.stopped_at ? `${t("runs.stopped_early", { step: detail.best.stopped_at })} ` : ""}
+          {t("runs.kept", { step: detail.best.step, loss: detail.best.val_loss.toFixed(3) })}
         </p>
       )}
       {detail?.error && <Notice tone="error">{detail.error}</Notice>}
       {detail && detail.samples.length > 0 && <SampleReplies samples={detail.samples} />}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" onClick={() => void onAct(api(`/api/train/runs/${run.id}/rerun`, { method: "POST" }))} disabled={run.status === "running"}>
-          <RotateCcw className="size-3.5" /> Run again
+          <RotateCcw className="size-3.5" /> {t("runs.run_again")}
         </Button>
         {run.adapter && run.base_model && engine && (
           <Button size="sm" variant="ghost" onClick={() => void onAct(chat(null))}>
-            <MessageSquare className="size-3.5" /> Chat with the final adapter
+            <MessageSquare className="size-3.5" /> {t("runs.chat_final")}
           </Button>
         )}
       </div>
       {detail && detail.checkpoint_list.length > 0 && (
         <div>
-          <p className="mb-1 text-muted">Checkpoints</p>
+          <p className="mb-1 text-muted">{t("runs.checkpoints")}</p>
           <ul className="space-y-1">
             {detail.checkpoint_list.map((c) => (
               <li key={c.step} className="flex items-center gap-3">
-                <span className="w-20 tabular-nums">step {c.step}</span>
+                <span className="w-20 tabular-nums">{t("chart.step", { n: c.step })}</span>
                 <span className="w-16 text-muted">{bytes(c.bytes)}</span>
                 {engine && run.base_model && (
                   <button className="flex items-center gap-1 text-muted hover:text-text" onClick={() => void onAct(chat(c.step))}>
-                    <MessageSquare className="size-3" /> Chat with it
+                    <MessageSquare className="size-3" /> {t("runs.chat_with_it")}
                   </button>
                 )}
                 {run.status !== "running" && (
                   <button className="flex items-center gap-1 text-muted hover:text-text" onClick={() => void onAct(api(`/api/train/runs/${run.id}/resume`, { json: { step: c.step } }))}>
-                    <StepForward className="size-3" /> Carry on from here
+                    <StepForward className="size-3" /> {t("runs.carry_on")}
                   </button>
                 )}
               </li>
@@ -198,6 +203,7 @@ function RunDetail({ run, onAct, onChat }: { run: Run; onAct: (call: Promise<unk
 
 /** The loss curves of the ticked runs, on one chart. */
 function Compare({ ids, runs }: { ids: string[]; runs: Run[] }) {
+  const t = useT();
   const [curves, setCurves] = useState<Record<string, { step: number; loss: number }[]>>({});
   useEffect(() => {
     for (const id of ids) {
@@ -214,7 +220,7 @@ function Compare({ ids, runs }: { ids: string[]; runs: Run[] }) {
   const pad = { l: 40, r: 12, t: 12, b: 24 };
   const lines = ids.map((id, i) => ({ id, color: COLORS[i % COLORS.length], points: curves[id] ?? [], run: runs.find((r) => r.id === id) }));
   const all = lines.flatMap((l) => l.points);
-  if (all.length < 2) return <div className="mb-3 flex h-[200px] items-center justify-center rounded-lg border border-dashed border-line text-[13px] text-muted">These runs have no loss recorded yet.</div>;
+  if (all.length < 2) return <div className="mb-3 flex h-[200px] items-center justify-center rounded-lg border border-dashed border-line text-[13px] text-muted">{t("runs.no_loss")}</div>;
   const maxStep = Math.max(...all.map((p) => p.step)) || 1;
   const lo = Math.min(...all.map((p) => p.loss));
   const hi = Math.max(...all.map((p) => p.loss));
@@ -224,17 +230,17 @@ function Compare({ ids, runs }: { ids: string[]; runs: Run[] }) {
 
   return (
     <div className="mb-3 rounded-lg border border-line p-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Loss curves of the compared runs">
-        {[hi, lo + span / 2, lo].map((t) => (
-          <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray="2 4" />
-            <text x={pad.l - 6} y={y(t) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">
-              {t.toFixed(2)}
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={t("runs.curves")}>
+        {[hi, lo + span / 2, lo].map((tick) => (
+          <g key={tick}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(tick)} y2={y(tick)} stroke="var(--line)" strokeDasharray="2 4" />
+            <text x={pad.l - 6} y={y(tick) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">
+              {tick.toFixed(2)}
             </text>
           </g>
         ))}
         <text x={W - pad.r} y={H - 6} textAnchor="end" fontSize="10.5" fill="var(--muted)">
-          step {maxStep}
+          {t("chart.step", { n: maxStep })}
         </text>
         {lines.map((l) => l.points.length > 1 && <path key={l.id} d={l.points.map((p, i) => `${i ? "L" : "M"}${x(p.step).toFixed(1)},${y(p.loss).toFixed(1)}`).join("")} fill="none" stroke={l.color} strokeWidth="2" strokeLinejoin="round" />)}
       </svg>
