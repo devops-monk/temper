@@ -16,10 +16,17 @@ On macOS, add `alias temper=/Applications/Temper.app/Contents/MacOS/temper` to y
 temper models                      # the models on this computer
 temper load Qwen3-4B-GGUF          # a name, a GGUF file name or a path
 temper load my-model --quant Q8_0 --context 32768
+temper load my-model --estimate-only          # the memory it would take, without loading
+temper load small-model --alongside --ttl 600 --alias fast   # next to chat's model, unloads after 10 idle minutes
+temper ps                          # what's loaded: role, engine, context, idle time, when it unloads (--json)
+temper unload fast                 # or --all
 temper chat "Explain a monad"      # ask once and print the reply
 cat notes.md | temper chat "Summarise this"
 temper chat                        # chat until /bye; /clear starts over
 ```
+
+`temper load` refuses a model that doesn't look like it fits; `-y` tries anyway. `--gpu-layers N` keeps some
+layers on the CPU (0 runs it all there). An `--alias` is the name API requests use for the model.
 
 ## Training and export
 

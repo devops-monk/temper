@@ -30,10 +30,10 @@ def idle_seconds() -> int:
 
 
 def listing() -> dict:
-    chat = [{**manager.status(), "chat": True}] if manager.state != "idle" else []
+    chat = [{**manager.status(), "chat": True, "on_demand": False, "ttl": pool.ttl.get(manager.path)}] if manager.state != "idle" else []
     from .on_demand import enabled
 
-    models = chat + [{**s, "chat": False, "on_demand": s.get("path") in pool.on_demand} for s in pool.status(kept=True)]
+    models = chat + [{**s, "chat": False, "on_demand": s.get("path") in pool.on_demand, "ttl": pool.ttl.get(s.get("path"))} for s in pool.status(kept=True)]
     return {"models": models, "idle_minutes": idle_seconds() // 60, "load_on_demand": enabled()}
 
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .hardware import llama_server_path
 
@@ -49,6 +49,8 @@ class LoadRequest(BaseModel):
     adapter: str | None = None
     # Load it next to chat's model rather than in its place (loaded.py).
     alongside: bool = False
+    # Seconds unused before it unloads, instead of the idle time in Settings; 0 keeps it loaded.
+    ttl: int | None = Field(default=None, ge=0)
 
 
 PROJECTOR_PREFERENCE = ("f16", "bf16", "f32", "q8")
@@ -369,13 +371,16 @@ def runtime_load(req: LoadRequest):
 
     if req.alongside and manager.state != "idle":
         loaded.load_alongside(req)
-        return runtime_status()
-    if req.path in pool.kept:  # already loaded alongside: make it chat's, keeping the current one
+    elif req.path in pool.kept:  # already loaded alongside: make it chat's, keeping the current one
         loaded.switch(req.path)
-        return runtime_status()
-    pool.unload_all()  # compare mode's models would compete with it for memory
-    manager.load(req)
-    pool._start_reaper()  # unloads chat's model too once it's idle
+    else:
+        pool.unload_all()  # compare mode's models would compete with it for memory
+        manager.load(req)
+        pool._start_reaper()  # unloads chat's model too once it's idle
+    if req.ttl is None:
+        pool.ttl.pop(req.path, None)
+    else:
+        pool.ttl[req.path] = req.ttl
     return runtime_status()
 
 

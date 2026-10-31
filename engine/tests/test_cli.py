@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import stat
@@ -97,7 +98,8 @@ def engine(monkeypatch):
 
     client = TestClient(create_app(token="t"), headers={"Authorization": "Bearer t"})
     monkeypatch.setattr(cli, "running", lambda: {"url": "http://testserver", "token": "t", "pid": os.getpid()})
-    monkeypatch.setattr(cli, "_client", lambda engine: client)
+    # Each command's `with` would otherwise shut the app down (and unload every model) as it ends.
+    monkeypatch.setattr(cli, "_client", lambda engine: contextlib.nullcontext(client))
     with client:
         yield client
 
@@ -163,3 +165,65 @@ def test_serve_uses_the_apps_key_and_refuses_a_second_engine(monkeypatch):
     assert len(key) == 32 and cli.stable_key() == key and (home() / "api-key").read_text() == key
     monkeypatch.setattr(cli, "running", lambda: ENGINE)
     assert cli.main(["serve"]) == 1
+
+
+@pytest.fixture
+def servers(tmp_path, monkeypatch):
+    """Two downloaded GGUFs; their servers are ready the moment they start."""
+    import time
+
+    from temper_engine import compare, hub, library
+    from temper_engine.runtime import RuntimeManager, manager
+
+    rows = []
+    for name in ("small", "mid"):
+        path = tmp_path / f"{name}-Q4_K_M.gguf"
+        path.write_bytes(b"GGUF")
+        rows.append({"id": f"acme/{name}-GGUF", "gguf": [{"name": path.name, "path": str(path), "size": 1}]})
+    monkeypatch.setattr(library, "entries", lambda: rows)  # /api/models/local lists these and nothing from the cache
+    monkeypatch.setattr(hub, "scan_cache_dir", lambda folder: (_ for _ in ()).throw(OSError("no cache")))
+
+    def fake_load(self, req):
+        self.model, self.path, self.state, self.port, self.used, self.engine, self.context = req.name, req.path, "ready", 1, time.time(), "llama.cpp", 8192
+
+    def fake_unload(self):
+        self.model, self.path, self.state = None, None, "idle"
+
+    monkeypatch.setattr(RuntimeManager, "load", fake_load)
+    monkeypatch.setattr(RuntimeManager, "unload", fake_unload)
+    monkeypatch.setattr(compare.Pool, "_start_reaper", lambda self: None)
+    yield rows
+    for d in (compare.pool.servers, compare.pool.used, compare.pool.kept, compare.pool.on_demand, compare.pool.ttl, compare.pool.aliases):
+        d.clear()
+    fake_unload(manager)
+
+
+def test_ps_load_and_unload_manage_several_models(engine, servers, capsys):
+    assert cli.main(["ps"]) == 0
+    assert "No models are loaded" in capsys.readouterr().out
+    assert cli.main(["load", "acme/small-GGUF", "--ttl", "120", "--alias", "small"]) == 0
+    assert "Loaded small with 8192 tokens" in capsys.readouterr().out
+    assert cli.main(["load", "mid", "--alongside"]) == 0
+    assert "alongside chat's model" in capsys.readouterr().out
+    assert cli.main(["ps"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["MODEL", "ROLE", "ENGINE", "CONTEXT", "STATE", "IDLE", "UNLOADS", "IN"]
+    assert lines[1].split()[:2] == ["small", "chat"] and lines[1].split()[-1] in ("2m", "1m")  # its own ttl
+    assert lines[2].split()[1] == "alongside" and lines[2].split()[-1] in ("1h00m", "59m")  # Settings' hour
+    assert cli.main(["ps", "--json"]) == 0
+    assert [m["ttl"] for m in json.loads(capsys.readouterr().out)["models"]] == [120, None]
+
+    assert cli.main(["unload", "nope"]) == 1
+    assert "No loaded model called 'nope'" in capsys.readouterr().err
+    assert cli.main(["unload", "--all"]) == 0
+    assert capsys.readouterr().out.splitlines() == ["Unloaded mid-Q4_K_M.gguf", "Unloaded small"]
+
+
+def test_load_checks_the_fit_first(engine, servers, monkeypatch, capsys):
+    est = {"total": 9e9, "weights": 5e9, "kv_cache": 3.7e9, "overhead": 3e8, "context": 8192, "verdict": "too_large", "budget": {"free": 4e9}}
+    monkeypatch.setattr(cli, "_estimate", lambda c, path, context: est)
+    assert cli.main(["load", "small", "--estimate-only"]) == 0
+    assert "needs about 9.0 GB" in capsys.readouterr().out
+    assert cli.main(["load", "small"]) == 1
+    assert "pass -y to try anyway" in capsys.readouterr().err
+    assert cli.main(["load", "small", "-y"]) == 0

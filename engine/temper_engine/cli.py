@@ -294,23 +294,124 @@ def resolve_model(models: list[dict], wanted: str, quant: str | None = None) -> 
         raise CliError(f"{e} `temper models` lists them.") from e
 
 
+def _duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "-"
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m"
+
+
+def _table(rows: list[list[str]]) -> None:
+    widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    for r in rows:
+        print("  ".join(cell.ljust(w) for cell, w in zip(r, widths)).rstrip())
+
+
+def _estimate(c: httpx.Client, path: str, context: int | None) -> dict | None:
+    """What loading a GGUF would take (memory.py); None for what the estimate can't read, like an MLX folder."""
+    r = c.post("/api/memory/chat", json={"path": path, **({"context": context} if context else {})})
+    return r.json() if r.status_code < 400 else None
+
+
 def load_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper load", description="Load a model for chat and the API.")
     p.add_argument("model", help="a model's name, a GGUF file name, or a path")
     p.add_argument("--quant", help="which of the model's GGUF files, like Q8_0")
     p.add_argument("--context", type=int, help="context length in tokens")
+    p.add_argument("--gpu-layers", type=int, metavar="N", help="layers on the GPU (0 runs on the CPU; default all)")
+    p.add_argument("--alias", help="the name requests use for it (default its file or repo name)")
+    p.add_argument("--ttl", type=int, metavar="SECONDS", help="unload after this long unused (default the idle time in Settings; 0 never)")
+    p.add_argument("--alongside", action="store_true", help="keep chat's model loaded and load this one next to it")
+    p.add_argument("--estimate-only", action="store_true", help="print the memory it would take, without loading it")
+    p.add_argument("-y", "--yes", action="store_true", help="load even when it doesn't look like it fits")
     a = p.parse_args(args)
     with _client(running()) as c:
         path, name = resolve_model(_check(c.get("/api/models/local")), a.model, a.quant)
-        _check(c.post("/api/runtime/load", json={"path": path, "name": name, **({"context": a.context} if a.context else {})}))
-        print(f"Loading {name}", end="", flush=True, file=sys.stderr)
-        while (state := _check(c.get("/api/runtime")))["state"] == "loading":
+        est = _estimate(c, path, a.context)
+        if a.estimate_only:
+            if est is None:
+                raise CliError(f"Temper can't estimate {name}'s memory; estimates cover GGUF files.")
+            free = est["budget"]["free"]
+            print(f"{name} at {est['context']} tokens of context needs about {_size(est['total'])}: {_size(est['weights'])} of weights, "
+                  f"{_size(est['kv_cache'])} of cache and {_size(est['overhead'])} of working memory. {_size(free)} is free, "
+                  + {"fits": "so it fits.", "tight": "so close other apps first.", "too_large": "which isn't enough."}[est["verdict"]])
+            return 0
+        if est and est["verdict"] != "fits" and not a.yes:
+            raise CliError(f"{name} needs about {_size(est['total'])} and {_size(est['budget']['free'])} is free. "
+                           "Lower --context, pick a smaller --quant, or pass -y to try anyway.")
+        body = {"path": path, "name": a.alias or name, "alongside": a.alongside}
+        body |= {k: v for k, v in (("context", a.context), ("gpu_layers", a.gpu_layers), ("ttl", a.ttl)) if v is not None}
+        _check(c.post("/api/runtime/load", json=body))
+        print(f"Loading {body['name']}", end="", flush=True, file=sys.stderr)
+        while (state := _loaded_state(c, path))["state"] == "loading":
             print(".", end="", flush=True, file=sys.stderr)
             time.sleep(1)
         print(file=sys.stderr)
     if state["state"] != "ready":
         raise CliError(state.get("error") or "The model didn't load.")
-    print(f"Loaded {state['model']}" + (f" with {state['context']} tokens of context" if state.get("context") else ""))
+    print(f"Loaded {state['model']}" + (f" with {state['context']} tokens of context" if state.get("context") else "")
+          + (" alongside chat's model" if not state.get("chat") else ""))
+    return 0
+
+
+def _loaded_state(c: httpx.Client, path: str) -> dict:
+    """The status of the server holding `path`, chat's or alongside it; failed when it vanished while loading."""
+    for m in _check(c.get("/api/runtime/loaded"))["models"]:
+        if m.get("path") == path:
+            return m
+    state = _check(c.get("/api/runtime"))  # a failed load leaves no loaded server, only chat's error
+    return state if state.get("path") == path else {"state": "failed", "error": state.get("error")}
+
+
+def ps_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper ps", description="The models loaded now.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        listing = _check(c.get("/api/runtime/loaded"))
+    models, idle = listing["models"], listing["idle_minutes"] * 60
+    if a.json:
+        print(json.dumps(listing, indent=2))
+        return 0
+    if not models:
+        print("No models are loaded. `temper load <model>` loads one" + (", and API requests that name one load it." if listing.get("load_on_demand") else "."))
+        return 0
+    rows = [["MODEL", "ROLE", "ENGINE", "CONTEXT", "STATE", "IDLE", "UNLOADS IN"]]
+    for m in models:
+        limit = m["ttl"] if m.get("ttl") is not None else idle
+        left = None if not limit or m.get("idle") is None else limit - m["idle"]
+        role = "chat" if m.get("chat") else "on demand" if m.get("on_demand") else "alongside"
+        rows.append([m.get("model") or Path(m.get("path") or "").name, role, m.get("engine") or "-", str(m.get("context") or "-"), m["state"],
+                     _duration(m.get("idle")), "never" if not limit else _duration(left)])
+    _table(rows)
+    return 0
+
+
+def unload_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper unload", description="Unload a model, or all of them.")
+    p.add_argument("model", nargs="?", help="its name or path, as `temper ps` shows it")
+    p.add_argument("-a", "--all", action="store_true", help="unload every model")
+    a = p.parse_args(args)
+    if not a.model and not a.all:
+        p.error("name a model, or pass --all")
+    with _client(running()) as c:
+        models = _check(c.get("/api/runtime/loaded"))["models"]
+        if a.all:
+            chosen = sorted(models, key=lambda m: bool(m.get("chat")))  # chat's last, so nothing moves into its place
+        else:
+            w = a.model.lower()
+            chosen = [m for m in models if w in ((m.get("model") or "").lower(), (m.get("path") or "").lower(), Path(m.get("path") or "").name.lower())]
+            if not chosen:
+                raise CliError(f"No loaded model called {a.model!r}. `temper ps` lists them.")
+        for m in chosen:
+            _check(c.post("/api/runtime/loaded/unload", json={"path": m["path"]}))
+            print(f"Unloaded {m.get('model') or m['path']}")
+    if a.all and not chosen:
+        print("No models were loaded.")
     return 0
 
 
@@ -549,12 +650,14 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
   temper models
-  temper load <model or path> [--quant Q] [--context N]
+  temper load <model or path> [--quant Q] [--context N] [--alongside] [--ttl S] [--alias NAME] [--gpu-layers N] [--estimate-only] [-y]
+  temper ps [--json]
+  temper unload <model> | --all
   temper chat ["prompt"] [--system "..."]
   temper train <config.yaml> [--set key=value ...] [--dry-run]
   temper runs
@@ -569,7 +672,7 @@ def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     try:
-        if argv[:1] in (["models"], ["load"], ["chat"], ["train"], ["runs"], ["export"], ["serve"]):
+        if argv[:1] and argv[0] in COMMANDS:
             return COMMANDS[argv[0]](argv[1:])
         if argv[:1] == ["start"] and len(argv) >= 2:
             return start(argv[1], argv[2:])

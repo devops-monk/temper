@@ -33,7 +33,7 @@ class Pool:
         self.used: dict[str, float] = {}
         self.kept: set[str] = set()  # loaded alongside chat's model, not for compare mode
         self.on_demand: set[str] = set()  # kept ones an API request loaded (on_demand.py); unloaded first for room
-        self.ttl: dict[str, int] = {}  # seconds idle before a kept model unloads, instead of Settings' idle time
+        self.ttl: dict[str, int] = {}  # seconds idle before a kept model (or chat's) unloads, instead of Settings' idle time
         self.aliases: dict[str, str] = {}  # other names requests use for a server (a repo id for its GGUF)
         self.lock = threading.Lock()
         self.reaper: threading.Thread | None = None
@@ -103,7 +103,8 @@ class Pool:
                 limit = self.ttl.get(path, kept_idle) if path in self.kept else IDLE_SECONDS
                 if limit and now - self.servers[path].used > limit:
                     self.drop(path)
-            if kept_idle and manager.state == "ready" and now - manager.used > kept_idle:
+            chat_idle = self.ttl.get(manager.path, kept_idle) if manager.path else kept_idle
+            if chat_idle and manager.state == "ready" and now - manager.used > chat_idle:
                 manager.unload()
 
     def status(self, kept: bool | None = None) -> list[dict]:
