@@ -40,7 +40,7 @@ temper chat "Hello"         # ask the loaded model once; with no prompt, chat un
 temper train tutor.yaml     # fine-tune from a YAML config (--set key=value, --dry-run), following the run
 temper runs                 # past training runs
 temper export <run>         # export a run (--format gguf|mlx|lora|..., --quant q4_k_m, --imatrix)
-temper serve                # run the engine without the app, for a server or CI (--host, --port)
+temper serve                # run the engine without the app, for a server or CI (--host, --port; or the Docker image)
 temper start claude         # or codex, opencode, aider: starts the agent on the model loaded in Temper
 temper mcp add claude       # or codex, cursor, vscode: gives the agent Temper's MCP tools
 temper doctor               # checks drivers, disk, ports and engine packages (--mcp checks the MCP server)

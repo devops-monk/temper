@@ -1,0 +1,15 @@
+**/node_modules
+**/__pycache__
+**/.venv
+.git
+dist
+src-tauri
+website
+docs
+e2e
+test-results
+playwright-report
+engine/runs
+engine/tests
+engine/checkpoints
+assets

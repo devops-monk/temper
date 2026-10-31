@@ -131,6 +131,18 @@ temper serve --systemd --host 0.0.0.0 | sudo tee /etc/systemd/system/temper.serv
 sudo systemctl enable --now temper
 ```
 
+**In Docker:** the image runs `temper serve` with the interface and llama.cpp, for Intel and ARM Linux. It
+keeps everything (models, chats, runs, settings and the key) in `/data`, so use a volume:
+
+```bash
+docker run -d -p 8765:8765 -v temper:/data --name temper ghcr.io/devops-monk/temper
+docker logs temper                         # the link to open, with the key
+docker exec temper temper get qwen3 4b -y  # every temper command works inside it
+```
+
+The image runs models on the CPU and doesn't train. Pass `-e HF_TOKEN=...` for gated models. To build it
+yourself: `docker build -t temper .` in the repository.
+
 ## Starter projects
 
 ```bash

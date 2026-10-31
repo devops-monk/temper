@@ -49,6 +49,7 @@ Temper now makes pictures, listens and speaks, and runs like a service your othe
 ### Running like a service
 - Models load on demand when a request names one, and unload when idle.
 - Run Temper's engine in the background and at login, without the window (`temper daemon`).
+- A Docker image of the engine with the browser interface (`ghcr.io/devops-monk/temper`).
 - `temper ps`, `load`, `unload`, `get`, `import`, `status`, `version`, `log`, with `--json`.
 - A request log with speed, and prompts and replies when you ask for them.
 - `temper engines`: versions, a preferred engine, and a pinned llama.cpp update.
