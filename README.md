@@ -21,6 +21,7 @@ fine-tuning does to a base model.
 - **Connect**: ready-made config for Codex, OpenCode, Continue, Aider, Python and curl
 - **Hardware**: NVIDIA, AMD and Apple Silicon detection with a live memory meter
 
+New to Temper? The [guides](docs/README.md) go from installing it to serving a model you trained.
 Everything else is planned feature by feature in [PLAN.md](PLAN.md).
 
 ## From a terminal
