@@ -468,6 +468,10 @@ async def v1_chat(request: Request):
             api_keys.tokens(entry, server.model, usage.get("prompt_tokens"), usage.get("completion_tokens"))
             return JSONResponse(reply, status_code=r.status_code)
 
+    # The servers count tokens only when asked; ask always, and keep the count to ourselves unless asked too.
+    asked = bool((body.get("stream_options") or {}).get("include_usage"))
+    if not asked:
+        body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
     client = httpx.AsyncClient(timeout=None)
     upstream = await client.send(client.build_request("POST", url, json=body), stream=True)
     if entry is not None:
@@ -475,9 +479,12 @@ async def v1_chat(request: Request):
 
     async def relay():
         try:
-            async for chunk in upstream.aiter_raw():
-                api_keys.usage_from_stream(entry, chunk, server.model)
-                yield chunk
+            async for line in upstream.aiter_lines():
+                if line.startswith("data:") and '"usage"' in line:
+                    api_keys.usage_from_stream(entry, line.encode(), server.model)
+                    if not asked and re.search(r'"choices"\s*:\s*\[\s*\]', line):
+                        continue  # the usage-only chunk the client didn't ask for
+                yield (line + "\n").encode()
         finally:
             await upstream.aclose()
             await client.aclose()

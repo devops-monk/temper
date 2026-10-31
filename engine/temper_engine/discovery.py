@@ -23,7 +23,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import prefs
+from . import prefs, usage
 from .lan import Background
 
 router = APIRouter(prefix="/api/discovery", tags=["runtime"])
@@ -127,11 +127,11 @@ def _calls(calls: list[dict] | None) -> list[dict]:
     return out
 
 
-def _done(model: str, started: float, usage: dict, reason: str | None, chat: bool) -> dict:
+def _done(model: str, started: float, counts: dict, reason: str | None, chat: bool) -> dict:
     took = int((time.time() - started) * 1e9)
     return {"model": model, "created_at": _now(), **({"message": {"role": "assistant", "content": ""}} if chat else {"response": ""}), "done": True,
             "done_reason": {"length": "length"}.get(reason or "", "stop"), "total_duration": took, "load_duration": 0,
-            "prompt_eval_count": usage.get("prompt_tokens", 0), "eval_count": usage.get("completion_tokens", 0), "eval_duration": took}
+            "prompt_eval_count": counts.get("prompt_tokens", 0), "eval_count": counts.get("completion_tokens", 0), "eval_duration": took}
 
 
 async def _answer(body: dict, chat: bool):
@@ -154,6 +154,7 @@ async def _answer(body: dict, chat: bool):
         msg = choice.get("message") or {}
         text = strip_thinking(msg.get("content") or "")
         out = _done(model, started, reply.get("usage") or {}, choice.get("finish_reason"), chat)
+        usage.add(_server.model, out["prompt_eval_count"], out["eval_count"])
         if chat:
             out["message"] = {"role": "assistant", "content": text, **({"tool_calls": _calls(msg.get("tool_calls"))} if msg.get("tool_calls") else {})}
         else:
@@ -165,7 +166,7 @@ async def _answer(body: dict, chat: bool):
 
     async def lines():
         think = ThinkFilter()
-        usage, reason, calls = {}, None, {}
+        counts, reason, calls = {}, None, {}
         try:
             async for line in upstream.aiter_lines():
                 if not line.startswith("data:") or line[5:].strip() == "[DONE]":
@@ -174,7 +175,7 @@ async def _answer(body: dict, chat: bool):
                     chunk = json.loads(line[5:])
                 except json.JSONDecodeError:
                     continue
-                usage = chunk.get("usage") or usage
+                counts = chunk.get("usage") or counts
                 for choice in chunk.get("choices") or []:
                     delta = choice.get("delta") or {}
                     reason = choice.get("finish_reason") or reason
@@ -191,7 +192,8 @@ async def _answer(body: dict, chat: bool):
                 yield json.dumps({"model": model, "created_at": _now(), **part, "done": False}) + "\n"
             if calls and chat:
                 yield json.dumps({"model": model, "created_at": _now(), "message": {"role": "assistant", "content": "", "tool_calls": _calls([calls[i] for i in sorted(calls)])}, "done": False}) + "\n"
-            yield json.dumps(_done(model, started, usage, reason, chat)) + "\n"
+            usage.add(_server.model, counts.get("prompt_tokens"), counts.get("completion_tokens"))
+            yield json.dumps(_done(model, started, counts, reason, chat)) + "\n"
         finally:
             await upstream.aclose()
             await client.aclose()

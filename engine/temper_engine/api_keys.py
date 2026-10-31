@@ -106,6 +106,9 @@ def tokens(entry: dict | None, model: str | None, input_tokens: int | None, outp
         return
     entry["model"] = model
     entry["input_tokens"], entry["output_tokens"] = input_tokens, output_tokens
+    from . import usage
+
+    usage.add(model, input_tokens, output_tokens)
     if entry.get("key_id") and (input_tokens or output_tokens):
         with _lock:
             for k in _all():

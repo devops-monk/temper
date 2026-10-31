@@ -16,6 +16,7 @@ import { Badge, Button, Notice, PageHeader, Section, Select, cx } from "../compo
 import { inTauri, installEngine, restartEngine } from "../lib/engine";
 import { bytes } from "../lib/format";
 import { useApp } from "../lib/store";
+import { StatsSection } from "../components/Stats";
 import { LANGUAGES, type Language, useLanguage, useT } from "../lib/i18n";
 import { MOD } from "../lib/shortcuts";
 import { useUpdates } from "../lib/updates";
@@ -245,6 +246,8 @@ export function SettingsPage() {
           {engine?.status === "running" && <McpServers />}
 
           {engine?.status === "running" && <Engines />}
+
+          {engine?.status === "running" && <StatsSection />}
 
           {system && (
             <Section title="This computer">

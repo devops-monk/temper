@@ -281,7 +281,8 @@ temper/
 ## Phase 12: Polish, quality and launch
 
 - [ ] **12.1 Guided tour** on first launch.
-- [ ] **12.2 Profile and statistics**: tokens generated, models trained, time saved.
+- [~] **12.2 Profile and statistics**: tokens generated, models trained, time saved.
+  Done: Settings → Statistics shows tokens written and read (from every reply through the model API, Temper's chats and Ollama-style requests included), replies and chats, models trained and the time spent training, exports, datasets and their rows, a 30-day chart of tokens written and the most used models. Counted and kept on this computer only. To count streamed replies, Temper now always asks the model server for token counts and passes them on only to clients that asked. Tested live: real replies counted to the token. Still to do: "time saved", which needs a definition first.
 - [ ] **12.3 Accessibility pass**: keyboard-only use, screen-reader labels, contrast checks in both themes.
 - [ ] **12.4 Telemetry: off by default**, opt-in crash reports only.
 - [ ] **12.5 Tests**: engine unit tests (pytest), UI tests (Vitest + Playwright), end-to-end smoke test of a tiny model on CI.
