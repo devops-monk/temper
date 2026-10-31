@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Badge, Button, Field, Input, ProgressBar, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { bytes, relativeDate } from "../lib/format";
+import { useT, withNodes } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
 import { useJob } from "../lib/useJob";
@@ -61,6 +62,7 @@ const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 /** Train → Classifier: a small model that sorts text into your labels, trained on examples (engine classifiers.py). */
 export function Classifiers() {
+  const t = useT();
   const [st, setSt] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => void api<Status>("/api/classifiers").then(setSt, (e: Error) => setError(e.message)), []);
@@ -78,11 +80,11 @@ export function Classifiers() {
           install="/api/classifiers/install"
           download={() => api<Job>("/api/classifiers/encoders/download", { json: { encoder: encoder.id } })}
           icon={<Tags className="size-8" />}
-          title={st.installed ? `Download ${encoder.name}` : "Set up classifier training"}
+          title={st.installed ? t("cls.download", { name: encoder.name }) : t("cls.setup")}
           about={
             st.installed
-              ? `The encoder that reads each text, ${bytes(encoder.size)}.`
-              : "A classifier sorts text into your labels (billing or bug, spam or not) after learning from examples, and answers in milliseconds. Training needs PyTorch and sentence-transformers, which install into their own environment (about 1 GB)."
+              ? t("cls.encoder_size", { size: bytes(encoder.size) })
+              : t("cls.setup_about")
           }
           onDone={load}
         />
@@ -95,9 +97,9 @@ export function Classifiers() {
         <TrainForm st={st} onTrained={load} />
       </div>
       <div className="min-w-0 flex-1 overflow-y-auto px-7 py-5">
-        <h2 className="mb-3 text-[13px] font-semibold">Your classifiers</h2>
+        <h2 className="mb-3 text-[13px] font-semibold">{t("cls.yours")}</h2>
         {st.classifiers.length === 0 ? (
-          <p className="text-[13px] text-muted">None yet. A file of examples, each a text and its label, is all a classifier needs; a dozen of each label is a good start.</p>
+          <p className="text-[13px] text-muted">{t("cls.none")}</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {st.classifiers.map((c) => (
@@ -112,6 +114,7 @@ export function Classifiers() {
 
 function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
   const { refreshJobs } = useApp();
+  const t = useT();
   const [name, setName] = useState("");
   const [dataset, setDataset] = useState("");
   const [textColumn, setTextColumn] = useState("");
@@ -130,19 +133,19 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
   useEffect(() => {
     setPeek(null);
     if (!dataset.trim()) return;
-    const t = setTimeout(
+    const timer = setTimeout(
       () =>
         void api<Peek>("/api/classifiers/peek", { json: { dataset: dataset.trim(), text_column: textColumn || null, label_column: labelColumn || null } }).then(setPeek, (e: Error) =>
           setPeek({ columns: [], rows: 0, problem: e.message }),
         ),
       300,
     );
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [dataset, textColumn, labelColumn]);
 
   useEffect(() => {
     if (!status || status === "running") return;
-    if (status === "failed") setError((events.find((e) => e.event === "status")?.error as string) ?? "It failed.");
+    if (status === "failed") setError((events.find((e) => e.event === "status")?.error as string) ?? t("cls.failed"));
     setJobId(null);
     onTrained();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,7 +153,7 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
 
   async function browse() {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const file = await open({ filters: [{ name: "Examples", extensions: ["csv", "jsonl", "json"] }] });
+    const file = await open({ filters: [{ name: t("cls.examples_files"), extensions: ["csv", "jsonl", "json"] }] });
     if (typeof file === "string") {
       setDataset(file);
       if (!name) setName(file.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, ""));
@@ -163,7 +166,7 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
       const body = { name, dataset: dataset.trim(), text_column: textColumn || null, label_column: labelColumn || null, encoder, fine_tune: tune };
       if (chosen && !chosen.downloaded) {
         const dl = await api<Job>("/api/classifiers/encoders/download", { json: { encoder } });
-        setError(`Downloading ${chosen.name} first (job ${dl.id}); train again when it's done.`);
+        setError(t("cls.downloading_first", { name: chosen.name, job: dl.id }));
         void refreshJobs();
         return;
       }
@@ -177,8 +180,8 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
   const columns = peek?.columns ?? [];
   return (
     <div className="flex flex-col gap-3 text-[13px]">
-      <h2 className="text-[13px] font-semibold">Train a classifier</h2>
-      <Field label="Examples" hint="A CSV, JSON or JSONL file: a column of text and a column of labels.">
+      <h2 className="text-[13px] font-semibold">{t("cls.train_title")}</h2>
+      <Field label={t("cls.examples")} hint={t("cls.examples_hint")}>
         <div className="flex gap-2">
           <Input value={dataset} onChange={(e) => setDataset(e.target.value)} placeholder="/path/to/examples.csv" spellCheck={false} />
           {inTauri && (
@@ -190,17 +193,17 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
       </Field>
       {columns.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Text column">
-            <Select value={textColumn || peek?.text_column || ""} onChange={(e) => setTextColumn(e.target.value)} aria-label="Text column">
-              {!peek?.text_column && <option value="">Choose…</option>}
+          <Field label={t("cls.text_column")}>
+            <Select value={textColumn || peek?.text_column || ""} onChange={(e) => setTextColumn(e.target.value)} aria-label={t("cls.text_column")}>
+              {!peek?.text_column && <option value="">{t("cls.choose")}</option>}
               {columns.map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </Select>
           </Field>
-          <Field label="Label column">
-            <Select value={labelColumn || peek?.label_column || ""} onChange={(e) => setLabelColumn(e.target.value)} aria-label="Label column">
-              {!peek?.label_column && <option value="">Choose…</option>}
+          <Field label={t("cls.label_column")}>
+            <Select value={labelColumn || peek?.label_column || ""} onChange={(e) => setLabelColumn(e.target.value)} aria-label={t("cls.label_column")}>
+              {!peek?.label_column && <option value="">{t("cls.choose")}</option>}
               {columns.map((c) => (
                 <option key={c}>{c}</option>
               ))}
@@ -211,7 +214,7 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
       {peek?.labels && (
         <div className="rounded-md border border-line bg-surface px-3 py-2">
           <p className="mb-1 text-[12px] text-muted">
-            {peek.examples?.toLocaleString()} examples, {Object.keys(peek.labels).length} labels
+            {t("cls.examples_labels", { examples: peek.examples?.toLocaleString() ?? "", labels: Object.keys(peek.labels).length })}
           </p>
           <div className="flex flex-wrap gap-1">
             {Object.entries(peek.labels)
@@ -225,27 +228,27 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
         </div>
       )}
       {peek?.problem && <p className="text-[12px] text-straw">{peek.problem}</p>}
-      <Field label="Name">
+      <Field label={t("cls.name")}>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="support-tickets" />
       </Field>
-      <Field label="Encoder" hint={chosen ? `${bytes(chosen.size)}. ${chosen.about}${chosen.downloaded ? "" : " Downloads first."}` : undefined}>
-        <Select value={encoder} onChange={(e) => setEncoder(e.target.value)} aria-label="Encoder">
+      <Field label={t("cls.encoder")} hint={chosen ? `${bytes(chosen.size)}. ${chosen.about}${chosen.downloaded ? "" : t("cls.downloads_first")}` : undefined}>
+        <Select value={encoder} onChange={(e) => setEncoder(e.target.value)} aria-label={t("cls.encoder")}>
           {st.encoders.map((e) => (
             <option key={e.id} value={e.id}>
               {e.name}
-              {e.downloaded ? "" : " (not downloaded)"}
+              {e.downloaded ? "" : t("cls.not_downloaded")}
             </option>
           ))}
         </Select>
       </Field>
-      <Toggle label="Tune the encoder on pairs of examples (slower; best with few examples)" checked={tune} onChange={setTune} />
+      <Toggle label={t("cls.tune")} checked={tune} onChange={setTune} />
       <Button variant="primary" onClick={() => void train()} disabled={running || !name.trim() || !peek?.labels || !!peek.problem}>
-        {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} Train
+        {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} {t("cls.train")}
       </Button>
       {running && (
         <div className="flex flex-col gap-1.5">
           <ProgressBar value={progress ?? null} />
-          <p className="text-[12px] text-muted">{phase ?? "Starting…"}</p>
+          <p className="text-[12px] text-muted">{phase ?? t("cls.starting")}</p>
         </div>
       )}
       {error && <p className="text-[12px] text-danger">{error}</p>}
@@ -254,6 +257,7 @@ function TrainForm({ st, onTrained }: { st: Status; onTrained: () => void }) {
 }
 
 function Row({ c, onDelete }: { c: Classifier; onDelete: (s: Status) => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [result, setResult] = useState<Result | null>(null);
@@ -275,32 +279,32 @@ function Row({ c, onDelete }: { c: Classifier; onDelete: (s: Status) => void }) 
   }
 
   async function remove() {
-    if (!confirm(`Delete the classifier ${c.name}?`)) return;
+    if (!confirm(t("cls.delete_confirm", { name: c.name }))) return;
     onDelete(await api<Status>(`/api/classifiers/${c.name}`, { method: "DELETE" }));
   }
 
   return (
     <li className="rounded-lg border border-line bg-surface text-[13px]">
       <div className="flex items-center gap-3 px-4 py-3">
-        <button onClick={() => setOpen(!open)} className="text-muted hover:text-text" aria-expanded={open} aria-label={open ? "Hide details" : "Show details"}>
+        <button onClick={() => setOpen(!open)} className="text-muted hover:text-text" aria-expanded={open} aria-label={t(open ? "cls.hide" : "cls.show")}>
           {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[12.5px] font-medium">{c.name}</span>
-            {c.fine_tuned && <Badge tone="accent">tuned</Badge>}
+            {c.fine_tuned && <Badge tone="accent">{t("cls.tuned")}</Badge>}
           </div>
           <p className="truncate text-[12px] text-muted">
-            {c.labels.join(", ")} · {c.train_examples.toLocaleString()} examples · {relativeDate(c.created)}
+            {c.labels.join(", ")} · {t("cls.examples_n", { n: c.train_examples.toLocaleString() })} · {relativeDate(c.created)}
           </p>
         </div>
         {m && (
           <span className="text-right">
             <span className="block text-[15px] font-semibold tabular-nums">{pct(m.accuracy)}</span>
-            <span className="block text-[11px] text-muted">on {c.eval_examples} held out</span>
+            <span className="block text-[11px] text-muted">{t("cls.held_out", { n: c.eval_examples })}</span>
           </span>
         )}
-        <button className="text-muted hover:text-danger" onClick={() => void remove()} title="Delete" aria-label={`Delete ${c.name}`}>
+        <button className="text-muted hover:text-danger" onClick={() => void remove()} title={t("cls.delete")} aria-label={t("cls.delete_named", { name: c.name })}>
           <Trash2 className="size-3.5" />
         </button>
       </div>
@@ -313,9 +317,9 @@ function Row({ c, onDelete }: { c: Classifier; onDelete: (s: Status) => void }) 
               if (text.trim()) void tryIt();
             }}
           >
-            <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Try it on some text" aria-label={`Text for ${c.name}`} />
+            <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("cls.try")} aria-label={t("cls.text_for", { name: c.name })} />
             <Button type="submit" disabled={!text.trim() || busy}>
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} Classify
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} {t("cls.classify")}
             </Button>
           </form>
           {result && (
@@ -332,10 +336,13 @@ function Row({ c, onDelete }: { c: Classifier; onDelete: (s: Status) => void }) 
             </div>
           )}
           {error && <p className="text-[12px] text-danger">{error}</p>}
-          {m ? <Metrics c={c} /> : <p className="text-[12px] text-muted">Too few examples were held out to measure it.</p>}
+          {m ? <Metrics c={c} /> : <p className="text-[12px] text-muted">{t("cls.too_few")}</p>}
           <p className="text-[12px] text-muted">
-            Trained on {c.dataset.split(/[\\/]/).pop()} with {c.encoder_id.split("/").pop()}. Apps use it at <span className="font-mono">/v1/classifiers/{c.name}</span>, and a saved decision on
-            Connect can answer with it.
+            {withNodes(t("cls.trained_on"), {
+              dataset: c.dataset.split(/[\\/]/).pop(),
+              encoder: c.encoder_id.split("/").pop(),
+              path: <span className="font-mono">/v1/classifiers/{c.name}</span>,
+            })}
           </p>
         </div>
       )}
@@ -349,16 +356,17 @@ function Cell({ children, strong, dim }: { children: ReactNode; strong?: boolean
 
 /** How it did on the held-out examples: per label, which labels it confused, and what it got wrong. */
 function Metrics({ c }: { c: Classifier }) {
+  const t = useT();
   const m = c.metrics!;
   return (
     <div className="flex flex-col gap-4">
       <table className="max-w-[520px] text-[12px]">
         <thead className="text-muted">
           <tr>
-            <th className="py-1 text-left font-medium">Label</th>
-            <th className="px-2 text-right font-medium">Precision</th>
-            <th className="px-2 text-right font-medium">Recall</th>
-            <th className="px-2 text-right font-medium">Held out</th>
+            <th className="py-1 text-left font-medium">{t("cls.label")}</th>
+            <th className="px-2 text-right font-medium">{t("cls.precision")}</th>
+            <th className="px-2 text-right font-medium">{t("cls.recall")}</th>
+            <th className="px-2 text-right font-medium">{t("cls.held_out_col")}</th>
           </tr>
         </thead>
         <tbody>
@@ -374,7 +382,7 @@ function Metrics({ c }: { c: Classifier }) {
       </table>
       {c.labels.length <= 12 && (
         <div>
-          <p className="mb-1 text-[12px] text-muted">Which label it picked (columns) for each true label (rows)</p>
+          <p className="mb-1 text-[12px] text-muted">{t("cls.confusion")}</p>
           <table className="text-[12px]">
             <thead className="text-muted">
               <tr>
@@ -403,11 +411,11 @@ function Metrics({ c }: { c: Classifier }) {
       )}
       {m.mistakes.length > 0 && (
         <div>
-          <p className="mb-1 text-[12px] text-muted">What it got wrong</p>
+          <p className="mb-1 text-[12px] text-muted">{t("cls.mistakes")}</p>
           <ul className="flex flex-col gap-1 text-[12px]">
             {m.mistakes.map((x, i) => (
               <li key={i}>
-                “{x.text}” <span className="text-muted">is {x.label}; it said</span> {x.guess}
+                “{x.text}” <span className="text-muted">{t("cls.mistake", { label: x.label })}</span> {x.guess}
               </li>
             ))}
           </ul>
