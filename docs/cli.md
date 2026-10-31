@@ -92,6 +92,19 @@ read the Hugging Face token from the system keychain; set `HF_TOKEN` in its envi
 folder, so it stays the same between runs. Anyone with that key can manage the whole engine, so give apps
 named API keys instead (see [Connect](connect.md#api-keys)).
 
+## Engines
+
+```bash
+temper engines                     # each inference engine, its version, and whether it can run here
+temper engines survey              # this computer's CPU, memory and GPUs, and what each engine runs on
+temper engines use transformers    # load model folders with Transformers (GGUF files always use llama.cpp); `auto` undoes it
+temper engines install transformers   # or vllm, sglang (Linux with an NVIDIA or AMD GPU); `remove` takes it out again
+temper engines update              # install Temper's own llama.cpp build when it's using one found on PATH
+```
+
+Each Temper release pins a llama.cpp build that it is tested with and checks downloads against a checksum, so
+`update` installs that build rather than the newest one. Updating Temper brings newer builds.
+
 ## Status and scripting
 
 ```bash
@@ -101,7 +114,7 @@ temper log                         # follow the API's requests: who, model, toke
 temper log --content               # with each prompt and reply (held in memory only, while it runs)
 ```
 
-`models`, `ps`, `runs` and `status` take `--json` for scripts. `temper status` exits with 1 when Temper isn't
+`models`, `ps`, `runs`, `engines` and `status` take `--json` for scripts. `temper status` exits with 1 when Temper isn't
 running, so `temper status >/dev/null || open -a Temper` starts it when needed.
 
 ## Agents and checks

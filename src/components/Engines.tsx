@@ -60,7 +60,19 @@ export function Engines() {
     }
   }
 
+  async function prefer(id: string | null) {
+    setError(null);
+    try {
+      await api("/api/runtime/engines/preferred", { method: "PUT", json: { engine: id } });
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   if (!engines?.length) return null;
+  // A choice only matters once two engines can run model folders.
+  const folderEngines = engines.filter((e) => e.id !== "llama.cpp" && e.available);
   return (
     <Section title="Inference engines">
       <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
@@ -70,9 +82,16 @@ export function Engines() {
               <div className="flex items-center gap-2">
                 <span className="font-medium">{e.name}</span>
                 {e.available ? <Badge tone="ok">Ready</Badge> : e.unsupported ? <Badge>Not for this computer</Badge> : null}
+                {e.version && <span className="font-mono text-[11.5px] text-muted">{e.version}</span>}
+                {e.preferred && folderEngines.length > 1 && <Badge>Loads model folders</Badge>}
               </div>
               <p className="text-[12px] text-muted">{e.unsupported ?? ABOUT[e.id]}</p>
             </div>
+            {folderEngines.length > 1 && e.available && e.id !== "llama.cpp" && (
+              <Button size="sm" variant="ghost" onClick={() => void prefer(e.preferred ? null : e.id)}>
+                {e.preferred ? "Pick by format" : "Use for folders"}
+              </Button>
+            )}
             {e.installable && !e.available && (
               <Button size="sm" onClick={() => void install(e.id)} disabled={installing}>
                 <Download className="size-3.5" /> Install

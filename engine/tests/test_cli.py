@@ -351,3 +351,25 @@ def test_a_log_line_says_who_asked_what_and_how_fast():
     line = cli._log_line(e)
     assert "POST  /v1/chat/completions  laptop  qwen  200  2.0s  first token 0.4s  16→80 tokens  50.0 tokens/s" in line
     assert cli._log_line({**e, "model": None, "input_tokens": None, "output_tokens": None, "tokens_per_second": None, "path": "/v1/models", "method": "GET"}).endswith("GET  /v1/models  laptop  200  2.0s")
+
+
+def test_engines_lists_picks_and_surveys(engine, monkeypatch, capsys):
+    from temper_engine import engines
+
+    monkeypatch.setattr(engines, "python_for", lambda e: "/py" if e == "transformers" else None)
+    monkeypatch.setattr(engines, "supported", lambda e: None if e == "transformers" else "Not here.")
+    monkeypatch.setattr(engines, "version", lambda e: "4.57.1")
+    assert cli.main(["engines", "use", "Transformers"]) == 0
+    assert "now load on Transformers" in capsys.readouterr().out
+    assert cli.main(["engines"]) == 0
+    out = capsys.readouterr().out
+    assert "transformers  4.57.1   installed, preferred" in out and "Not here." in out
+    assert cli.main(["engines", "use", "nope"]) == 1
+    assert "No engine called nope" in capsys.readouterr().err
+    assert cli.main(["engines", "remove", "llama.cpp"]) == 1
+    assert cli.main(["engines", "use", "auto"]) == 0 and "by the model's format" in capsys.readouterr().out
+    assert cli.main(["engines", "survey"]) == 0
+    out = capsys.readouterr().out
+    assert "Memory" in out and "can't run here: Not here." in out
+    assert cli.main(["engines", "survey", "--json"]) == 0
+    assert "system" in json.loads(capsys.readouterr().out)

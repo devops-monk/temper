@@ -18,8 +18,9 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-from . import hardware, home
+from . import hardware, home, prefs
 from .jobs import Job, registry
 
 router = APIRouter(prefix="/api/runtime/engines", tags=["runtime"])
@@ -65,15 +66,54 @@ def supported(engine: str) -> str | None:
     return None
 
 
+def version(engine: str) -> str | None:
+    """The installed version: llama.cpp's build, or the engine package's version from its environment."""
+    if engine == "llama.cpp":
+        from . import llamacpp
+
+        if llamacpp.installed_build():
+            return llamacpp.TAG
+        server = hardware.llama_server_path()
+        if not server:
+            return None
+        try:  # one found on PATH or from Homebrew: "version: 6570 (1b2c3d4)"
+            out = subprocess.run([server, "--version"], capture_output=True, text=True, timeout=10)
+            line = next((ln for ln in (out.stdout + out.stderr).splitlines() if ln.startswith("version:")), "")
+            return "b" + line.split()[1] if line else "unknown"
+        except (OSError, subprocess.SubprocessError, IndexError):
+            return "unknown"
+    module = ENGINES[engine]["module"]
+    dist = module.replace("_", "-")
+    if engine == "mlx":
+        from importlib import metadata
+
+        try:
+            return metadata.version(dist)
+        except metadata.PackageNotFoundError:
+            return None
+    site = "Lib/site-packages" if os.name == "nt" else "lib/python*/site-packages"
+    for found in venv(engine).glob(f"{site}/{module}-*.dist-info"):
+        return found.name[len(module) + 1:-len(".dist-info")]
+    return None
+
+
+def preferred() -> str | None:
+    """The engine picked for model folders (`temper engines use`), when it's still installed."""
+    engine = prefs.load().get("engine")
+    return engine if engine in ENGINES and engine != "llama.cpp" and not supported(engine) and python_for(engine) else None
+
+
 def available() -> list[dict]:
     out = []
+    chosen = preferred()
     for engine, info in ENGINES.items():
         if engine == "llama.cpp":
             ready, why = hardware.llama_server_path() is not None, None
         else:
             why = supported(engine)
             ready = why is None and python_for(engine) is not None
-        out.append({"id": engine, "name": info["name"], "available": ready, "unsupported": why, "installable": bool(info.get("packages")) and not why, "formats": info["formats"]})
+        out.append({"id": engine, "name": info["name"], "available": ready, "unsupported": why, "installable": bool(info.get("packages")) and not why,
+                    "formats": info["formats"], "version": version(engine) if ready else None, "preferred": engine == chosen})
     return out
 
 
@@ -110,6 +150,8 @@ def default_engine(path: str) -> str:
     fmt = model_format(path)
     if fmt == "gguf":
         return "llama.cpp"
+    if (chosen := preferred()) and fmt in ENGINES[chosen]["formats"]:
+        return chosen
     for engine in ("mlx", "vllm", "sglang", "transformers"):
         if fmt in ENGINES[engine]["formats"] and not supported(engine) and python_for(engine):
             return engine
@@ -240,6 +282,24 @@ def install_venv(job: Job, folder: Path, packages: list[str], name: str) -> bool
 
 @router.get("")
 def list_engines():
+    return {"engines": available()}
+
+
+class Preferred(BaseModel):
+    engine: str | None = None
+
+
+@router.put("/preferred")
+def set_preferred(req: Preferred):
+    """The engine to load model folders with; None goes back to picking by format (MLX first on a Mac)."""
+    if req.engine is not None:
+        if req.engine not in ENGINES or req.engine == "llama.cpp":
+            raise HTTPException(400, "Pick MLX, Transformers, vLLM or SGLang; GGUF files always load on llama.cpp.")
+        if why := supported(req.engine):
+            raise HTTPException(409, why)
+        if not python_for(req.engine):
+            raise HTTPException(409, f"{ENGINES[req.engine]['name']} isn't installed. `temper engines install {req.engine}` installs it.")
+    prefs.update("engine", req.engine)
     return {"engines": available()}
 
 

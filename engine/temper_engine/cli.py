@@ -997,6 +997,113 @@ def daemon_cmd(args: list[str]) -> int:
     return 0
 
 
+def engines_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper engines", description="The inference engines that run models, and what this computer gives them.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    sub = p.add_subparsers(dest="action")
+    use = sub.add_parser("use", help="load model folders (not GGUF files) with this engine")
+    use.add_argument("engine", help="mlx, transformers, vllm or sglang; `auto` picks by format again")
+    sub.add_parser("install", help="install an engine into its own environment").add_argument("engine")
+    sub.add_parser("remove", help="remove an installed engine").add_argument("engine")
+    sub.add_parser("update", help="install the llama.cpp build this version of Temper uses, for this hardware")
+    sub.add_parser("survey", help="what each engine can use here: GPU, memory, backends").add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        engines = _check(c.get("/api/runtime/engines"))["engines"]
+        names = {e["id"]: e for e in engines}
+
+        def known(engine: str) -> str:
+            found = next((k for k, e in names.items() if engine.lower() in (k, e["name"].lower())), None)
+            if found is None:
+                raise CliError(f"No engine called {engine}. These are: {', '.join(names)}.")
+            return found
+
+        if a.action is None:
+            llama = _check(c.get("/api/llamacpp"))
+            if a.json:
+                print(json.dumps({"engines": engines, "llamacpp": llama}, indent=2))
+                return 0
+            rows = [["ENGINE", "VERSION", "STATUS", "LOADS"]]
+            for e in engines:
+                status = "installed" + (", preferred" if e["preferred"] else "") if e["available"] else e["unsupported"] or ("not installed" + (" (installable)" if e["installable"] else ""))
+                rows.append([e["id"], e["version"] or "-", status, ", ".join(e["formats"])])
+            _table(rows)
+            if llama["available"] and not llama["managed"]:
+                print(f"\nllama.cpp is the one at {llama['server']}; `temper engines update` installs Temper's own build ({llama['tag']}).")
+            return 0
+        if a.action == "use":
+            engine = None if a.engine.lower() == "auto" else known(a.engine)
+            engines = _check(c.put("/api/runtime/engines/preferred", json={"engine": engine}))["engines"]
+            print(f"Model folders now load on {names[engine]['name']}; GGUF files still load on llama.cpp." if engine else "Back to picking the engine by the model's format.")
+            return 0
+        if a.action == "install":
+            engine = known(a.engine)
+            if names[engine]["available"]:
+                print(f"{names[engine]['name']} is installed already ({names[engine]['version'] or 'version unknown'}).")
+                return 0
+            if engine == "llama.cpp":
+                return engines_cmd(["update"])
+            job = _check(c.post(f"/api/runtime/engines/{engine}/install"))
+            print(f"Installing {names[engine]['name']} into its own environment; this can take a few minutes.")
+            end = follow(c, job["id"], logs=False)
+        elif a.action == "remove":
+            engine = known(a.engine)
+            if engine in ("llama.cpp", "mlx"):
+                raise CliError(f"{names[engine]['name']} comes with Temper and can't be removed.")
+            _check(c.delete(f"/api/runtime/engines/{engine}"))
+            print(f"Removed {names[engine]['name']}.")
+            return 0
+        elif a.action == "update":
+            llama = _check(c.get("/api/llamacpp"))
+            if llama["managed"]:
+                print(f"llama.cpp {llama['tag']} is installed, the build this version of Temper is tested with. Updating Temper brings newer builds.")
+                return 0
+            job = _check(c.post("/api/llamacpp/install", json={}))
+            print(f"Installing llama.cpp {llama['tag']} for this computer.")
+            end = follow(c, job["id"], logs=True)
+        else:
+            return _survey(c, engines, a.json)
+    if end.get("status") != "done":
+        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+    print("Done.")
+    return 0
+
+
+def _survey(c: httpx.Client, engines: list[dict], as_json: bool) -> int:
+    """`temper engines survey`: the hardware, and which engines can use it."""
+    system = _check(c.get("/api/system"))
+    if as_json:
+        print(json.dumps({"system": system, "engines": engines}, indent=2))
+        return 0
+    mem = system["memory"]
+    rows = [
+        ["Computer", f"{system['os']['name']} {system['os']['release']} on {system['os']['machine']}, {system['cpu']['name']} ({system['cpu']['cores']} cores)"],
+        ["Memory", f"{_size(mem['total'])}, {_size(mem['total'] - mem['used'])} free"],
+    ]
+    for g in system["gpus"]:
+        shared = " shared with the CPU" if g.get("unified_memory") else ""
+        rows.append([f"GPU {g['index']}", f"{g['name']} ({g['backend']}), {_size(g.get('memory_total'))}{shared}" + (f", driver {g['driver']}" if g.get("driver") else "")])
+    if not system["gpus"]:
+        rows.append(["GPU", "none found; models run on the CPU"])
+    rows.append(["Backend", system["backend"]])
+    _table(rows)
+    print()
+    backend = system["backend"]
+    rows = [["ENGINE", "RUNS ON"]]
+    for e in engines:
+        if e["unsupported"]:
+            where = f"can't run here: {e['unsupported']}"
+        elif e["id"] == "llama.cpp":
+            where = f"{backend} GPU; layers that don't fit run on the CPU" if backend != "cpu" else "CPU"
+        elif e["id"] == "mlx":
+            where = "Apple GPU (Metal), in unified memory"
+        else:
+            where = "CUDA or ROCm GPUs, split across them" if e["id"] in ("vllm", "sglang") else "GPU through PyTorch when it has one, else CPU"
+        rows.append([e["id"], where + ("" if e["available"] or e["unsupported"] else " (not installed)")])
+    _table(rows)
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1073,7 +1180,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1092,6 +1199,7 @@ USAGE = """usage:
   temper export <run> [--format gguf] [--quant q4_k_m] [--imatrix]
   temper serve [--host H] [--port N]
   temper daemon up|down|status|install|uninstall
+  temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey
   temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode
   temper doctor --mcp"""

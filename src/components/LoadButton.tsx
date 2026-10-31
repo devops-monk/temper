@@ -31,6 +31,10 @@ export interface Engine {
   unsupported: string | null;
   installable: boolean;
   formats: ("gguf" | "mlx" | "hf")[];
+  /** The installed build or package version. */
+  version: string | null;
+  /** Picked for model folders (Settings, or `temper engines use`). */
+  preferred: boolean;
 }
 
 let enginesCache: Promise<Engine[]> | null = null;
@@ -58,7 +62,8 @@ export function useEngines(): { engines: Engine[] | null; refresh: () => void } 
 
 /** The engine that would run a model folder of this format, if one is installed. */
 export function folderEngine(engines: Engine[] | null, format: "mlx" | "hf"): Engine | null {
-  return engines?.find((e) => e.id !== "llama.cpp" && e.available && e.formats.includes(format)) ?? null;
+  const ready = engines?.filter((e) => e.id !== "llama.cpp" && e.available && e.formats.includes(format)) ?? [];
+  return ready.find((e) => e.preferred) ?? ready[0] ?? null;
 }
 
 /** Loads a model in chat, asking first when the memory estimate says it won't fit. A GGUF runs on llama.cpp; a folder (or a

@@ -108,6 +108,11 @@ def _unit() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user" / UNIT
 
 
+def _domain() -> str:
+    """launchd's domain for this user's agents (getuid is POSIX-only; the tests stand in for macOS anywhere)."""
+    return f"gui/{getattr(os, 'getuid', lambda: 0)()}"
+
+
 def _run(*cmd: str) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True)
 
@@ -135,8 +140,8 @@ def install() -> str:
             "StandardOutPath": str(log_file()),
             "StandardErrorPath": str(log_file()),
         }))
-        _run("launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}")  # an older copy, if loaded
-        r = _run("launchctl", "bootstrap", f"gui/{os.getuid()}", str(path))
+        _run("launchctl", "bootout", f"{_domain()}/{LABEL}")  # an older copy, if loaded
+        r = _run("launchctl", "bootstrap", _domain(), str(path))
         if r.returncode != 0:
             raise RuntimeError(f"launchctl couldn't load it: {r.stderr.strip() or r.stdout.strip()}")
         return str(path)
@@ -166,7 +171,7 @@ def uninstall() -> bool:
     if not login_item():
         return False
     if sys.platform == "darwin":
-        _run("launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}")
+        _run("launchctl", "bootout", f"{_domain()}/{LABEL}")
         _plist().unlink(missing_ok=True)
     elif sys.platform == "win32":
         _run("schtasks", "/Delete", "/F", "/TN", TASK)

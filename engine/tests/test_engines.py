@@ -96,3 +96,27 @@ def test_engines_list_and_install_guard():
     out = client.get("/api/runtime/engines", headers=AUTH).json()["engines"]
     assert [e["id"] for e in out] == ["llama.cpp", "mlx", "transformers", "vllm", "sglang"]
     assert client.post("/api/runtime/engines/llama.cpp/install", headers=AUTH).status_code == 404
+
+
+def test_a_preferred_engine_loads_model_folders_but_never_ggufs(tmp_path, monkeypatch):
+    monkeypatch.setattr(engines, "python_for", lambda e: "/py" if e in ("mlx", "transformers") else None)
+    monkeypatch.setattr(engines, "supported", lambda e: None if e in ("mlx", "transformers") else "no")
+    hf = folder(tmp_path / "hf", {"architectures": ["QwenForCausalLM"]})
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"GGUF")
+    assert engines.default_engine(str(hf)) == "mlx"  # by format, MLX first
+    r = client.put("/api/runtime/engines/preferred", headers=AUTH, json={"engine": "transformers"})
+    assert [e["id"] for e in r.json()["engines"] if e["preferred"]] == ["transformers"]
+    assert engines.default_engine(str(hf)) == "transformers" and engines.default_engine(str(gguf)) == "llama.cpp"
+    assert client.put("/api/runtime/engines/preferred", headers=AUTH, json={"engine": "vllm"}).status_code == 409
+    assert client.put("/api/runtime/engines/preferred", headers=AUTH, json={"engine": "llama.cpp"}).status_code == 400
+    monkeypatch.setattr(engines, "python_for", lambda e: "/py" if e == "mlx" else None)
+    assert engines.preferred() is None and engines.default_engine(str(hf)) == "mlx"  # removed since: back to by format
+    client.put("/api/runtime/engines/preferred", headers=AUTH, json={"engine": None})
+    assert "engine" not in json.loads((engines.home() / "settings.json").read_text())
+
+
+def test_versions_come_from_each_engines_own_environment(monkeypatch):
+    site = engines.venv("transformers") / ("Lib/site-packages" if engines.os.name == "nt" else "lib/python3.12/site-packages")
+    (site / "transformers-4.57.1.dist-info").mkdir(parents=True)
+    assert engines.version("transformers") == "4.57.1" and engines.version("vllm") is None
