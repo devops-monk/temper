@@ -37,6 +37,14 @@ def command(host: str = "127.0.0.1", port: int = 8765) -> list[str]:
     return [sys.executable, "-m", "temper_engine", "serve", "--host", host, "--port", str(port)]
 
 
+def system_unit(host: str, port: int, user: str) -> str:
+    """A systemd system service for a server: the engine at boot, as `user`, restarted if it fails."""
+    quoted = " ".join(f'"{c}"' if " " in c else c for c in command(host, port))
+    return ("[Unit]\nDescription=Temper engine\nAfter=network-online.target\nWants=network-online.target\n\n"
+            f"[Service]\nUser={user}\nExecStart={quoted}\nEnvironment=\"TEMPER_HOME={home()}\"\nRestart=on-failure\nRestartSec=5\n\n"
+            "[Install]\nWantedBy=multi-user.target\n")
+
+
 def log_file() -> Path:
     return home() / "daemon.log"
 

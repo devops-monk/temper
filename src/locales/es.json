@@ -18,6 +18,7 @@
   "engine.needs_setup": "Falta configurar",
   "engine.setup_failed": "La configuración falló",
   "engine.offline": "Motor desconectado",
+  "engine.locked": "Falta la clave",
   "status.update": "Temper {version} está disponible",
   "status.unified": "Memoria unificada",
   "status.gpu_memory": "Memoria de la GPU",

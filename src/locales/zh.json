@@ -18,6 +18,7 @@
   "engine.needs_setup": "需要设置",
   "engine.setup_failed": "设置失败",
   "engine.offline": "引擎离线",
+  "engine.locked": "需要密钥",
   "status.update": "Temper {version} 已发布",
   "status.unified": "统一内存",
   "status.gpu_memory": "显存",

@@ -120,6 +120,17 @@ read the Hugging Face token from the system keychain; set `HF_TOKEN` in its envi
 folder, so it stays the same between runs. Anyone with that key can manage the whole engine, so give apps
 named API keys instead (see [Connect](connect.md#api-keys)).
 
+**In a browser:** the engine also serves Temper's interface at `/ui/`. `temper serve` prints a link with the
+key after `#` (the part of a link browsers never send to the server); open it, or open `/ui/` and type the key.
+The browser keeps it. Behind a reverse proxy, put HTTPS in front: the key travels with every request.
+
+**At boot on a Linux server:** `temper serve --systemd` prints a systemd service for the current user;
+
+```bash
+temper serve --systemd --host 0.0.0.0 | sudo tee /etc/systemd/system/temper.service
+sudo systemctl enable --now temper
+```
+
 ## Starter projects
 
 ```bash

@@ -34,6 +34,7 @@ const STATUS_LABEL = {
   needs_setup: "Not set up",
   installing: "Installing",
   setup_failed: "Setup failed",
+  locked: "Needs its key",
 };
 const PROFILE_LABEL = { chat: "Chat only", train: "Chat and training" };
 

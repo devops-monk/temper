@@ -18,6 +18,7 @@
   "engine.needs_setup": "Setup needed",
   "engine.setup_failed": "Setup failed",
   "engine.offline": "Engine offline",
+  "engine.locked": "Key needed",
   "status.update": "Temper {version} is available",
   "status.unified": "Unified memory",
   "status.gpu_memory": "GPU memory",

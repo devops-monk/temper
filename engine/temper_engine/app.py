@@ -2,15 +2,26 @@ import asyncio
 import hmac
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 from . import __version__, account, anthropic_api, api_keys, attachments, catalog, chat_import, chats, classifiers, compaction, compare, convert, crashes, daemon, datasets, decisions, devices, discovery, doctor, embedders, engines, export, files, generations, hardware, hub, images, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, publish, recipes, research, runtime, sandbox, search, skills, sources, speech, stems, storage, tts, tools, training, usage
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health"}
+
+
+def ui_folder() -> Path | None:
+    """The built interface, for browsers at /ui/: TEMPER_UI, beside the bundled engine (resources/ui), or the repo's dist."""
+    here = Path(__file__).resolve().parents[2]
+    for candidate in (os.environ.get("TEMPER_UI"), here / "ui", here / "dist"):
+        if candidate and (Path(candidate) / "index.html").is_file():
+            return Path(candidate)
+    return None
 
 
 @asynccontextmanager
@@ -80,5 +91,9 @@ def create_app(token: str = "") -> FastAPI:
         app.include_router(module.router)
     lan.listener.app = app
     discovery.token = token
+    # The interface for a browser (`temper serve`): static files, open like any web page; the API it calls still
+    # needs the key, which the page asks for.
+    if ui := ui_folder():
+        app.mount("/ui", StaticFiles(directory=ui, html=True), name="ui")
 
     return app

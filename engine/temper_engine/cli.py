@@ -19,6 +19,7 @@ written here keep working.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import re
@@ -1660,7 +1661,14 @@ def serve_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper serve", description="Run Temper's engine without the app, for a server or CI.")
     p.add_argument("--host", default="127.0.0.1", help="the address to listen on (default 127.0.0.1, this computer only)")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--systemd", action="store_true", help="print a systemd service that runs it at boot, instead of running it")
     a = p.parse_args(args)
+    if a.systemd:
+        from . import daemon
+
+        print(daemon.system_unit(a.host, a.port, getpass.getuser()), end="")
+        print("# Save as /etc/systemd/system/temper.service, then: sudo systemctl enable --now temper", file=sys.stderr)
+        return 0
     try:
         engine = running()
     except CliError:
@@ -1668,7 +1676,12 @@ def serve_cmd(args: list[str]) -> int:
     if engine:
         raise CliError(f"Temper is already running at {engine['url']}.")
     key = stable_key()
+    from .app import ui_folder
+
     print(f"Temper's engine: http://{a.host}:{a.port}  (key in {home() / 'api-key'}; Ctrl-C stops it)", file=sys.stderr)
+    if ui_folder():
+        shown = "127.0.0.1" if a.host in ("0.0.0.0", "::") else a.host
+        print(f"In a browser: http://{shown}:{a.port}/ui/#key={key}", file=sys.stderr)
     if a.host not in ("127.0.0.1", "localhost", "::1"):
         print("It's reachable from other computers: anyone with the key can use and manage it. Prefer named API keys for apps.", file=sys.stderr)
     run_engine(a.host, a.port, key)

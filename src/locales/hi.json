@@ -18,6 +18,7 @@
   "engine.needs_setup": "सेटअप ज़रूरी है",
   "engine.setup_failed": "सेटअप विफल रहा",
   "engine.offline": "इंजन बंद है",
+  "engine.locked": "कुंजी चाहिए",
   "status.update": "Temper {version} उपलब्ध है",
   "status.unified": "यूनिफ़ाइड मेमोरी",
   "status.gpu_memory": "GPU मेमोरी",

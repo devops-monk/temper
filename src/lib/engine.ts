@@ -15,6 +15,28 @@ export async function openExternal(url: string) {
 
 let current: EngineInfo | null = null;
 
+const KEY = "temper.engineKey";
+/** Served by the engine itself at /ui/ (`temper serve`): the engine is this page's origin, and its key comes from the
+ * link's #key= (never sent to the server) or is typed in, then kept in this browser. */
+const servedByEngine = !import.meta.env.DEV && typeof location !== "undefined" && location.pathname.startsWith("/ui");
+
+function storedKey(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveEngineKey(key: string) {
+  try {
+    localStorage.setItem(KEY, key.trim());
+  } catch {
+    /* private window: the key lasts until the page closes */
+  }
+  if (current) current = { ...current, token: key.trim() };
+}
+
 /** Ask the shell where the engine is. In a browser, use VITE_ENGINE_URL / VITE_ENGINE_TOKEN. */
 export async function fetchEngineInfo(): Promise<EngineInfo> {
   if (inTauri) {
@@ -23,11 +45,21 @@ export async function fetchEngineInfo(): Promise<EngineInfo> {
   } else {
     const mock = import.meta.env.DEV && location.hash.includes("setup=") ? (await import("./mockSetup")).mockSetupInfo() : null;
     if (mock) return (current = mock);
-    const url = import.meta.env.VITE_ENGINE_URL ?? "http://127.0.0.1:8765";
-    const token = import.meta.env.VITE_ENGINE_TOKEN ?? "dev";
+    let url = import.meta.env.VITE_ENGINE_URL ?? "http://127.0.0.1:8765";
+    let token = import.meta.env.VITE_ENGINE_TOKEN ?? "dev";
+    if (servedByEngine) {
+      url = location.origin;
+      const fromLink = new URLSearchParams(location.hash.slice(1)).get("key");
+      if (fromLink) {
+        saveEngineKey(fromLink);
+        history.replaceState(null, "", location.pathname + location.search); // out of the address bar and history
+      }
+      token = storedKey() ?? current?.token ?? "";
+    }
     let status: EngineInfo["status"] = "starting";
     try {
       status = (await fetch(`${url}/api/health`)).ok ? "running" : "crashed";
+      if (status === "running" && servedByEngine && (!token || (await fetch(`${url}/api/jobs`, { headers: { Authorization: `Bearer ${token}` } })).status === 401)) status = "locked";
     } catch {
       status = "stopped";
     }

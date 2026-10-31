@@ -8,5 +8,7 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**", "**/engine/**"] } },
   envPrefix: ["VITE_", "TAURI_ENV_"],
+  // Relative asset paths, so the same build works in the app and at the engine's /ui/ (`temper serve`).
+  base: "./",
   build: { target: "es2022", sourcemap: !!process.env.TAURI_ENV_DEBUG },
 });

@@ -1,4 +1,5 @@
-export type EngineStatus = "starting" | "running" | "crashed" | "missing_uv" | "stopped" | "needs_setup" | "installing" | "setup_failed";
+/** locked: answering, but this page hasn't got its key (a browser on `temper serve`). */
+export type EngineStatus = "starting" | "running" | "crashed" | "missing_uv" | "stopped" | "needs_setup" | "installing" | "setup_failed" | "locked";
 
 export type SetupProfile = "chat" | "train";
 

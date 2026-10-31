@@ -18,6 +18,7 @@
   "engine.needs_setup": "セットアップが必要",
   "engine.setup_failed": "セットアップに失敗",
   "engine.offline": "エンジン停止中",
+  "engine.locked": "キーが必要です",
   "status.update": "Temper {version} が利用可能です",
   "status.unified": "ユニファイドメモリ",
   "status.gpu_memory": "GPU メモリ",

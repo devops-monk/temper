@@ -26,7 +26,7 @@ export function StatusBar() {
             "size-2 rounded-full",
             status === "running" && "bg-ok",
             (status === "starting" || status === "installing") && "animate-pulse-dot bg-straw",
-            status === "needs_setup" && "bg-straw",
+            (status === "needs_setup" || status === "locked") && "bg-straw",
             (status === "crashed" || status === "missing_uv" || status === "stopped" || status === "setup_failed") && "bg-danger",
           )}
         />
@@ -40,6 +40,7 @@ export function StatusBar() {
             setup_failed: t("engine.setup_failed"),
             crashed: t("engine.offline"),
             stopped: t("engine.offline"),
+            locked: t("engine.locked"),
           }[status]
         }
       </button>

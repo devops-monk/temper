@@ -88,3 +88,22 @@ def test_update_says_whether_theres_a_newer_release(monkeypatch, capsys):
     monkeypatch.setattr(lifecycle, "latest", lambda: {"version": cli.__version__, "notes": "", "url": ""})
     assert cli.main(["update"]) == 0 and "newest release" in capsys.readouterr().out
     assert lifecycle.newer("0.10.0", "0.9.1") and not lifecycle.newer("0.1.0", "0.1.0")
+
+
+def test_the_engine_serves_the_interface_at_ui_but_not_the_api_without_its_key(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from temper_engine.app import create_app
+
+    (tmp_path / "index.html").write_text("<title>Temper</title>")
+    monkeypatch.setenv("TEMPER_UI", str(tmp_path))
+    with TestClient(create_app(token="k")) as c:
+        assert c.get("/ui/").text == "<title>Temper</title>"
+        assert c.get("/api/jobs").status_code == 401
+
+
+def test_serve_prints_a_systemd_service(monkeypatch, capsys):
+    monkeypatch.setattr(cli.getpass, "getuser", lambda: "ops")
+    assert cli.main(["serve", "--systemd", "--host", "0.0.0.0", "--port", "9000"]) == 0
+    unit = capsys.readouterr().out
+    assert "User=ops" in unit and "serve --host 0.0.0.0 --port 9000" in unit and "WantedBy=multi-user.target" in unit and "TEMPER_HOME=" in unit

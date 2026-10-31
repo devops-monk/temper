@@ -43,7 +43,8 @@
     "resources": {
       "../engine/pyproject.toml": "engine/pyproject.toml",
       "../engine/uv.lock": "engine/uv.lock",
-      "../engine/temper_engine/": "engine/temper_engine/"
+      "../engine/temper_engine/": "engine/temper_engine/",
+      "../dist/": "ui/"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"
