@@ -8,6 +8,7 @@ import { MemoryEstimate, type Budget, type Estimate, type Verdict } from "../com
 import { Badge, Button, Field, Input, Notice, PageHeader, ProgressBar, Section, Select, Toggle, cx } from "../components/ui";
 import { api, inTauri } from "../lib/engine";
 import { duration } from "../lib/format";
+import { type Key, useT, withNodes } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import { useJob } from "../lib/useJob";
 import type { Job } from "../lib/types";
@@ -79,27 +80,29 @@ const DEFAULTS: Form = {
 const MLX_DEFAULT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit";
 
 /** What a run learns (engine preference.py for all but the first). */
-const OBJECTIVES = {
-  sft: { label: "Supervised fine-tuning", note: "Learns to write the replies in the data." },
-  dpo: { label: "DPO", note: "Learns which of two replies is better, from rows with a prompt, a chosen and a rejected reply. Stays close to the starting model." },
-  orpo: { label: "ORPO", note: "Fine-tunes on the chosen replies while pushing away from the rejected ones, in one step. Same rows as DPO." },
-  simpo: { label: "SimPO", note: "Compares the two replies' average likelihood, with a margin. Same rows as DPO; uses less memory." },
-  grpo: { label: "GRPO", note: "Writes several replies to each prompt, scores them with your rewards, and favours the ones that beat their group. Rows need a prompt, and usually the expected answer." },
-  dr_grpo: { label: "Dr. GRPO", note: "GRPO without its bias towards long wrong replies and easy questions. Same rows and rewards." },
-  dapo: { label: "DAPO", note: "GRPO that weighs every token equally, so long replies count fully, and skips prompts whose replies all scored the same." },
-  kto: { label: "KTO", note: "Learns from single replies marked good or bad (rows with a prompt, a completion and a true or false label), so no pairs are needed. Pairs work too." },
-} as const;
+const OBJECTIVES: Record<"sft" | "dpo" | "orpo" | "simpo" | "grpo" | "dr_grpo" | "dapo" | "kto", { label: string; note: Key }> = {
+  sft: { label: "SFT", note: "train.o_sft_note" },
+  dpo: { label: "DPO", note: "train.o_dpo_note" },
+  orpo: { label: "ORPO", note: "train.o_orpo_note" },
+  simpo: { label: "SimPO", note: "train.o_simpo_note" },
+  grpo: { label: "GRPO", note: "train.o_grpo_note" },
+  dr_grpo: { label: "Dr. GRPO", note: "train.o_dr_grpo_note" },
+  dapo: { label: "DAPO", note: "train.o_dapo_note" },
+  kto: { label: "KTO", note: "train.o_kto_note" },
+};
+const STATE: Record<string, Key> = { done: "job.done", failed: "job.failed", cancelled: "job.cancelled" };
 const RL: Form["objective"][] = ["grpo", "dr_grpo", "dapo"];
 const SFT_LR = 0.0002;
 const PREFERENCE_LR = 0.00005; // preference objectives move further per step
 const RL_LR = 0.00002; // reinforcement learning: smaller steps keep it from collapsing onto one kind of reply
 const usualLr = (o: Form["objective"]) => (o === "sft" ? SFT_LR : RL.includes(o) ? RL_LR : PREFERENCE_LR);
 
-const METHODS = {
-  qlora: { label: "QLoRA", note: "4-bit base weights plus small adapters. Uses the least memory." },
-  lora: { label: "LoRA", note: "16-bit base weights plus adapters. Slightly better quality, about twice the memory." },
-  full: { label: "Full fine-tune", note: "Updates every weight. Needs a large GPU, or on a Mac a 16-bit model and plenty of memory." },
-} as const;
+/** Labels are names, except the full fine-tune's. */
+const METHODS: Record<Form["method"], { label?: string; note: Key }> = {
+  qlora: { label: "QLoRA", note: "train.m_qlora_note" },
+  lora: { label: "LoRA", note: "train.m_lora_note" },
+  full: { note: "train.m_full_note" },
+};
 
 function NumberField({ label, value, onChange, step, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string }) {
   return (
@@ -120,13 +123,14 @@ function RunPanel({ job }: { job: Job }) {
   const { events, status } = useJob(job.id);
   const refreshJobs = useApp((s) => s.refreshJobs);
   const logRef = useRef<HTMLPreElement>(null);
+  const t = useT();
 
   const { points, last, phase, dataset, logs, totalSteps, val, valReward, samples, best } = useMemo(() => {
     const points: { step: number; loss: number }[] = [];
     let val: { step: number; val_loss: number; val_accuracy?: number } | null = null;
     let valReward: { step: number; reward: number } | null = null;
     let last: Record<string, number> | null = null;
-    let phase = "Starting worker";
+    let phase = t("train.starting_worker");
     let totalSteps: number | null = null;
     let dataset: Record<string, unknown> | null = null;
     let best: Best | null = null;
@@ -147,10 +151,10 @@ function RunPanel({ job }: { job: Job }) {
       else if (ev.event === "sample") samples.push(ev as unknown as Sample);
       else if (ev.event === "best") best = ev as unknown as Best;
       else if (ev.event === "log") logs.push(ev.line as string);
-      else if (ev.event === "error") logs.push(`Error: ${ev.message}`);
+      else if (ev.event === "error") logs.push(t("train.error", { message: String(ev.message) }));
     }
     return { points, last, phase, dataset, logs: logs.slice(-400), totalSteps, val, valReward, samples, best };
-  }, [events]);
+  }, [events, t]);
 
   useEffect(() => {
     const el = logRef.current;
@@ -166,15 +170,15 @@ function RunPanel({ job }: { job: Job }) {
         <div className="min-w-0">
           <h2 className="truncate font-semibold">{job.title}</h2>
           <p className="text-[13px] text-muted">
-            {state === "running" ? phase : state === "done" ? "Finished. Export it from the Export page." : state === "failed" ? "Training failed" : "Stopped"}
+            {state === "running" ? phase : t(state === "done" ? "train.finished" : state === "failed" ? "train.failed" : "train.stopped")}
           </p>
         </div>
         {state === "running" ? (
           <Button size="sm" variant="danger" onClick={async () => { await api(`/api/jobs/${job.id}/cancel`, { method: "POST" }); void refreshJobs(); }}>
-            <Square className="size-3 fill-current" /> Stop
+            <Square className="size-3 fill-current" /> {t("train.stop")}
           </Button>
         ) : (
-          <Badge tone={state === "done" ? "ok" : "neutral"}>{state}</Badge>
+          <Badge tone={state === "done" ? "ok" : "neutral"}>{state in STATE ? t(STATE[state]) : state}</Badge>
         )}
       </div>
 
@@ -182,16 +186,16 @@ function RunPanel({ job }: { job: Job }) {
 
       <dl className="grid grid-cols-4 gap-3">
         {[
-          ["Step", last ? `${last.step} / ${totalSteps ?? "?"}` : "–"],
-          last?.reward != null ? ["Reward", last.reward.toFixed(2)] : ["Loss", last?.loss != null ? last.loss.toFixed(4) : "–"],
+          [t("train.step"), last ? `${last.step} / ${totalSteps ?? "?"}` : "–"],
+          last?.reward != null ? [t("train.reward"), last.reward.toFixed(2)] : [t("train.loss"), last?.loss != null ? last.loss.toFixed(4) : "–"],
           last?.completion_length != null
-            ? ["Reply length", `${Math.round(last.completion_length)} tokens`]
+            ? [t("train.reply_length"), t("train.tokens_n", { n: Math.round(last.completion_length) })]
             : last?.reward_accuracy != null
-            ? ["Prefers chosen", `${Math.round(last.reward_accuracy * 100)}%`]
+            ? [t("train.prefers_chosen"), `${Math.round(last.reward_accuracy * 100)}%`]
             : last?.lr != null
-              ? ["Learning rate", last.lr.toExponential(2)]
-              : ["Tokens/s", last?.tokens_per_sec != null ? Math.round(last.tokens_per_sec).toString() : "–"],
-          ["Time left", state === "running" ? duration(last?.eta) : "–"],
+              ? [t("train.learning_rate"), last.lr.toExponential(2)]
+              : [t("train.tokens_per_sec"), last?.tokens_per_sec != null ? Math.round(last.tokens_per_sec).toString() : "–"],
+          [t("train.time_left"), state === "running" ? duration(last?.eta) : "–"],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-line bg-surface px-3 py-2">
             <dt className="text-[12px] text-muted">{k}</dt>
@@ -204,19 +208,19 @@ function RunPanel({ job }: { job: Job }) {
         <LossChart points={points} totalSteps={totalSteps} what={last?.reward != null ? "reward" : "loss"} />
         {valReward && (
           <p className="mt-1 text-[12.5px] text-muted">
-            Average reward on held-out prompts {valReward.reward.toFixed(2)} at step {valReward.step}
+            {t("train.val_reward", { reward: valReward.reward.toFixed(2), step: valReward.step })}
           </p>
         )}
         {val && (
           <p className="mt-1 text-[12.5px] text-muted">
-            Validation loss {val.val_loss.toFixed(3)} at step {val.step}
-            {val.val_accuracy != null && `; prefers the chosen reply in ${Math.round(val.val_accuracy * 100)}% of held-out pairs`}
+            {t("train.val_loss", { loss: val.val_loss.toFixed(3), step: val.step })}
+            {val.val_accuracy != null && t("train.val_accuracy", { percent: Math.round(val.val_accuracy * 100) })}
           </p>
         )}
         {best && (
           <p className="mt-1 text-[12.5px]">
-            {best.stopped_at ? `Stopped early at step ${best.stopped_at}: validation loss had stopped improving. ` : ""}
-            Kept the adapter from step {best.step} (validation loss {best.val_loss.toFixed(3)}).
+            {best.stopped_at ? `${t("train.stopped_early", { step: best.stopped_at })} ` : ""}
+            {t("train.kept_best", { step: best.step, loss: best.val_loss.toFixed(3) })}
           </p>
         )}
       </div>
@@ -228,14 +232,14 @@ function RunPanel({ job }: { job: Job }) {
       {dataset && (
         <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[13px]">
           <summary className="cursor-pointer">
-            {String(dataset.rows)} rows, {String(dataset.format)} format. Show the first sample as the model sees it.
+            {t("train.dataset_summary", { rows: String(dataset.rows), format: String(dataset.format) })}
           </summary>
           <pre className="mt-2 max-h-60 overflow-auto font-mono text-[12px] whitespace-pre-wrap text-muted">{String(dataset.sample)}</pre>
         </details>
       )}
 
       <pre ref={logRef} className="h-56 overflow-auto rounded-lg border border-line bg-surface-2 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-muted">
-        {logs.length ? logs.join("\n") : "Worker output appears here."}
+        {logs.length ? logs.join("\n") : t("train.worker_output")}
       </pre>
     </div>
   );
@@ -258,6 +262,7 @@ function useTrainEstimate(form: Form, enabled: boolean) {
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const t = useT();
   const { base_model, method, lora_r, max_seq_length } = form;
   // A preference pair is two sequences, chosen and rejected.
   const batch_size = form.batch_size * (form.objective === "sft" ? 1 : 2);
@@ -268,7 +273,7 @@ function useTrainEstimate(form: Form, enabled: boolean) {
       return;
     }
     let stale = false;
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       setLoading(true);
       setError(null);
       try {
@@ -281,10 +286,10 @@ function useTrainEstimate(form: Form, enabled: boolean) {
           advice: e.advice,
           measured: e.measured,
           parts: [
-            ["Model weights", e.weights],
-            ["Activations", e.activations],
-            [method === "full" ? "Gradients and optimizer" : "Adapters and optimizer", e.adapters_and_optimizer],
-            ["Runtime", e.overhead],
+            [t("train.mem_weights"), e.weights],
+            [t("train.mem_activations"), e.activations],
+            [t(method === "full" ? "train.mem_grads" : "train.mem_adapters"), e.adapters_and_optimizer],
+            [t("train.mem_runtime"), e.overhead],
           ],
         });
       } catch (e) {
@@ -297,9 +302,9 @@ function useTrainEstimate(form: Form, enabled: boolean) {
     }, 600);
     return () => {
       stale = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
-  }, [enabled, base_model, method, lora_r, batch_size, max_seq_length]);
+  }, [enabled, base_model, method, lora_r, batch_size, max_seq_length, t]);
 
   return { estimate, error, loading };
 }
@@ -335,13 +340,14 @@ type Mode = "lm" | "classifier" | "embedder";
 
 /** What the Train page trains: a language model (LoRA and the rest), a classifier (Classifiers.tsx) or an embedding model (Embedders.tsx). */
 function ModeSwitch({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  const t = useT();
   return (
-    <div className="flex rounded-md border border-line p-0.5 text-[12.5px]" role="tablist" aria-label="What to train">
+    <div className="flex rounded-md border border-line p-0.5 text-[12.5px]" role="tablist" aria-label={t("train.what")}>
       {(
         [
-          ["lm", "Language model"],
-          ["classifier", "Classifier"],
-          ["embedder", "Embeddings"],
+          ["lm", t("train.mode_lm")],
+          ["classifier", t("train.mode_classifier")],
+          ["embedder", t("train.mode_embedder")],
         ] as const
       ).map(([key, label]) => (
         <button
@@ -359,6 +365,7 @@ function ModeSwitch({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 }
 
 export function TrainPage() {
+  const t = useT();
   const [mode, setMode] = useState<Mode>("lm");
   const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, pendingBaseModel, setPendingBaseModel, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
@@ -403,7 +410,7 @@ export function TrainPage() {
   const finished = trainJobs.filter((j) => j.status !== "running").length;
 
   async function start() {
-    if (memory.estimate?.verdict === "too_large" && !confirm("This run probably needs more memory than this computer has, and may fail or slow your computer to a crawl. Start anyway?")) return;
+    if (memory.estimate?.verdict === "too_large" && !confirm(t("train.too_large_confirm"))) return;
     setError(null);
     setStarting(true);
     try {
@@ -420,21 +427,21 @@ export function TrainPage() {
   async function browse() {
     if (!inTauri) return;
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const file = await open({ filters: [{ name: "Datasets", extensions: ["jsonl", "json", "csv", "parquet"] }] });
+    const file = await open({ filters: [{ name: t("train.datasets"), extensions: ["jsonl", "json", "csv", "parquet"] }] });
     if (typeof file === "string") set("dataset")(file);
   }
 
   if (mode === "classifier")
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Train" description="Teach a small model to sort text into your labels, from examples. It answers in milliseconds." actions={<ModeSwitch mode={mode} onChange={setMode} />} />
+        <PageHeader title={t("nav.train")} description={t("train.classifier_description")} actions={<ModeSwitch mode={mode} onChange={setMode} />} />
         <Classifiers />
       </div>
     );
   if (mode === "embedder")
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Train" description="Tune an embedding model on pairs from your data, so search finds what you mean." actions={<ModeSwitch mode={mode} onChange={setMode} />} />
+        <PageHeader title={t("nav.train")} description={t("train.embedder_description")} actions={<ModeSwitch mode={mode} onChange={setMode} />} />
         <Embedders />
       </div>
     );
@@ -442,13 +449,13 @@ export function TrainPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Train"
-        description="Fine-tune a model on your own data with LoRA adapters."
+        title={t("nav.train")}
+        description={t("train.description")}
         actions={
           <div className="flex items-center gap-3">
             <ModeSwitch mode={mode} onChange={setMode} />
             <Button variant="primary" onClick={start} disabled={!trainer || running || starting}>
-              <Play className="size-4" /> {starting ? "Starting…" : "Start training"}
+              <Play className="size-4" /> {starting ? t("train.starting") : t("train.start")}
             </Button>
           </div>
         }
@@ -459,75 +466,75 @@ export function TrainPage() {
             <div className="pt-5">
               <Notice>
                 {system.backend === "cpu" ? (
-                  <>No supported GPU was found. Training needs an NVIDIA, AMD or Intel GPU, or an Apple Silicon Mac.</>
+                  t("train.no_gpu")
                 ) : (
-                  <>
-                    Training support isn't installed yet.{" "}
-                    <button className="font-medium text-accent hover:underline" onClick={() => go("settings")}>
-                      Add it in Settings
-                    </button>
-                    .
-                  </>
+                  withNodes(t("train.not_installed"), {
+                    link: (
+                      <button className="font-medium text-accent hover:underline" onClick={() => go("settings")}>
+                        {t("train.add_in_settings")}
+                      </button>
+                    ),
+                  })
                 )}
               </Notice>
             </div>
           )}
-          <Section title="Model" aside={trainer && <Badge tone="accent">{trainer === "mlx" ? "MLX" : "PyTorch"}</Badge>}>
+          <Section title={t("train.model")} aside={trainer && <Badge tone="accent">{trainer === "mlx" ? "MLX" : "PyTorch"}</Badge>}>
             <div className="flex flex-col gap-3">
-              <Field label="Base model" hint="A Hugging Face repo id or a local folder.">
+              <Field label={t("train.base_model")} hint={t("train.base_model_hint")}>
                 <Input value={form.base_model} onChange={(e) => set("base_model")(e.target.value)} spellCheck={false} />
               </Field>
-              <Field label="Run name" hint="Optional. Shown in your run list.">
+              <Field label={t("train.run_name")} hint={t("train.run_name_hint")}>
                 <Input value={form.name} onChange={(e) => set("name")(e.target.value)} placeholder="support-bot-v1" />
               </Field>
             </div>
           </Section>
 
-          <Section title="Data">
+          <Section title={t("train.data")}>
             <div className="flex flex-col gap-3">
-              <Field label="Dataset" hint="A Hugging Face dataset id, a .jsonl, .json or .csv file, or a web address of one (https://, or a public s3:// or gs:// file).">
+              <Field label={t("train.dataset")} hint={t("train.dataset_hint")}>
                 <div className="flex gap-2">
                   <Input value={form.dataset} onChange={(e) => set("dataset")(e.target.value)} spellCheck={false} />
                   {inTauri && (
-                    <Button onClick={browse} aria-label="Choose a file" className="px-2.5">
+                    <Button onClick={browse} aria-label={t("train.choose_file")} className="px-2.5">
                       <FolderOpen className="size-4" />
                     </Button>
                   )}
                 </div>
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Format">
+                <Field label={t("train.format")}>
                   <Select value={form.dataset_format} onChange={(e) => set("dataset_format")(e.target.value as Form["dataset_format"])}>
-                    <option value="auto">Auto-detect</option>
-                    <option value="messages">OpenAI messages</option>
+                    <option value="auto">{t("train.auto")}</option>
+                    <option value="messages">{t("datasets.f_messages")}</option>
                     <option value="sharegpt">ShareGPT</option>
                     <option value="alpaca">Alpaca</option>
-                    <option value="text">Plain text</option>
+                    <option value="text">{t("datasets.f_text")}</option>
                   </Select>
                 </Field>
-                <NumberField label="Max rows" value={form.max_samples} onChange={set("max_samples")} />
+                <NumberField label={t("train.max_rows")} value={form.max_samples} onChange={set("max_samples")} />
               </div>
               {!/^[~/]/.test(form.dataset) && !/^[A-Za-z]:\\/.test(form.dataset) && !/^(https?|s3|gs):\/\//i.test(form.dataset) && (
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Subset" hint="Only for datasets with several.">
+                  <Field label={t("datasets.subset")} hint={t("train.subset_hint")}>
                     <Input value={form.dataset_config} onChange={(e) => set("dataset_config")(e.target.value)} placeholder="default" spellCheck={false} />
                   </Field>
-                  <Field label="Split">
+                  <Field label={t("datasets.split")}>
                     <Input value={form.dataset_split} onChange={(e) => set("dataset_split")(e.target.value)} spellCheck={false} />
                   </Field>
                 </div>
               )}
               {trainer && form.dataset.trim() && (
                 <button className="self-start text-[12.5px] text-muted hover:text-text" onClick={() => setTokens(true)}>
-                  See a row as the model sees it, token by token
+                  {t("train.see_tokens")}
                 </button>
               )}
             </div>
           </Section>
 
-          <Section title="Method">
+          <Section title={t("train.method")}>
             <div className="flex flex-col gap-2" role="radiogroup">
-              <Field label="Objective" hint={OBJECTIVES[form.objective].note}>
+              <Field label={t("train.objective")} hint={t(OBJECTIVES[form.objective].note)}>
                 <Select
                   value={form.objective}
                   onChange={(e) => {
@@ -538,12 +545,12 @@ export function TrainPage() {
                 >
                   {(Object.keys(OBJECTIVES) as Form["objective"][]).map((o) => (
                     <option key={o} value={o}>
-                      {o === "sft" ? OBJECTIVES[o].label : `${RL.includes(o) ? "Reinforcement" : "Preference"}: ${OBJECTIVES[o].label}`}
+                      {o === "sft" ? t("train.o_sft") : t(RL.includes(o) ? "train.rl_obj" : "train.pref_obj", { name: OBJECTIVES[o].label })}
                     </option>
                   ))}
                 </Select>
               </Field>
-              {(Object.keys(METHODS) as (keyof typeof METHODS)[]).map((m) => (
+              {(Object.keys(METHODS) as Form["method"][]).map((m) => (
                 <button
                   key={m}
                   role="radio"
@@ -551,66 +558,66 @@ export function TrainPage() {
                   onClick={() => set("method")(m)}
                   className={cx("rounded-lg border px-3 py-2 text-left transition-colors", form.method === m ? "border-accent bg-accent/6" : "border-line bg-surface hover:bg-surface-2")}
                 >
-                  <span className="font-medium">{METHODS[m].label}</span>
-                  <span className="block text-[12.5px] text-muted">{METHODS[m].note}</span>
+                  <span className="font-medium">{METHODS[m].label ?? t("train.m_full")}</span>
+                  <span className="block text-[12.5px] text-muted">{t(METHODS[m].note)}</span>
                 </button>
               ))}
               {form.objective === "sft" && (
                 <>
-                  <Toggle label="Also train the embeddings and output head" checked={form.train_embeddings} onChange={set("train_embeddings")} />
+                  <Toggle label={t("train.train_embeddings")} checked={form.train_embeddings} onChange={set("train_embeddings")} />
                   <p className="-mt-1.5 text-[12px] text-muted">
-                    For continued pretraining on new words or a new language. Needs a 16-bit model, and more memory.
+                    {t("train.train_embeddings_hint")}
                   </p>
                 </>
               )}
-              {form.objective !== "sft" && form.method === "full" && <Notice>{RL.includes(form.objective) ? "Reinforcement learning" : "Preference training"} trains adapters: choose QLoRA or LoRA.</Notice>}
+              {form.objective !== "sft" && form.method === "full" && <Notice>{t(RL.includes(form.objective) ? "train.rl_adapters" : "train.pref_adapters")}</Notice>}
               {RL.includes(form.objective) && <Rewards form={form} set={set} />}
               <ChatTemplate value={form.chat_template} onChange={set("chat_template")} />
             </div>
           </Section>
 
           <Section
-            title="Hyperparameters"
+            title={t("train.hyperparameters")}
             aside={
               trainer &&
               (autoFit ? (
-                fitted && <span className="text-[12px] text-muted" title="Context length, LoRA rank and batch size are chosen to fit this computer's memory">Fitted to this computer</span>
+                fitted && <span className="text-[12px] text-muted" title={t("train.fitted_title")}>{t("train.fitted")}</span>
               ) : (
                 <button className="text-[12px] text-muted hover:text-text" onClick={() => setAutoFit(true)}>
-                  Fit to this computer
+                  {t("train.fit")}
                 </button>
               ))
             }
           >
             <div className="grid grid-cols-2 gap-3">
-              <NumberField label="Max steps" value={form.max_steps} onChange={set("max_steps")} hint="0 = full epochs" />
-              <NumberField label="Epochs" value={form.epochs} onChange={set("epochs")} step={0.5} />
-              <NumberField label="Learning rate" value={form.learning_rate} onChange={set("learning_rate")} step={0.00005} />
-              <NumberField label="Context length" value={form.max_seq_length} onChange={setByHand("max_seq_length")} step={256} />
-              <NumberField label="Batch size" value={form.batch_size} onChange={setByHand("batch_size")} />
-              <NumberField label="Grad accumulation" value={form.grad_accum} onChange={setByHand("grad_accum")} />
+              <NumberField label={t("train.max_steps")} value={form.max_steps} onChange={set("max_steps")} hint={t("train.max_steps_hint")} />
+              <NumberField label={t("train.epochs")} value={form.epochs} onChange={set("epochs")} step={0.5} />
+              <NumberField label={t("train.learning_rate")} value={form.learning_rate} onChange={set("learning_rate")} step={0.00005} />
+              <NumberField label={t("train.context_length")} value={form.max_seq_length} onChange={setByHand("max_seq_length")} step={256} />
+              <NumberField label={t("train.batch_size")} value={form.batch_size} onChange={setByHand("batch_size")} />
+              <NumberField label={t("train.grad_accum")} value={form.grad_accum} onChange={setByHand("grad_accum")} />
               {form.method !== "full" && (
                 <>
-                  <NumberField label="LoRA rank" value={form.lora_r} onChange={setByHand("lora_r")} />
-                  <NumberField label="LoRA alpha" value={form.lora_alpha} onChange={setByHand("lora_alpha")} />
+                  <NumberField label={t("train.lora_rank")} value={form.lora_r} onChange={setByHand("lora_r")} />
+                  <NumberField label={t("train.lora_alpha")} value={form.lora_alpha} onChange={setByHand("lora_alpha")} />
                 </>
               )}
-              <NumberField label="Warmup steps" value={form.warmup_steps} onChange={set("warmup_steps")} />
+              <NumberField label={t("train.warmup")} value={form.warmup_steps} onChange={set("warmup_steps")} />
             </div>
           </Section>
 
           {form.objective === "sft" && (
-          <Section title="Evaluation">
+          <Section title={t("train.evaluation")}>
             <div className="flex flex-col gap-2.5">
-              <Toggle label="Show sample replies while training" checked={form.sample_replies} onChange={set("sample_replies")} />
-              <p className="-mt-1.5 text-[12px] text-muted">At each evaluation the model answers two held-out prompts, so you can watch its replies change.</p>
-              <Toggle label="Stop early when validation loss stops improving" checked={form.early_stopping} onChange={set("early_stopping")} />
-              <p className="-mt-1.5 text-[12px] text-muted">Stops after three evaluations without improvement, and keeps the adapter from the best one.</p>
+              <Toggle label={t("train.sample_replies")} checked={form.sample_replies} onChange={set("sample_replies")} />
+              <p className="-mt-1.5 text-[12px] text-muted">{t("train.sample_replies_hint")}</p>
+              <Toggle label={t("train.early_stopping")} checked={form.early_stopping} onChange={set("early_stopping")} />
+              <p className="-mt-1.5 text-[12px] text-muted">{t("train.early_stopping_hint")}</p>
             </div>
           </Section>
           )}
           {trainer && (
-            <Section title="Memory">
+            <Section title={t("train.memory")}>
               {memory.error ? <p className="text-[13px] text-muted">{memory.error}</p> : <MemoryEstimate estimate={memory.estimate} loading={memory.loading} />}
             </Section>
           )}
@@ -641,9 +648,9 @@ export function TrainPage() {
           ) : (
             <div className="flex min-h-[50%] flex-col items-center justify-center text-center">
               <div className="bg-temper mb-5 h-1.5 w-40 rounded-full opacity-80" />
-              <p className="font-semibold">Ready to train</p>
+              <p className="font-semibold">{t("train.ready")}</p>
               <p className="mt-1 max-w-[46ch] text-muted">
-                The defaults train a small instruct model for 60 steps, a few minutes on most GPUs. Change anything on the left, then start training.
+                {t("train.ready_hint")}
               </p>
             </div>
           )}
@@ -666,25 +673,24 @@ const OWN_TEMPLATE = "{% for message in messages %}<|{{ message['role'] }}|>\n{{
 
 /** The chat template a run renders conversations with: the model's own, a named one, or Jinja of your own (engine chat_render.py). */
 function ChatTemplate({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
   const [templates, setTemplates] = useState<Template[]>([]);
   useEffect(() => void api<Template[]>("/api/train/templates").then(setTemplates, () => {}), []);
-  const named = templates.find((t) => t.id === value);
+  const named = templates.find((x) => x.id === value);
   const custom = value !== "" && !named && templates.length > 0;
   const hint = named
-    ? `${named.about} Chatting with the run and its exports use it too.`
-    : custom
-      ? "Jinja, as in a tokenizer_config.json: it gets messages (each with role and content), add_generation_prompt, bos_token and eos_token."
-      : "The model's own. Choose another to train a base model on conversations, or to change the format a model answers in.";
+    ? t("train.template_used", { about: named.about })
+    : t(custom ? "train.template_custom" : "train.template_own");
   return (
-    <Field label="Chat template" hint={hint}>
-      <Select value={custom ? "custom" : value} onChange={(e) => onChange(e.target.value === "custom" ? OWN_TEMPLATE : e.target.value)} aria-label="Chat template">
-        <option value="">The model&apos;s own</option>
-        {templates.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.label}
+    <Field label={t("train.chat_template")} hint={hint}>
+      <Select value={custom ? "custom" : value} onChange={(e) => onChange(e.target.value === "custom" ? OWN_TEMPLATE : e.target.value)} aria-label={t("train.chat_template")}>
+        <option value="">{t("train.model_own")}</option>
+        {templates.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.label}
           </option>
         ))}
-        <option value="custom">Your own…</option>
+        <option value="custom">{t("train.your_own")}</option>
       </Select>
       {custom && (
         <textarea
@@ -692,7 +698,7 @@ function ChatTemplate({ value, onChange }: { value: string; onChange: (v: string
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
           rows={5}
-          aria-label="Your chat template"
+          aria-label={t("train.your_template")}
           className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-[12px] text-text [font-variant-ligatures:none] focus:border-accent focus:outline-none"
         />
       )}
@@ -700,10 +706,10 @@ function ChatTemplate({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
-const REWARDS = [
-  { id: "answer", label: "Correct answer", note: "1 when the reply's final answer (the last number, a \\boxed{} or what follows \"Answer:\") matches the row's answer or solution column." },
-  { id: "format", label: "Format", note: "1 when the reply matches a regular expression." },
-  { id: "python", label: "Your own function", note: "Python that scores each reply." },
+const REWARDS: { id: string; label: Key; note: Key }[] = [
+  { id: "answer", label: "train.r_answer", note: "train.r_answer_note" },
+  { id: "format", label: "train.r_format", note: "train.r_format_note" },
+  { id: "python", label: "train.r_python", note: "train.r_python_note" },
 ];
 
 const REWARD_STARTER = `def reward(prompt, completion, row):
@@ -716,24 +722,25 @@ const REWARD_STARTER = `def reward(prompt, completion, row):
 
 /** What reinforcement learning rewards, and how many replies it compares (engine rewards.py). */
 function Rewards({ form, set }: { form: Form; set: <K extends keyof Form>(k: K) => (v: Form[K]) => void }) {
+  const t = useT();
   const toggle = (id: string, on: boolean) => {
     set("rewards")(on ? [...form.rewards, id] : form.rewards.filter((r) => r !== id));
     if (on && id === "python" && !form.reward_code) set("reward_code")(REWARD_STARTER);
   };
   return (
     <div className="mt-1 flex flex-col gap-2 rounded-lg border border-line bg-surface px-3 py-2.5">
-      <span className="text-[12.5px] font-medium">Rewards, added together</span>
+      <span className="text-[12.5px] font-medium">{t("train.rewards")}</span>
       {REWARDS.map((r) => (
         <div key={r.id}>
           <label className="flex items-start gap-2 text-[13px]">
             <input type="checkbox" className="mt-1 accent-[var(--accent)]" checked={form.rewards.includes(r.id)} onChange={(e) => toggle(r.id, e.target.checked)} />
             <span>
-              {r.label}
-              <span className="block text-[12px] text-muted">{r.note}</span>
+              {t(r.label)}
+              <span className="block text-[12px] text-muted">{t(r.note)}</span>
             </span>
           </label>
           {r.id === "format" && form.rewards.includes("format") && (
-            <Input className="mt-1.5 font-mono text-[12px]" value={form.reward_pattern} onChange={(e) => set("reward_pattern")(e.target.value)} placeholder="Answer: *-?\d+" spellCheck={false} aria-label="Format pattern" />
+            <Input className="mt-1.5 font-mono text-[12px]" value={form.reward_pattern} onChange={(e) => set("reward_pattern")(e.target.value)} placeholder="Answer: *-?\d+" spellCheck={false} aria-label={t("train.format_pattern")} />
           )}
           {r.id === "python" && form.rewards.includes("python") && (
             <textarea
@@ -741,15 +748,15 @@ function Rewards({ form, set }: { form: Form; set: <K extends keyof Form>(k: K) 
               onChange={(e) => set("reward_code")(e.target.value)}
               spellCheck={false}
               rows={7}
-              aria-label="Reward function"
+              aria-label={t("train.reward_function")}
               className="mt-1.5 w-full rounded-md border border-line bg-surface-2 px-3 py-2 font-mono text-[12px] text-text [font-variant-ligatures:none] focus:border-accent focus:outline-none"
             />
           )}
         </div>
       ))}
       <div className="grid grid-cols-2 gap-3">
-        <NumberField label="Replies per prompt" value={form.generations} onChange={set("generations")} hint="Compared with each other" />
-        <NumberField label="Reply limit" value={form.max_completion_length} onChange={set("max_completion_length")} step={64} hint="Tokens" />
+        <NumberField label={t("train.generations")} value={form.generations} onChange={set("generations")} hint={t("train.generations_hint")} />
+        <NumberField label={t("train.reply_limit")} value={form.max_completion_length} onChange={set("max_completion_length")} step={64} hint={t("train.reply_limit_hint")} />
       </div>
     </div>
   );
