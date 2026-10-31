@@ -85,13 +85,13 @@ def _ask(args: dict) -> Any:
 
 
 def _decide(args: dict) -> Any:
-    from .decisions import Decision, decide, get
+    from .decisions import Decision, _run, get
 
     if args.get("saved"):
         d = get(str(args["saved"]))
     else:
         d = Decision(**{k: args[k] for k in ("question", "kind", "choices", "scale", "instructions", "model") if args.get(k) is not None})
-    return decide(d, args.get("text"))
+    return _run(d, args.get("text"), None)
 
 
 def _jobs(args: dict) -> Any:

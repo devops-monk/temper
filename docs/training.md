@@ -69,3 +69,33 @@ On a Mac it needs the 16-bit version of the model.
 The same settings work from a YAML file with `temper train` (see [Command line](cli.md)).
 
 Next: [export what you trained](export.md).
+
+## Classifiers
+
+Not every job needs a chat model. To sort text into labels you choose (billing, bug or feature; spam or
+not; positive, neutral or negative), train a **classifier**: *Train → Classifier*. It learns from a file
+of examples and then answers in a few milliseconds, with how sure it is of each label.
+
+- **Examples**: a CSV, JSON or JSONL file with a column of text and a column of labels. Temper finds them by
+  name (`text`, `message`, `content`… and `label`, `category`, `class`…), or you pick them. A dozen examples
+  of each label is a good start; every label needs at least two.
+- **How it works**: a small sentence encoder turns each text into a vector, and a classification head learns
+  your labels from those vectors. On a Mac this takes seconds. *Tune the encoder* first adjusts the encoder
+  on pairs of your examples (the SetFit recipe), which helps most when there are only a few per label.
+- **Encoders**: MiniLM L6 (English, 87 MB, the default), BGE small (English), and Multilingual MiniLM (over 50
+  languages).
+- **How it did**: a fifth of each label is held out (or a prepared dataset's evaluation file is used), and
+  the classifier's row shows its accuracy, precision and recall per label, which labels it confused, and
+  the examples it got wrong.
+
+The first time, Temper installs PyTorch and sentence-transformers into their own environment (about 1 GB).
+
+Use one from your code at `POST /v1/classifiers/<name>` with `{"text": "..."}` (or `"texts"`), or make it
+answer a saved decision on *Connect → Decisions* (see [Decisions](connect.md#decisions)). From a terminal:
+
+```bash
+temper classify --install
+temper classify train tickets examples.csv [--text message --label team] [--tune]
+temper classify tickets "I was charged twice"      # billing  (92%)
+temper classify tickets < inbox.txt                 # one answer per line
+```

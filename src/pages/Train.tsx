@@ -11,6 +11,7 @@ import { duration } from "../lib/format";
 import { useApp } from "../lib/store";
 import { useJob } from "../lib/useJob";
 import type { Job } from "../lib/types";
+import { Classifiers } from "./Classifiers";
 
 interface Form {
   name: string;
@@ -299,7 +300,32 @@ function useFit(base_model: string, method: Form["method"], objective: Form["obj
   return { autoFit, setAutoFit, fitted: fitted === `${base_model} ${method} ${objective}` };
 }
 
+/** What the Train page trains: a language model (LoRA and the rest), or a classifier (Classifiers.tsx). */
+function ModeSwitch({ mode, onChange }: { mode: "lm" | "classifier"; onChange: (m: "lm" | "classifier") => void }) {
+  return (
+    <div className="flex rounded-md border border-line p-0.5 text-[12.5px]" role="tablist" aria-label="What to train">
+      {(
+        [
+          ["lm", "Language model"],
+          ["classifier", "Classifier"],
+        ] as const
+      ).map(([key, label]) => (
+        <button
+          key={key}
+          role="tab"
+          aria-selected={mode === key}
+          onClick={() => onChange(key)}
+          className={cx("rounded px-2.5 py-1 font-medium", mode === key ? "bg-surface text-text shadow-[0_0_0_1px_var(--line)]" : "text-muted hover:text-text")}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function TrainPage() {
+  const [mode, setMode] = useState<"lm" | "classifier">("lm");
   const { system, jobs, refreshJobs, pendingDataset, setPendingDataset, pendingBaseModel, setPendingBaseModel, go } = useApp();
   const trainer = system?.capabilities.trainer ?? null;
   const [form, setForm] = useState<Form>(() => ({ ...DEFAULTS, base_model: system?.backend === "metal" ? MLX_DEFAULT_MODEL : DEFAULTS.base_model }));
@@ -364,15 +390,26 @@ export function TrainPage() {
     if (typeof file === "string") set("dataset")(file);
   }
 
+  if (mode === "classifier")
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PageHeader title="Train" description="Teach a small model to sort text into your labels, from examples. It answers in milliseconds." actions={<ModeSwitch mode={mode} onChange={setMode} />} />
+        <Classifiers />
+      </div>
+    );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Train"
         description="Fine-tune a model on your own data with LoRA adapters."
         actions={
-          <Button variant="primary" onClick={start} disabled={!trainer || running || starting}>
-            <Play className="size-4" /> {starting ? "Starting…" : "Start training"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <ModeSwitch mode={mode} onChange={setMode} />
+            <Button variant="primary" onClick={start} disabled={!trainer || running || starting}>
+              <Play className="size-4" /> {starting ? "Starting…" : "Start training"}
+            </Button>
+          </div>
         }
       />
       <div className="flex min-h-0 flex-1">

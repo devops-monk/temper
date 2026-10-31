@@ -111,7 +111,7 @@ def separate(req: Separate):
     job = registry.create("stems", f"Separate {source.name}")
     job.progress = 0.0
     env = {**os.environ, "HF_HUB_OFFLINE": "1"}
-    registry.run_command(job, [python(), "-u", str(WORKER), str(source), str(out)], env=env)
+    registry.run_command(job, [python(), "-I", "-u", str(WORKER), str(source), str(out)], env=env)
     return job.summary()
 
 

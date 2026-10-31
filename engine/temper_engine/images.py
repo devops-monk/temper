@@ -78,7 +78,7 @@ def status() -> dict:
             "models": [{k: v for k, v in m.items() if k != "patterns"} | {"downloaded": model_folder(m["id"]) is not None} for m in MODELS]}
 
 
-worker = Worker("image", lambda: [python(), "-u", str(WORKER)])
+worker = Worker("image", lambda: [python(), "-I", "-u", str(WORKER)])
 
 
 # --- The gallery -------------------------------------------------------------------------------------

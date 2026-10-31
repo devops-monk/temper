@@ -129,6 +129,17 @@ temper decide --list
 
 See [Decisions](connect.md#decisions).
 
+## Classifiers
+
+```bash
+temper classify --install [--encoder BAAI/bge-small-en-v1.5]
+temper classify train <name> examples.csv [--text C] [--label C] [--tune] [--hold-out 0.2]
+temper classify <name> "text"            # or one text per line on standard input; --json
+temper classify --list | <name> --delete
+```
+
+See [Classifiers](training.md#classifiers).
+
 ## Images
 
 ```bash

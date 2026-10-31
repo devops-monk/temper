@@ -57,7 +57,7 @@ def model_folder() -> str | None:
     return next((str(s) for s in found if all((s / f).is_file() for f in FILES)), None)
 
 
-worker = Worker("voice", lambda: [python(), "-u", str(WORKER), model_folder()])
+worker = Worker("voice", lambda: [python(), "-I", "-u", str(WORKER), model_folder()])
 _voices: list[str] = []
 
 

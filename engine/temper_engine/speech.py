@@ -174,7 +174,9 @@ class Worker:
                 self.stop()
 
 
-worker = Worker("speech", lambda: [python(), "-u", str(WORKER), BACKEND])
+# Workers run by path with -I: otherwise Python puts temper_engine/ first on sys.path, and its modules
+# (datasets.py, tools.py, search.py...) would shadow the packages of the same name in the worker's environment.
+worker = Worker("speech", lambda: [python(), "-I", "-u", str(WORKER), BACKEND])
 
 
 def transcribe(audio: str, model: str | None = None, language: str | None = None, task: str = "transcribe", prompt: str | None = None, on_segment=None) -> dict:

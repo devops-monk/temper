@@ -15,6 +15,7 @@ interface Decision {
   scale: [number, number];
   instructions: string | null;
   model: string | null;
+  classifier: string | null;
 }
 
 interface Answer {
@@ -31,7 +32,7 @@ const KINDS: [Kind, string][] = [
 ];
 const KIND_LABEL = Object.fromEntries(KINDS) as Record<Kind, string>;
 
-const BLANK = { name: "", question: "", kind: "yes_no" as Kind, choices: "", low: 1, high: 10, instructions: "" };
+const BLANK = { name: "", question: "", kind: "yes_no" as Kind, choices: "", low: 1, high: 10, instructions: "", classifier: "" };
 
 function shown(a: Answer["answer"]) {
   return a === true ? "Yes" : a === false ? "No" : Array.isArray(a) ? a.join(", ") || "None" : String(a);
@@ -46,8 +47,11 @@ export function Decisions() {
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [busy, setBusy] = useState<"try" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [classifiers, setClassifiers] = useState<{ name: string; labels: string[] }[]>([]);
   const load = useCallback(() => void api<{ decisions: Decision[] }>("/api/decisions").then((r) => setSaved(r.decisions), () => {}), []);
   useEffect(load, [load]);
+  useEffect(() => void api<{ classifiers: { name: string; labels: string[] }[] }>("/api/classifiers").then((r) => setClassifiers(r.classifiers), () => {}), []);
+  const byClassifier = !!form.classifier;
 
   const set = (patch: Partial<typeof BLANK>) => setForm((f) => ({ ...f, ...patch }));
   const body = () => ({
@@ -56,6 +60,7 @@ export function Decisions() {
     choices: form.kind === "choice" || form.kind === "labels" ? form.choices.split(",").map((c) => c.trim()).filter(Boolean) : [],
     scale: [form.low, form.high],
     instructions: form.instructions.trim() || null,
+    classifier: form.classifier || null,
   });
 
   async function act(what: "try" | "save") {
@@ -74,12 +79,12 @@ export function Decisions() {
   }
 
   function edit(d: Decision) {
-    setForm({ name: d.name, question: d.question, kind: d.kind, choices: d.choices.join(", "), low: d.scale[0], high: d.scale[1], instructions: d.instructions ?? "" });
+    setForm({ name: d.name, question: d.question, kind: d.kind, choices: d.choices.join(", "), low: d.scale[0], high: d.scale[1], instructions: d.instructions ?? "", classifier: d.classifier ?? "" });
     setAnswer(null);
   }
 
   const curl = (name: string) => `curl ${engine?.url ?? ""}/v1/decisions/${name} \\\n  -H "Authorization: Bearer $TEMPER_KEY" -H "Content-Type: application/json" \\\n  -d '{"text": "..."}'`;
-  const ready = form.question.trim() && (!["choice", "labels"].includes(form.kind) || form.choices.split(",").filter((c) => c.trim()).length >= 2);
+  const ready = form.question.trim() && (byClassifier || !["choice", "labels"].includes(form.kind) || form.choices.split(",").filter((c) => c.trim()).length >= 2);
 
   return (
     <div className="flex flex-col gap-4">
@@ -88,16 +93,36 @@ export function Decisions() {
           <Input value={form.question} onChange={(e) => set({ question: e.target.value })} placeholder="Is this email asking for a refund?" />
         </Field>
         <div className="flex flex-wrap items-end gap-3">
+          {classifiers.length > 0 && (
+            <Field label="Answered by">
+              <Select
+                value={form.classifier}
+                onChange={(e) => set({ classifier: e.target.value, kind: e.target.value && !["yes_no", "choice"].includes(form.kind) ? "choice" : form.kind })}
+                aria-label="Answered by"
+                className="w-48"
+              >
+                <option value="">The loaded model</option>
+                {classifiers.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    Classifier {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <Field label="Answer">
             <Select value={form.kind} onChange={(e) => set({ kind: e.target.value as Kind })} aria-label="Kind of answer" className="w-44">
-              {KINDS.map(([k, label]) => (
+              {KINDS.filter(([k]) => !byClassifier || k === "yes_no" || k === "choice").map(([k, label]) => (
                 <option key={k} value={k}>
                   {label}
                 </option>
               ))}
             </Select>
           </Field>
-          {(form.kind === "choice" || form.kind === "labels") && (
+          {byClassifier && form.kind === "choice" && (
+            <p className="pb-2 text-[12px] text-muted">Its labels: {classifiers.find((c) => c.name === form.classifier)?.labels.join(", ")}</p>
+          )}
+          {!byClassifier && (form.kind === "choice" || form.kind === "labels") && (
             <div className="min-w-[240px] flex-1">
               <Field label={form.kind === "choice" ? "Choices" : "Labels"}>
                 <Input value={form.choices} onChange={(e) => set({ choices: e.target.value })} placeholder="low, normal, urgent" aria-label="Comma-separated choices" />
@@ -114,15 +139,17 @@ export function Decisions() {
             </Field>
           )}
         </div>
-        <Field label="How to decide" hint="Optional: definitions, examples and edge cases, in plain words.">
-          <textarea
-            value={form.instructions}
-            onChange={(e) => set({ instructions: e.target.value })}
-            rows={2}
-            className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-accent"
-            placeholder="Urgent means customers can't pay or sign in."
-          />
-        </Field>
+        {!byClassifier && (
+          <Field label="How to decide" hint="Optional: definitions, examples and edge cases, in plain words.">
+            <textarea
+              value={form.instructions}
+              onChange={(e) => set({ instructions: e.target.value })}
+              rows={2}
+              className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-accent"
+              placeholder="Urgent means customers can't pay or sign in."
+            />
+          </Field>
+        )}
         <Field label="Try it on">
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className="w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-accent" placeholder="Some text to decide about" />
         </Field>
@@ -159,6 +186,7 @@ export function Decisions() {
                   {d.question}
                   {d.choices.length > 0 && ` (${d.choices.join(", ")})`}
                   {d.kind === "score" && ` (${d.scale[0]}–${d.scale[1]})`}
+                  {d.classifier && ` · classifier ${d.classifier}`}
                 </p>
               </div>
               <CopyButton text={curl(d.name)} label="curl" />

@@ -1479,6 +1479,79 @@ def decide_cmd(args: list[str]) -> int:
     return 0
 
 
+def classify_cmd(args: list[str]) -> int:
+    if args[:1] == ["train"]:
+        p = argparse.ArgumentParser(prog="temper classify train", description="Train a classifier on labelled examples (CSV, JSON or JSONL).")
+        p.add_argument("name")
+        p.add_argument("dataset", help="a file with a text column and a label column")
+        p.add_argument("--text", help="the text column, when it isn't found by name")
+        p.add_argument("--label", help="the label column, when it isn't found by name")
+        p.add_argument("--encoder", help="a sentence-transformers model (default sentence-transformers/all-MiniLM-L6-v2)")
+        p.add_argument("--tune", action="store_true", help="tune the encoder on pairs of examples first (slower; helps with few examples)")
+        p.add_argument("--hold-out", type=float, default=0.2, help="share of each label kept back to measure it (default 0.2)")
+        a = p.parse_args(args[1:])
+        body = {"name": a.name, "dataset": os.path.abspath(a.dataset), "text_column": a.text, "label_column": a.label, "fine_tune": a.tune, "eval_share": a.hold_out}
+        if a.encoder:
+            body["encoder"] = a.encoder
+        with _client(running()) as c:
+            job = _check(c.post("/api/classifiers", json=body))
+            print(f"{job['train']} examples to learn from, {job['eval']} held out; labels: " + ", ".join(f"{k} ({v})" for k, v in job["labels"].items()), file=sys.stderr)
+            end = follow(c, job["id"], logs=False)
+            if end.get("status") != "done":
+                raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+            info = next(x for x in _check(c.get("/api/classifiers"))["classifiers"] if x["name"] == end["result"]["name"])
+        m = info.get("metrics")
+        if m:
+            print(f"Accuracy on held-out examples: {m['accuracy']:.0%} (macro F1 {m['macro_f1']:.2f})")
+            _table([["LABEL", "PRECISION", "RECALL", "HELD OUT"]] + [[label, f"{v['precision']:.2f}", f"{v['recall']:.2f}", str(v["support"])] for label, v in m["labels"].items()])
+        print(f'Try it: temper classify {info["name"]} "some text"')
+        return 0
+    p = argparse.ArgumentParser(prog="temper classify", description="Sort text into labels with a classifier you trained (temper classify train).")
+    p.add_argument("name", nargs="?", help="the classifier")
+    p.add_argument("text", nargs="?", help="what to classify (default: each line of standard input)")
+    p.add_argument("--list", action="store_true", help="list classifiers")
+    p.add_argument("--delete", action="store_true", help="delete the classifier")
+    p.add_argument("--install", action="store_true", help="install classifier training and download the default encoder (or --encoder)")
+    p.add_argument("--encoder", help="with --install, the encoder to download")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        st = _check(c.get("/api/classifiers"))
+        if a.install:
+            encoder = a.encoder or st["encoders"][0]["id"]
+            known = next((e for e in st["encoders"] if e["id"] == encoder), None)
+            steps = [(not st["installed"], "/api/classifiers/install", None, "classifier training (PyTorch and sentence-transformers)"),
+                     (not (known or {}).get("downloaded"), "/api/classifiers/encoders/download", {"encoder": encoder}, f"the encoder {encoder}")]
+            for needed, path, body, what in steps:
+                if needed:
+                    print(f"Installing {what}…", file=sys.stderr)
+                    end = follow(c, _check(c.post(path, json=body))["id"], logs=False)
+                    if end.get("status") != "done":
+                        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+            print("Ready. Train one: temper classify train <name> examples.csv")
+            return 0
+        if a.list or not a.name:
+            if a.json:
+                print(json.dumps(st["classifiers"], indent=2))
+            else:
+                _table([[x["name"], ", ".join(x["labels"]), f"{x['metrics']['accuracy']:.0%}" if x.get("metrics") else "", str(x["train_examples"])] for x in st["classifiers"]]
+                       or [["No classifiers yet. Train one: temper classify train <name> examples.csv"]])
+            return 0
+        if a.delete:
+            _check(c.delete(f"/api/classifiers/{a.name}"))
+            print(f"Deleted {a.name}.")
+            return 0
+        texts = [a.text] if a.text is not None else [line for line in sys.stdin.read().splitlines() if line.strip()]
+        out = _check(c.post(f"/v1/classifiers/{a.name}", json={"texts": texts}))["results"]
+    if a.json:
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+    elif len(texts) == 1:
+        print(f"{out[0]['label']}  ({out[0]['confidence']:.0%})")
+    else:
+        _table([[r["label"], f"{r['confidence']:.0%}", t[:70]] for r, t in zip(out, texts, strict=True)])
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1555,7 +1628,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1580,6 +1653,7 @@ USAGE = """usage:
   temper stems <file> [-o folder] | --install
   temper image ["prompt"] [--from pic] [--size WxH] [-n N] [--seed S] [--lora L] [-o folder] | --models | --install [--model M]
   temper decide "question" [-t text | < file] [--choices a,b | --labels a,b | --score 1-10] [--lines] [--save NAME] | -s NAME | --list
+  temper classify train <name> <examples.csv> [--text C] [--label C] [--tune] | <name> ["text"] | --list | --install
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey

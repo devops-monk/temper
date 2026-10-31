@@ -90,6 +90,11 @@ temper decide -s is-spam < message.txt
 temper decide --list
 ```
 
+A saved decision can also be answered by a **classifier** you trained on examples (see
+[Classifiers](training.md#classifiers)): set `"classifier": "tickets"` with `kind` `choice` (its labels) or
+`yes_no` (when its labels are yes and no). It answers in milliseconds, with its `confidence` and a score
+for each label.
+
 Named API keys work for decisions, since they're under `/v1`.
 
 ## API keys
