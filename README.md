@@ -29,7 +29,7 @@ The app's own binary takes a few commands while Temper is open (on macOS it's
 `/Applications/Temper.app/Contents/MacOS/temper`; alias it as `temper`):
 
 ```bash
-temper start codex          # or opencode, aider: starts the agent on the model loaded in Temper
+temper start claude         # or codex, opencode, aider: starts the agent on the model loaded in Temper
 temper mcp add claude       # or codex, cursor, vscode: gives the agent Temper's MCP tools
 temper doctor               # checks drivers, disk, ports and engine packages (--mcp checks the MCP server)
 ```

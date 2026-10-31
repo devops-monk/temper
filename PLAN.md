@@ -256,7 +256,8 @@ temper/
 ## Phase 10: Serving, API and remote access
 
 - [~] **10.1 OpenAI-compatible API**: `/v1/chat/completions`, `/v1/models`, `/v1/embeddings` for other apps to use.
-- [ ] **10.2 Anthropic-compatible API**: `/v1/messages`, so Claude Code can use local models directly.
+- [x] **10.2 Anthropic-compatible API**: `/v1/messages`, so Claude Code can use local models directly.
+  Done: `/v1/messages` and `/v1/messages/count_tokens` (an estimate) over the loaded model, translated to and from the servers' OpenAI shape: system prompts, images, tool use and tool results, tool choice, stop sequences, stop reasons and token counts, whole or streamed (with pings while a long prompt is read). A thinking model's reasoning is left out. Unknown model names, like Claude Code's, go to chat's model. `temper start claude` and the Connect page set Claude Code up; the Connect page also has an Anthropic SDK example. Tested with the official Anthropic SDK on a Qwen3-4B GGUF: a reply, a tool call, a streamed answer after a tool result, and a streamed tool call. Claude Code reached it and got a streamed reply started, but its prompt is long enough that a full session needs a faster or bigger model than this test machine could run.
 - [ ] **10.3 API keys**: create, name, revoke; usage tracking and an API monitor page.
 - [ ] **10.4 LAN access**: serve to other devices on the home network with a QR code.
 - [ ] **10.5 Secure remote access**: Cloudflare Tunnel HTTPS link, with admin password and an option to turn tools off.

@@ -44,9 +44,9 @@ def test_agents_start_pointed_at_the_loaded_model():
     command, env = cli.launch("opencode", ENGINE, "qwen")
     assert command == ["opencode", "--model", "temper/qwen"] and json.loads(env["OPENCODE_CONFIG_CONTENT"])["provider"]["temper"]["models"] == {"qwen": {"name": "qwen"}}
     assert cli.launch("aider", ENGINE, "qwen") == (["aider", "--model", "openai/qwen"], {"OPENAI_API_BASE": "http://127.0.0.1:8765/v1", "OPENAI_API_KEY": ENGINE["token"]})
-    with pytest.raises(cli.CliError, match="Anthropic API"):
-        cli.launch("claude", ENGINE, "qwen")
-    with pytest.raises(cli.CliError, match="codex, opencode, aider"):
+    command, env = cli.launch("claude", ENGINE, "qwen")
+    assert command == ["claude"] and env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8765" and env["ANTHROPIC_AUTH_TOKEN"] == ENGINE["token"] and env["ANTHROPIC_MODEL"] == "qwen"
+    with pytest.raises(cli.CliError, match="claude, codex, opencode, aider"):
         cli.launch("nope", ENGINE, "qwen")
 
 

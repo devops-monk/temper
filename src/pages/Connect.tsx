@@ -11,6 +11,16 @@ interface Recipe {
 
 const RECIPES: Recipe[] = [
   {
+    id: "claude",
+    name: "Claude Code",
+    where: "terminal",
+    body: (url, token, model) => `export ANTHROPIC_BASE_URL=${url}
+export ANTHROPIC_AUTH_TOKEN=${token}
+export ANTHROPIC_MODEL=${model}
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=${model}
+claude`,
+  },
+  {
     id: "codex",
     name: "Codex CLI",
     where: "~/.codex/config.toml",
@@ -73,6 +83,20 @@ reply = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}],
 )
 print(reply.choices[0].message.content)`,
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic SDK",
+    where: "Python",
+    body: (url, token, model) => `from anthropic import Anthropic
+
+client = Anthropic(base_url="${url}", api_key="${token}")
+reply = client.messages.create(
+    model="${model}",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(reply.content[0].text)`,
   },
   {
     id: "curl",
@@ -158,7 +182,7 @@ export function ConnectPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Connect" description="Use the model loaded in Temper from coding agents, editors and your own code through an OpenAI-compatible API." />
+      <PageHeader title="Connect" description="Use the model loaded in Temper from coding agents, editors and your own code through OpenAI- and Anthropic-compatible APIs." />
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-5">
         <dl className="mb-5 grid max-w-[760px] grid-cols-[120px_1fr_auto] items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
           <dt className="text-muted">Base URL</dt>
@@ -186,9 +210,10 @@ export function ConnectPage() {
         <div className="max-w-[760px]">
           <Tabs recipes={RECIPES} active={active} onChange={setActive} url={url} token={token} model={model} />
           <p className="mt-4 text-[13px] text-muted">
-            The key stays the same when Temper restarts, so these configs keep working. From a terminal, <span className="font-mono text-[12.5px] text-text">temper start codex</span> (or{" "}
-            <span className="font-mono text-[12.5px] text-text">opencode</span>, <span className="font-mono text-[12.5px] text-text">aider</span>) starts the agent already pointed at the loaded model. Claude Code needs an Anthropic-compatible
-            endpoint, which is on the roadmap (PLAN.md, item 10.2).
+            The key stays the same when Temper restarts, so these configs keep working. From a terminal, <span className="font-mono text-[12.5px] text-text">temper start claude</span> (or{" "}
+            <span className="font-mono text-[12.5px] text-text">codex</span>, <span className="font-mono text-[12.5px] text-text">opencode</span>, <span className="font-mono text-[12.5px] text-text">aider</span>) starts the agent
+            already pointed at the loaded model. Claude Code reads a long system prompt and many tool descriptions, so load the model with a context of 32K or more, and pick one that's good at
+            calling tools.
           </p>
         </div>
 

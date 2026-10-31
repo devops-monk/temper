@@ -1,6 +1,6 @@
 """The `temper` commands for coding agents, run from a terminal while the app is open.
 
-    temper start codex|opencode|aider [their own arguments]   start an agent on the model loaded in Temper
+    temper start claude|codex|opencode|aider [their own arguments]   start an agent on the model loaded in Temper
     temper mcp add claude|codex|cursor|vscode                  register Temper's MCP server with an agent
     temper doctor --mcp                                        check that server, and which agents have it
 
@@ -103,8 +103,10 @@ def launch(agent: str, engine: dict, model: str) -> tuple[list[str], dict]:
     if agent == "aider":
         return ["aider", "--model", f"openai/{model}"], {"OPENAI_API_BASE": v1, "OPENAI_API_KEY": engine["token"]}
     if agent == "claude":
-        raise CliError("Claude Code talks the Anthropic API, which Temper doesn't serve yet. You can still give it Temper's tools: temper mcp add claude")
-    raise CliError(f"Temper doesn't know how to start {agent!r}. It can start: codex, opencode, aider.")
+        # Claude Code adds /v1/messages itself; every model it asks for (main and background) is the loaded one.
+        env = {"ANTHROPIC_BASE_URL": engine["url"], "ANTHROPIC_AUTH_TOKEN": engine["token"], "ANTHROPIC_API_KEY": "", "ANTHROPIC_MODEL": model, "ANTHROPIC_DEFAULT_HAIKU_MODEL": model}
+        return ["claude"], {**env, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+    raise CliError(f"Temper doesn't know how to start {agent!r}. It can start: claude, codex, opencode, aider.")
 
 
 def start(agent: str, args: list[str]) -> int:
@@ -238,7 +240,7 @@ def doctor_mcp() -> int:
 # --- Entry ---------------------------------------------------------------------------------------
 
 USAGE = """usage:
-  temper start codex|opencode|aider [agent arguments]
+  temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode
   temper doctor --mcp"""
 
