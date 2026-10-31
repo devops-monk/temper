@@ -9,7 +9,7 @@ import { bytes, relativeDate } from "../lib/format";
 import { useApp } from "../lib/store";
 import { useFileDrop } from "../lib/useFileDrop";
 
-type Kind = "upload" | "dataset" | "fine-tune" | "export" | "model" | "attachment" | "picture" | "speech" | "stems";
+type Kind = "upload" | "dataset" | "fine-tune" | "export" | "model" | "attachment" | "picture" | "speech" | "stems" | "sandbox";
 
 interface Item {
   id: string;
@@ -36,6 +36,8 @@ interface Item {
   made_with?: string;
   voice?: string;
   stems?: string[];
+  /** The chat whose code wrote a sandbox file. */
+  chat?: string;
 }
 
 const KINDS: { kind: Kind; label: string; plural: string }[] = [
@@ -48,6 +50,7 @@ const KINDS: { kind: Kind; label: string; plural: string }[] = [
   { kind: "picture", label: "Picture", plural: "Pictures" },
   { kind: "speech", label: "Speech", plural: "Speech" },
   { kind: "stems", label: "Stems", plural: "Stems" },
+  { kind: "sandbox", label: "Made by code", plural: "Made by code" },
 ];
 const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<Kind, string>;
 
@@ -68,6 +71,7 @@ function details(item: Item): string {
   if (item.kind === "picture" && item.made_with) return item.made_with.split("/").pop()!;
   if (item.kind === "speech" && item.voice) return `voice ${item.voice}`;
   if (item.kind === "stems") return (item.stems ?? []).join(", ");
+  if (item.kind === "sandbox") return item.chat === "scratch" ? "written by code outside a chat" : "written by code in a chat";
   if (item.name !== item.original) return item.original;
   return "";
 }
@@ -124,7 +128,7 @@ export function LibraryPage() {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Library"
-        description="Your uploads, datasets, fine-tunes, exports and converted models, and the pictures, speech and stems you make. Renaming changes the name shown here; files on disk keep theirs."
+        description="Your uploads, datasets, fine-tunes, exports and converted models, the pictures, speech and stems you make, and files code wrote in chats. Renaming changes the name shown here; files on disk keep theirs."
         actions={
           inTauri ? (
             <Button variant="primary" onClick={() => void chooseFiles()}>

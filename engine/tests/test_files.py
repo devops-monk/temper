@@ -76,6 +76,21 @@ def test_delete_removes_files_and_library_entries():
     assert client.delete("/api/files", params={"id": "runs/20261025-tutor"}, headers=AUTH).status_code == 404
 
 
+def test_files_written_in_chat_sandboxes_are_listed():
+    chat = home() / "sandbox" / "chats" / "chat-1"
+    (chat / "out").mkdir(parents=True, exist_ok=True)
+    (chat / "out" / "plot.png").write_bytes(b"png")
+    (chat / "__pycache__").mkdir(exist_ok=True)
+    (chat / "__pycache__" / "x.pyc").write_bytes(b"")
+    (chat / ".hidden").write_text("")
+    found = {k: v for k, v in items().items() if v["kind"] == "sandbox"}
+    assert list(found) == ["sandbox/chats/chat-1/out/plot.png"]
+    plot = found["sandbox/chats/chat-1/out/plot.png"]
+    assert (plot["name"], plot["chat"], plot["size"]) == ("out/plot.png", "chat-1", 3)
+    client.delete("/api/files", params={"id": plot["id"]}, headers=AUTH)
+    assert not (chat / "out" / "plot.png").exists()
+
+
 def test_pictures_speech_and_stems_are_listed_and_deleted_whole():
     root = home()
     (root / "images").mkdir(exist_ok=True)

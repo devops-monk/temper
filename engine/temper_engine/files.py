@@ -4,7 +4,7 @@ attachments, generated pictures, saved speech and separated stems.
 Each kind lives in its own folder under Temper's home, where the feature that made it put it. This
 lists them in one place and keeps what the person adds on top in files.json: a display name,
 favourites and folders. Renaming changes only the display name, because runs and exports refer to
-their datasets and adapters by path. Later features (sandbox files) add a kind to KINDS.
+their datasets and adapters by path. Each kind of thing is a function in KINDS.
 """
 
 from __future__ import annotations
@@ -150,6 +150,23 @@ def _stems() -> Iterator[tuple[Path, dict]]:
             yield d, {"title": _read_json(d / "source.json").get("name"), "stems": wavs}
 
 
+MAX_SANDBOX_FILES = 500
+SKIPPED = {"__pycache__", "node_modules", ".venv", "venv", ".git"}
+
+
+def _sandbox() -> Iterator[tuple[Path, dict]]:
+    """Files that code and terminal commands wrote in chats' working folders (sandbox.py), newest first."""
+    root = home() / "sandbox" / "chats"
+    found = []
+    for chat in sorted(root.iterdir()) if root.is_dir() else []:
+        for p in chat.rglob("*") if chat.is_dir() else []:
+            parts = p.relative_to(chat).parts
+            if p.is_file() and not any(part.startswith(".") or part in SKIPPED for part in parts):
+                found.append((p, {"title": "/".join(parts), "chat": chat.name}))
+    found.sort(key=lambda f: f[0].stat().st_mtime, reverse=True)
+    yield from found[:MAX_SANDBOX_FILES]
+
+
 KINDS: dict[str, Callable[[], Iterator[tuple[Path, dict]]]] = {
     "upload": _uploads,
     "dataset": _datasets,
@@ -160,6 +177,7 @@ KINDS: dict[str, Callable[[], Iterator[tuple[Path, dict]]]] = {
     "picture": _pictures,
     "speech": _speech,
     "stems": _stems,
+    "sandbox": _sandbox,
 }
 
 
