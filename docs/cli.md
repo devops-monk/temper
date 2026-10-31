@@ -67,6 +67,34 @@ temper runs                                  # past and current runs
 temper export math-tutor --format gguf --quant q4_k_m --quant q8_0 --imatrix
 ```
 
+## Evaluating
+
+```bash
+temper eval questions.jsonl --model my-tuned-model             # how often it gets the answers right
+temper eval questions.jsonl --model base --compare my-tuned    # two models, side by side
+temper eval gsm8k-test.jsonl --limit 0 --json > results.json   # every row, with every answer
+```
+
+Each row needs a prompt (a `prompt` or `question` column, or messages) and an `answer` or `solution`. Each
+prompt is asked once at temperature 0, and the reply's final answer (the last `\boxed{}`, what follows
+`Answer:` or `####`, or else its last number) is compared with the expected one, as the correct-answer reward
+does in reinforcement learning. Thinking models answer without thinking unless you add `--think`.
+
+## Updating and uninstalling
+
+```bash
+temper update --check     # is there a newer release? (exit code 1 when there is)
+temper update             # download and install it, with the installer from the download page
+temper uninstall --dry-run           # what uninstalling would remove
+temper uninstall                     # remove Temper's data, its background engine and the app
+temper uninstall --keep-data         # remove the app but keep runs, exports, datasets and settings
+```
+
+Quit the app before either. Uninstalling asks you to type `uninstall` (or takes `--yes`). Models downloaded
+from Hugging Face stay, since other apps share that cache, and so does the Hugging Face token in the system
+keychain (sign out in Settings to remove it). On Windows, and for .deb and .rpm installs, it says how to remove
+the app itself.
+
 ## Running without the window
 
 ```bash

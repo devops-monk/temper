@@ -33,8 +33,9 @@ from pathlib import Path
 
 import httpx
 import psutil
+from fastapi import HTTPException
 
-from . import home
+from . import __version__, home
 
 RUNNING = "engine.json"
 
@@ -1639,8 +1640,6 @@ def status_cmd(args: list[str]) -> int:
 
 
 def version_cmd(args: list[str]) -> int:
-    from . import __version__
-
     p = argparse.ArgumentParser(prog="temper version", description="Temper's version.")
     p.add_argument("--json", action="store_true", help="print JSON")
     a = p.parse_args(args)
@@ -1676,7 +1675,144 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "embed": embed_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+def eval_cmd(args: list[str]) -> int:
+    from . import classifiers, rewards
+
+    p = argparse.ArgumentParser(prog="temper eval", description="How often a model gets the answers in a file right: each prompt asked once, at temperature 0, its final answer compared with the expected one.")
+    p.add_argument("dataset", help="a CSV, JSON or JSONL file with a prompt (or question) column and an answer (or solution) column")
+    p.add_argument("--model", help="the model to ask (default chat's): a loaded or downloaded model's name, or model@device")
+    p.add_argument("--compare", help="a second model to ask the same questions, side by side")
+    p.add_argument("--limit", type=int, default=100, help="ask at most this many (default 100; 0 for all)")
+    p.add_argument("--max-tokens", type=int, default=1024, help="the longest reply (default 1024)")
+    p.add_argument("--misses", type=int, default=5, help="show this many wrong answers (default 5)")
+    p.add_argument("--think", action="store_true", help="let thinking models think first (off by default: thinking can use up the reply)")
+    p.add_argument("--json", action="store_true", help="print JSON, with every answer")
+    a = p.parse_args(args)
+    try:
+        rows = rewards.prompts(classifiers.read_rows(Path(a.dataset).expanduser()))
+    except ValueError as e:
+        raise CliError(str(e)) from e
+    except HTTPException as e:
+        raise CliError(e.detail) from e
+    rows = [(prompt, row) for prompt, row in rows if rewards.expected(row) is not None]
+    if not rows:
+        raise CliError("No row has an expected answer: add an answer or solution column.")
+    rows = rows[: a.limit] if a.limit else rows
+    models = [a.model] + ([a.compare] if a.compare else [])
+    results: dict[str | None, list[dict]] = {m: [] for m in models}
+    with _client(running()) as c:
+        for i, (prompt, row) in enumerate(rows, 1):
+            for m in models:
+                body = {"messages": prompt, "temperature": 0, "max_tokens": a.max_tokens, "stream": False, **({"model": m} if m else {})}
+                if not a.think:
+                    body["chat_template_kwargs"] = {"enable_thinking": False}  # templates without the switch ignore it
+                started = time.time()
+                reply = _check(c.post("/v1/chat/completions", json=body))
+                text = reply["choices"][0]["message"].get("content") or ""
+                want = rewards.expected(row)
+                results[m].append({"prompt": prompt[-1]["content"], "expected": want.strip(), "reply": text, "answer": rewards.final_answer(text),
+                                   "right": rewards.score_answer(text, row) == 1.0, "seconds": round(time.time() - started, 2)})
+            if sys.stderr.isatty() and not a.json:
+                print(f"\r{i}/{len(rows)}", end="", file=sys.stderr, flush=True)
+    if sys.stderr.isatty() and not a.json:
+        print("\r" + " " * 20 + "\r", end="", file=sys.stderr)
+    summary = [{"model": m or "chat's model", "asked": len(r), "right": sum(x["right"] for x in r), "accuracy": round(sum(x["right"] for x in r) / len(r), 4),
+                "seconds_each": round(sum(x["seconds"] for x in r) / len(r), 2)} for m, r in results.items()]
+    if a.json:
+        print(json.dumps({"summary": summary, "answers": {s_["model"]: results[m] for s_, m in zip(summary, models)}}, indent=2, ensure_ascii=False))
+        return 0
+    _table([["MODEL", "RIGHT", "ACCURACY", "SECONDS EACH"]] + [[x["model"], f"{x['right']}/{x['asked']}", f"{x['accuracy']:.0%}", f"{x['seconds_each']:.1f}"] for x in summary])
+    for x, m in zip(summary, models):
+        wrong = [r for r in results[m] if not r["right"]][: a.misses]
+        if wrong:
+            print(f"\nWrong answers from {x['model']}:")
+            for r in wrong:
+                print(f"  {r['prompt'][:90]}\n    expected {r['expected'][:40]!r}, answered {r['answer'][:40]!r}")
+    return 0
+
+
+def update_cmd(args: list[str]) -> int:
+    from . import lifecycle
+
+    p = argparse.ArgumentParser(prog="temper update", description="Update Temper to the newest release, with the installer from the download page.")
+    p.add_argument("--check", action="store_true", help="only say whether there's a newer release (exit code 1 when there is)")
+    p.add_argument("-y", "--yes", action="store_true", help="update without asking")
+    a = p.parse_args(args)
+    try:
+        release = lifecycle.latest()
+    except httpx.HTTPError as e:
+        raise CliError(f"Couldn't reach GitHub to check for updates: {e}") from e
+    if not lifecycle.newer(release["version"]):
+        print(f"Temper {__version__} is the newest release.")
+        return 0
+    print(f"Temper {release['version']} is out (this is {__version__}): {release['url']}")
+    if a.check:
+        return 1
+    try:
+        engine = running()
+    except CliError:
+        engine = None
+    if engine and not daemon_pid():
+        raise CliError("Quit the Temper app first (the app also updates itself: Settings → About), then run this again.")
+    if not a.yes:
+        if not sys.stdin.isatty():
+            raise CliError("Add --yes to update without being asked.")
+        if input(f"Download and install Temper {release['version']}? [y/N] ").strip().lower() not in ("y", "yes"):
+            return 0
+    return lifecycle.run_installer()
+
+
+def daemon_pid() -> int | None:
+    from . import daemon
+
+    return daemon.pid()
+
+
+def uninstall_cmd(args: list[str]) -> int:
+    from . import daemon, lifecycle
+
+    p = argparse.ArgumentParser(prog="temper uninstall", description="Remove Temper from this computer: its data, its background engine and the app.")
+    p.add_argument("--keep-data", action="store_true", help="remove the app but keep runs, exports, datasets and settings")
+    p.add_argument("--dry-run", action="store_true", help="list what would be removed, and remove nothing")
+    p.add_argument("-y", "--yes", action="store_true", help="remove without asking")
+    a = p.parse_args(args)
+    try:
+        engine = running()
+    except CliError:
+        engine = None
+    paths = lifecycle.plan(a.keep_data)
+    print("This removes:")
+    if daemon.login_item():
+        print("  the engine starting at login")
+    for path in paths:
+        print(f"  {path}  ({_size(lifecycle.size(path))})")
+    if not paths and not daemon.login_item():
+        print("  nothing: Temper's folders and app aren't here.")
+    if manual := lifecycle.how_to_remove_app():
+        print(manual)
+    if cache := lifecycle.hugging_face_cache():
+        print(f"Models downloaded from Hugging Face stay in {cache[0]} ({_size(cache[1])}), shared with other apps.")
+    if a.dry_run:
+        return 0
+    if engine and not daemon_pid():
+        raise CliError("Quit the Temper app first, then run this again.")
+    if not a.yes:
+        if not sys.stdin.isatty():
+            raise CliError("Add --yes to remove Temper without being asked.")
+        if input("Type uninstall to remove these: ").strip().lower() != "uninstall":
+            print("Nothing was removed.")
+            return 0
+    if daemon_pid():
+        daemon.stop()
+    daemon.uninstall()
+    failed = lifecycle.remove(paths)
+    for path, why in failed:
+        print(f"Couldn't remove {path}: {why}", file=sys.stderr)
+    print("Temper is uninstalled." if not failed else "Temper is partly uninstalled; remove the rest by hand.")
+    return 1 if failed else 0
+
+
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "embed": embed_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd, "eval": eval_cmd, "update": update_cmd, "uninstall": uninstall_cmd}
 
 
 USAGE = """usage:
@@ -1694,6 +1830,9 @@ USAGE = """usage:
   temper runs [--json]
   temper export <run> [--format gguf] [--quant q4_k_m] [--imatrix]
   temper serve [--host H] [--port N]
+  temper eval <file> [--model M] [--compare M2] [--limit N] [--json]
+  temper update [--check] [-y]
+  temper uninstall [--keep-data] [--dry-run] [-y]
   temper daemon up|down|status|install|uninstall
   temper create <folder> [--template chat|tools|rag] [--lang python|typescript] [--model M]
   temper transcribe <file> [--format txt|srt|vtt|json] [--language xx] [--translate] [-o out]
