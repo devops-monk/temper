@@ -284,7 +284,8 @@ temper/
 - [~] **12.2 Profile and statistics**: tokens generated, models trained, time saved.
   Done: Settings → Statistics shows tokens written and read (from every reply through the model API, Temper's chats and Ollama-style requests included), replies and chats, models trained and the time spent training, exports, datasets and their rows, a 30-day chart of tokens written and the most used models. Counted and kept on this computer only. To count streamed replies, Temper now always asks the model server for token counts and passes them on only to clients that asked. Tested live: real replies counted to the token. Still to do: "time saved", which needs a definition first.
 - [ ] **12.3 Accessibility pass**: keyboard-only use, screen-reader labels, contrast checks in both themes.
-- [ ] **12.4 Telemetry: off by default**, opt-in crash reports only.
+- [x] **12.4 Telemetry: off by default**, opt-in crash reports only.
+  Done: Temper sends no telemetry, and tells the libraries it uses not to either (`HF_HUB_DISABLE_TELEMETRY`, `DO_NOT_TRACK`). Unexpected engine errors and interface errors (a page that fails to draw, or an uncaught error) are saved as crash reports on this computer, without the home folder, keys or tokens. A failed page says so and offers to try again. Settings → Privacy says what Temper does and doesn't send, lists the reports, and has "Offer to report crashes" (off by default): with it on, a crash brings up a note that opens a filled-in GitHub issue for the user to read and send. Nothing is sent automatically. Tested live: a thrown error was saved, the note appeared and the issue link was filled in.
 - [ ] **12.5 Tests**: engine unit tests (pytest), UI tests (Vitest + Playwright), end-to-end smoke test of a tiny model on CI.
 - [ ] **12.6 Docs site and notebooks**: getting-started guides plus Colab/Kaggle notebooks for every training method.
 - [ ] **12.7 Launch**: website, download page, release notes.

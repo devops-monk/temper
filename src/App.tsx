@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { CrashGuard, CrashNotice } from "./components/CrashGuard";
 import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { EngineGate } from "./components/EngineGate";
@@ -52,27 +53,30 @@ export function App() {
       <div className="flex min-h-0 flex-1">
         <Rail />
         <main className="flex min-w-0 flex-1 flex-col bg-bg">
-          {page === "settings" ? (
-            <SettingsPage />
-          ) : !ready ? (
-            <EngineGate />
-          ) : (
-            <>
-              {page === "chat" && <ChatPage />}
-              {page === "research" && <ResearchPage />}
-              {page === "models" && <ModelsPage />}
-              {page === "library" && <LibraryPage />}
-              {page === "train" && <TrainPage />}
-              {page === "datasets" && <DatasetsPage />}
-              {page === "recipes" && <RecipesPage />}
-              {page === "export" && <ExportPage />}
-              {page === "connect" && <ConnectPage />}
-            </>
-          )}
+          <CrashGuard page={page}>
+            {page === "settings" ? (
+              <SettingsPage />
+            ) : !ready ? (
+              <EngineGate />
+            ) : (
+              <>
+                {page === "chat" && <ChatPage />}
+                {page === "research" && <ResearchPage />}
+                {page === "models" && <ModelsPage />}
+                {page === "library" && <LibraryPage />}
+                {page === "train" && <TrainPage />}
+                {page === "datasets" && <DatasetsPage />}
+                {page === "recipes" && <RecipesPage />}
+                {page === "export" && <ExportPage />}
+                {page === "connect" && <ConnectPage />}
+              </>
+            )}
+          </CrashGuard>
         </main>
       </div>
       <StatusBar />
       <ShortcutsDialog />
+      <CrashNotice />
     </div>
   );
 }

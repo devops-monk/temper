@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, anthropic_api, api_keys, attachments, catalog, chat_import, chats, compaction, compare, convert, datasets, discovery, doctor, engines, export, files, generations, hardware, hub, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, publish, recipes, research, runtime, sandbox, search, skills, sources, storage, tools, training, usage
+from . import __version__, account, anthropic_api, api_keys, attachments, catalog, chat_import, chats, compaction, compare, convert, crashes, datasets, discovery, doctor, engines, export, files, generations, hardware, hub, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, publish, recipes, research, runtime, sandbox, search, skills, sources, storage, tools, training, usage
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health"}
@@ -60,11 +60,16 @@ def create_app(token: str = "") -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.exception_handler(Exception)
+    async def unexpected(request: Request, exc: Exception):
+        crash = crashes.from_exception(exc, f"{request.method} {request.url.path}")
+        return JSONResponse({"detail": f"Temper hit an unexpected error: {crash['error']}", "crash_id": crash["id"]}, status_code=500)
+
     @app.get("/api/health")
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, lan, discovery, llamacpp, recipes, research, knowledge, usage):
+    for module in (attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, lan, discovery, llamacpp, recipes, research, knowledge, usage, crashes):
         app.include_router(module.router)
     lan.listener.app = app
     discovery.token = token
