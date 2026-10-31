@@ -268,10 +268,13 @@ def _error(status: int, message: str) -> JSONResponse:
 async def v1_messages(request: Request):
     from .runtime import route
 
+    from . import api_keys
+
     body = await request.json()
     model = body.get("model") or "temper"
+    entry = getattr(request.state, "api_entry", None)
     try:
-        _, url, req = route(to_openai(body))
+        server, url, req = route(to_openai(body))
     except HTTPException as e:
         return _error(e.status_code, str(e.detail))
     if not req.get("stream"):
@@ -279,7 +282,9 @@ async def v1_messages(request: Request):
             r = await client.post(url, json=req)
         if r.status_code != 200:
             return _error(r.status_code, r.text[:500])
-        return JSONResponse(from_openai(r.json(), model))
+        msg = from_openai(r.json(), model)
+        api_keys.tokens(entry, server.model, msg["usage"]["input_tokens"], msg["usage"]["output_tokens"])
+        return JSONResponse(msg)
 
     client = httpx.AsyncClient(timeout=None)
     upstream = await client.send(client.build_request("POST", url, json=req), stream=True)
@@ -292,6 +297,9 @@ async def v1_messages(request: Request):
     async def relay():
         try:
             async for event in with_pings(translate_stream(upstream.aiter_lines(), model)):
+                if event.startswith(b"event: message_delta"):
+                    usage = json.loads(event.split(b"data: ", 1)[1])["usage"]
+                    api_keys.tokens(entry, server.model, usage["input_tokens"], usage["output_tokens"])
                 if event:
                     yield event
         finally:

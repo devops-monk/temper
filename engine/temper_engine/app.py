@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, anthropic_api, attachments, catalog, chat_import, chats, compaction, compare, convert, datasets, doctor, engines, export, files, generations, hardware, hub, instructions, jobs, knowledge, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, publish, recipes, research, runtime, sandbox, search, skills, sources, storage, tools, training
+from . import __version__, account, anthropic_api, api_keys, attachments, catalog, chat_import, chats, compaction, compare, convert, datasets, doctor, engines, export, files, generations, hardware, hub, instructions, jobs, knowledge, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, publish, recipes, research, runtime, sandbox, search, skills, sources, storage, tools, training
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health"}
@@ -22,6 +22,7 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(mcp.manager.close_all)  # closing a session over HTTP blocks
     jobs.registry.cancel_all()
     knowledge.embedder.stop()
+    api_keys.flush()
 
 
 def create_app(token: str = "") -> FastAPI:
@@ -32,12 +33,19 @@ def create_app(token: str = "") -> FastAPI:
     @app.middleware("http")
     async def require_token(request: Request, call_next):
         path = request.url.path
+        key = None
         if token and request.method != "OPTIONS" and path not in OPEN_PATHS and path.startswith(("/api", "/v1", "/mcp")):
             auth = request.headers.get("authorization", "")
             given = auth.removeprefix("Bearer ").strip() or request.headers.get("x-api-key", "")
-            if not hmac.compare_digest(given, token):
+            # The model API also opens to the API keys made in Connect; the rest needs the app's own token.
+            if not hmac.compare_digest(given, token) and not (path.startswith("/v1") and (key := api_keys.find(given))):
                 return JSONResponse({"detail": "Missing or wrong API token"}, status_code=401)
-        return await call_next(request)
+        if not path.startswith("/v1") or request.method == "OPTIONS":
+            return await call_next(request)
+        request.state.api_entry = entry = api_keys.start(path, request.method, key)
+        response = await call_next(request)
+        api_keys.finish(entry, response.status_code)
+        return response
 
     # Added after the auth middleware so it wraps it and 401s still carry CORS headers.
     app.add_middleware(
@@ -51,7 +59,7 @@ def create_app(token: str = "") -> FastAPI:
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, llamacpp, recipes, research, knowledge):
+    for module in (attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, llamacpp, recipes, research, knowledge):
         app.include_router(module.router)
 
     return app

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
 import { CopyButton, Notice, PageHeader, cx } from "../components/ui";
 import { useApp } from "../lib/store";
 
@@ -188,7 +189,7 @@ export function ConnectPage() {
           <dt className="text-muted">Base URL</dt>
           <dd className="font-mono text-[12.5px]">{url}/v1</dd>
           <CopyButton text={`${url}/v1`} />
-          <dt className="text-muted">API key</dt>
+          <dt className="text-muted">Temper's key</dt>
           <dd className="font-mono text-[12.5px]">
             {reveal ? token : "•".repeat(24)}{" "}
             <button className="ml-2 font-sans text-accent hover:underline" onClick={() => setReveal(!reveal)}>
@@ -215,6 +216,21 @@ export function ConnectPage() {
             already pointed at the loaded model. Claude Code reads a long system prompt and many tool descriptions, so load the model with a context of 32K or more, and pick one that's good at
             calling tools.
           </p>
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">API keys</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">
+            Give each app or device its own key instead of Temper's, so you can see what each one uses and revoke it on its own. These keys open the model API (
+            <span className="font-mono text-[12.5px]">/v1</span>) and nothing else.
+          </p>
+          <ApiKeys />
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">Requests</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">The latest calls to the model API, including Temper's own chats.</p>
+          <ApiMonitor />
         </div>
 
         <div className="mt-8 max-w-[760px]">

@@ -456,18 +456,27 @@ def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | 
 
 @router.post("/v1/chat/completions")
 async def v1_chat(request: Request):
-    _, url, body = route(await request.json())
+    from . import api_keys
+
+    server, url, body = route(await request.json())
+    entry = getattr(request.state, "api_entry", None)
     if not body.get("stream"):
         async with httpx.AsyncClient(timeout=None) as client:
             r = await client.post(url, json=body)
-            return JSONResponse(r.json(), status_code=r.status_code)
+            reply = r.json()
+            usage = reply.get("usage") or {} if isinstance(reply, dict) else {}
+            api_keys.tokens(entry, server.model, usage.get("prompt_tokens"), usage.get("completion_tokens"))
+            return JSONResponse(reply, status_code=r.status_code)
 
     client = httpx.AsyncClient(timeout=None)
     upstream = await client.send(client.build_request("POST", url, json=body), stream=True)
+    if entry is not None:
+        entry["model"] = server.model
 
     async def relay():
         try:
             async for chunk in upstream.aiter_raw():
+                api_keys.usage_from_stream(entry, chunk, server.model)
                 yield chunk
         finally:
             await upstream.aclose()
