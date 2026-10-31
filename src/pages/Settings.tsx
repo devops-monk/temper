@@ -20,23 +20,23 @@ import { useApp } from "../lib/store";
 import { Privacy } from "../components/Privacy";
 import { useTour } from "../components/Tour";
 import { StatsSection } from "../components/Stats";
-import { LANGUAGES, type Language, useLanguage, useT } from "../lib/i18n";
+import { type Key, LANGUAGES, type Language, useLanguage, useT, withNodes } from "../lib/i18n";
 import { MOD } from "../lib/shortcuts";
 import { useUpdates } from "../lib/updates";
 import { ZOOMS, savedZoom, setZoom, stepZoom } from "../lib/zoom";
 
-const STATUS_LABEL = {
-  running: "Running",
-  starting: "Starting",
-  crashed: "Stopped after errors",
-  missing_uv: "uv not installed",
-  stopped: "Not running",
-  needs_setup: "Not set up",
-  installing: "Installing",
-  setup_failed: "Setup failed",
-  locked: "Needs its key",
+const STATUS_LABEL: Record<string, Key> = {
+  running: "settings.s_running",
+  starting: "settings.s_starting",
+  crashed: "settings.s_crashed",
+  missing_uv: "settings.s_missing_uv",
+  stopped: "settings.s_stopped",
+  needs_setup: "settings.s_needs_setup",
+  installing: "settings.s_installing",
+  setup_failed: "settings.s_setup_failed",
+  locked: "settings.s_locked",
 };
-const PROFILE_LABEL = { chat: "Chat only", train: "Chat and training" };
+const PROFILE_LABEL: Record<"chat" | "train", Key> = { chat: "settings.p_chat", train: "settings.p_train" };
 
 function LanguageControl() {
   const { language, setLanguage } = useLanguage();
@@ -78,7 +78,7 @@ function ZoomControl() {
         <Button size="sm" variant="ghost" onClick={() => void stepZoom(-1)} disabled={zoom <= ZOOMS[0]} aria-label={t("settings.zoom_out")} className="w-8 px-0">
           <Minus className="size-3.5" />
         </Button>
-        <button onClick={() => void setZoom(1)} className="w-12 text-center tabular-nums hover:text-accent" title="Actual size">
+        <button onClick={() => void setZoom(1)} className="w-12 text-center tabular-nums hover:text-accent" title={t("settings.actual_size")}>
           {Math.round(zoom * 100)}%
         </button>
         <Button size="sm" variant="ghost" onClick={() => void stepZoom(1)} disabled={zoom >= ZOOMS[ZOOMS.length - 1]} aria-label={t("settings.zoom_in")} className="w-8 px-0">
@@ -99,46 +99,47 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Updates() {
+  const t = useT();
   const { version, status, update, received, total, error, checkedAt, auto, check, install, setAuto } = useUpdates();
   const jobs = useApp((a) => a.jobs);
   const busy = jobs.some((j) => j.status === "running");
   const working = status === "checking" || status === "downloading" || status === "installing";
 
   async function restart() {
-    if (busy && !confirm("A download, training run or export is still running. Updating restarts Temper and stops it. Update anyway?")) return;
+    if (busy && !confirm(t("settings.busy_confirm"))) return;
     await install();
   }
 
   return (
     <Section
-      title="Updates"
+      title={t("settings.updates")}
       aside={
         inTauri &&
         !update && (
           <Button size="sm" disabled={working} onClick={() => void check()}>
-            <RotateCw className={cx("size-3.5", status === "checking" && "animate-spin")} /> Check for updates
+            <RotateCw className={cx("size-3.5", status === "checking" && "animate-spin")} /> {t("settings.check_updates")}
           </Button>
         )
       }
     >
       <div className="rounded-lg border border-line bg-surface px-4">
-        <Row label="Version">Temper {version ?? "0.1.0"}</Row>
-        <Row label="Status">
-          {status === "checking" && "Checking…"}
-          {status === "current" && "Temper is up to date"}
-          {status === "idle" && (inTauri ? "Not checked yet" : "Updates work in the desktop app")}
-          {status === "error" && "Couldn't check"}
-          {update && status === "available" && <Badge tone="accent">Temper {update.version} is available</Badge>}
-          {status === "downloading" && `Downloading${total ? ` ${Math.round((received / total) * 100)}%` : "…"}`}
-          {status === "installing" && "Installing, Temper will restart"}
+        <Row label={t("settings.version")}>Temper {version ?? "0.1.0"}</Row>
+        <Row label={t("settings.status")}>
+          {status === "checking" && t("settings.checking")}
+          {status === "current" && t("settings.up_to_date")}
+          {status === "idle" && t(inTauri ? "settings.not_checked" : "settings.desktop_only")}
+          {status === "error" && t("settings.couldnt_check")}
+          {update && status === "available" && <Badge tone="accent">{t("settings.available", { version: update.version })}</Badge>}
+          {status === "downloading" && (total ? t("settings.downloading_pct", { pct: Math.round((received / total) * 100) }) : t("settings.downloading"))}
+          {status === "installing" && t("settings.installing_restart")}
         </Row>
-        {checkedAt && <Row label="Last checked">{new Date(checkedAt).toLocaleString()}</Row>}
+        {checkedAt && <Row label={t("settings.last_checked")}>{new Date(checkedAt).toLocaleString()}</Row>}
       </div>
       {update && (status === "available" || status === "downloading" || status === "installing") && (
         <div className="mt-3 rounded-lg border border-line bg-surface px-4 py-3">
           {update.body && <p className="text-[13px] whitespace-pre-line text-muted">{update.body.split("\n").slice(0, 8).join("\n")}</p>}
           <Button className="mt-3" size="sm" variant="primary" disabled={working} onClick={() => void restart()}>
-            Update and restart
+            {t("settings.update_restart")}
           </Button>
         </div>
       )}
@@ -150,7 +151,7 @@ function Updates() {
       {inTauri && (
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13px]">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-[var(--accent)]" />
-          Check for updates automatically
+          {t("settings.auto")}
         </label>
       )}
     </Section>
@@ -159,6 +160,7 @@ function Updates() {
 
 /** Closing the window can leave Temper in the tray, so the API and the loaded model stay up for other apps. */
 function KeepRunning() {
+  const t = useT();
   const [on, setOn] = useState<boolean | null>(null);
   useEffect(() => {
     void import("@tauri-apps/api/core").then(({ invoke }) => invoke<boolean>("get_background").then(setOn, () => setOn(false)));
@@ -171,14 +173,15 @@ function KeepRunning() {
   if (on === null) return null;
   return (
     <div className="mt-3">
-      <Toggle checked={on} onChange={(v) => void change(v)} label="Keep running when the window is closed" />
-      <p className="mt-1 text-[12px] text-muted">Temper stays in the menu bar or tray, so apps using its API keep working. Quit it from there.</p>
+      <Toggle checked={on} onChange={(v) => void change(v)} label={t("settings.keep_running")} />
+      <p className="mt-1 text-[12px] text-muted">{t("settings.keep_running_hint")}</p>
     </div>
   );
 }
 
 /** The engine as a login item (engine daemon.py), so the API is up before the app is opened. */
 function StartAtLogin() {
+  const t = useT();
   const [on, setOn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -195,10 +198,9 @@ function StartAtLogin() {
   if (on === null) return null;
   return (
     <div className="mt-3">
-      <Toggle checked={on} onChange={(v) => void change(v)} label="Start the engine when I log in" />
+      <Toggle checked={on} onChange={(v) => void change(v)} label={t("settings.login")} />
       <p className="mt-1 text-[12px] text-muted">
-        The model API is ready before you open Temper, for agents and other apps. The app uses that engine when you open it. From a terminal:{" "}
-        <span className="font-mono">temper daemon install</span>.
+        {withNodes(t("settings.login_hint"), { cmd: <span className="font-mono">temper daemon install</span> })}
       </p>
       {error && <p className="mt-1 text-[12px] text-danger">{error}</p>}
     </div>
@@ -213,7 +215,7 @@ export function SettingsPage() {
   const startTour = useTour((s) => s.start);
 
   async function reinstall(profile: "chat" | "train", clean: boolean) {
-    if (clean && !confirm("Reinstall the engine? Temper deletes and rebuilds its Python environment. Your models, runs and exports are kept.")) return;
+    if (clean && !confirm(t("settings.reinstall_confirm"))) return;
     await installEngine(profile, clean);
     await refreshEngine();
     go("chat");
@@ -225,7 +227,7 @@ export function SettingsPage() {
         title={t("settings.title")}
         actions={
           <Button size="sm" variant="ghost" onClick={startTour}>
-            Take the tour
+            {t("settings.tour")}
           </Button>
         }
       />
@@ -256,33 +258,33 @@ export function SettingsPage() {
           </Section>
 
           <Section
-            title="Engine"
+            title={t("settings.engine")}
             aside={
               inTauri && (
                 <Button size="sm" onClick={async () => { await restartEngine(); await refreshEngine(); }}>
-                  <RotateCw className="size-3.5" /> Restart engine
+                  <RotateCw className="size-3.5" /> {t("settings.restart_engine")}
                 </Button>
               )
             }
           >
             <div className="rounded-lg border border-line bg-surface px-4">
-              <Row label="Status">
-                <Badge tone={engine?.status === "running" ? "ok" : "warn"}>{STATUS_LABEL[engine?.status ?? "starting"]}</Badge>
+              <Row label={t("settings.status")}>
+                <Badge tone={engine?.status === "running" ? "ok" : "warn"}>{t(STATUS_LABEL[engine?.status ?? "starting"] ?? "settings.s_starting")}</Badge>
               </Row>
-              <Row label="Address">
+              <Row label={t("settings.address")}>
                 <span className="font-mono text-[12.5px]">{engine?.url ?? "–"}</span>
               </Row>
-              {setup?.installed && <Row label="Installed">{PROFILE_LABEL[setup.installed]}</Row>}
+              {setup?.installed && <Row label={t("settings.installed")}>{t(PROFILE_LABEL[setup.installed])}</Row>}
             </div>
             {setup?.installed && engine?.status !== "installing" && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {setup.installed === "chat" && setup.hardware?.can_train && (
                   <Button size="sm" variant="primary" onClick={() => reinstall("train", false)}>
-                    Add training support
+                    {t("settings.add_training")}
                   </Button>
                 )}
                 <Button size="sm" onClick={() => reinstall(setup.installed ?? "chat", true)}>
-                  Reinstall engine
+                  {t("settings.reinstall")}
                 </Button>
               </div>
             )}
@@ -315,23 +317,23 @@ export function SettingsPage() {
           {engine?.status === "running" && <Privacy />}
 
           {system && (
-            <Section title="This computer">
+            <Section title={t("settings.computer")}>
               <div className="rounded-lg border border-line bg-surface px-4">
-                <Row label="System">
+                <Row label={t("settings.system_row")}>
                   {system.os.name} {system.os.release} ({system.os.machine})
                 </Row>
-                <Row label="Processor">
-                  {system.cpu.name}, {system.cpu.cores} cores
+                <Row label={t("settings.processor")}>
+                  {t("settings.cores", { name: system.cpu.name, n: system.cpu.cores })}
                 </Row>
-                <Row label="Memory">{bytes(system.memory.total)}</Row>
+                <Row label={t("settings.memory")}>{bytes(system.memory.total)}</Row>
                 {system.gpus.map((g) => (
                   <Row key={g.index} label={`GPU ${g.index}`}>
-                    {g.name}, {bytes(g.memory_total)} {g.unified_memory ? "unified" : "VRAM"}
+                    {g.name}, {bytes(g.memory_total)} {g.unified_memory ? t("settings.unified") : "VRAM"}
                   </Row>
                 ))}
-                <Row label="Free disk space">{bytes(system.disk.free)}</Row>
-                <Row label="Chat runtime">{system.capabilities.gguf_inference ? <Badge tone="ok">llama.cpp found</Badge> : <Badge tone="warn">llama.cpp not installed</Badge>}</Row>
-                <Row label="Trainer">{system.capabilities.trainer ? <Badge tone="ok">{system.capabilities.trainer === "mlx" ? "MLX" : "PyTorch"}</Badge> : <Badge tone="warn">Not installed</Badge>}</Row>
+                <Row label={t("settings.free_disk")}>{bytes(system.disk.free)}</Row>
+                <Row label={t("settings.chat_runtime")}>{system.capabilities.gguf_inference ? <Badge tone="ok">{t("settings.llama_found")}</Badge> : <Badge tone="warn">{t("settings.llama_missing")}</Badge>}</Row>
+                <Row label={t("settings.trainer")}>{system.capabilities.trainer ? <Badge tone="ok">{system.capabilities.trainer === "mlx" ? "MLX" : "PyTorch"}</Badge> : <Badge tone="warn">{t("settings.not_installed")}</Badge>}</Row>
               </div>
             </Section>
           )}
@@ -347,17 +349,17 @@ export function SettingsPage() {
           <Updates />
 
           <Section
-            title="About"
+            title={t("settings.about")}
             aside={
               <Button size="sm" onClick={() => setLicenses(true)}>
-                Open-source licences
+                {t("settings.licences")}
               </Button>
             }
           >
             <div className="rounded-lg border border-line bg-surface px-4">
-              <Row label="Licence">Apache-2.0</Row>
-              <Row label="Training">PyTorch, TRL and MLX</Row>
-              <Row label="Chat">llama.cpp (MIT)</Row>
+              <Row label={t("settings.licence")}>Apache-2.0</Row>
+              <Row label={t("settings.training")}>{t("settings.training_libs")}</Row>
+              <Row label={t("settings.chat")}>llama.cpp (MIT)</Row>
             </div>
             <LicensesDialog open={licenses} onClose={() => setLicenses(false)} />
           </Section>

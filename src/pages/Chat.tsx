@@ -183,13 +183,14 @@ function Slider({ label, value, min, max, step, onChange }: { label: string; val
 
 /** Where the summary starts: the messages above it reach the model only as this summary. */
 function CompactionDivider({ text }: { text: string }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-3 text-[12px] text-muted">
         <span className="h-px flex-1 bg-line" />
         <button onClick={() => setOpen(!open)} className="flex items-center gap-1 hover:text-text" aria-expanded={open}>
-          <Layers className="size-3.5" /> Earlier messages are summarised to fit the model's context
+          <Layers className="size-3.5" /> {t("gen.compacted")}
           <ChevronRight className={cx("size-3 transition-transform", open && "rotate-90")} />
         </button>
         <span className="h-px flex-1 bg-line" />
@@ -298,7 +299,7 @@ export function ChatPage() {
       setSaveError(null);
       setListVersion((v) => v + 1);
     } catch (e) {
-      setSaveError(`This chat couldn't be saved: ${(e as Error).message}`);
+      setSaveError(t("gen.save_failed", { error: (e as Error).message }));
     }
     return id;
   }
@@ -564,7 +565,7 @@ export function ChatPage() {
     const thoughts = got?.thoughts ?? "";
     // A stopped reply keeps what was written (thinking included); one stopped before it began isn't saved.
     // A model that ends without writing anything says so, rather than leaving the question unanswered.
-    if (!text && !thoughts && !got?.tools.length && !failure && !stopped) failure = "The model ended its reply without writing anything. Regenerate, or rephrase the message.";
+    if (!text && !thoughts && !got?.tools.length && !failure && !stopped) failure = t("gen.empty_reply");
     const steps = got?.tools.length ? got.tools : undefined;
     const reply: Message | null = text || thoughts || steps ? { role: "assistant", content: text, model, reasoning: thoughts || null, thought: got?.thought, tools: steps } : failure ? { role: "assistant", content: failure, error: true, model, fit } : null;
     if (reply && chatId.current === id) setMessages([...history, reply]);
@@ -644,11 +645,8 @@ export function ChatPage() {
   const dropping = useFileDrop((paths) => !comparing && ready && void addFiles(paths));
   const modalities = runtime?.modalities ?? {};
   const kinds = new Set(files.map((f) => f.kind));
-  const lacking = kinds.has("image") && !modalities.vision ? "see images" : kinds.has("audio") && !modalities.audio ? "hear audio" : null;
-  const cantTake =
-    ready && lacking
-      ? `${runtime?.model} can't ${lacking}. ${runtime?.projector ? "" : "Load a model that can; Temper loads its projector (an mmproj .gguf) from beside the model."}`.trim()
-      : null;
+  const lacking = kinds.has("image") && !modalities.vision ? "gen.cant_see" : kinds.has("audio") && !modalities.audio ? "gen.cant_hear" : null;
+  const cantTake = ready && lacking ? `${t(lacking, { model: runtime?.model ?? "" })} ${runtime?.projector ? "" : t("gen.projector")}`.trim() : null;
 
   keys.current = { newChat, stop, comparing, busy };
   const set = <K extends keyof Settings>(k: K) => (v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
@@ -674,7 +672,7 @@ export function ChatPage() {
           </div>
           {chat?.source && !comparing && (
             <span className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
-              <History className="size-3.5 shrink-0" /> <span className="truncate">Imported from {chat.source}. {ready ? "Messages you send continue it with the loaded model." : "Load a model to continue it."}</span>
+              <History className="size-3.5 shrink-0" /> <span className="truncate">{t("gen.imported", { source: chat.source })} {t(ready ? "gen.imported_continue" : "gen.imported_load")}</span>
             </span>
           )}
         </div>
@@ -836,7 +834,7 @@ export function ChatPage() {
                     placeholder={!ready ? t("chat.placeholder_first") : busy ? t("chat.placeholder_queue") : t("chat.placeholder")}
                     disabled={!ready}
                     className="max-h-52 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-muted"
-                    aria-label="Message"
+                    aria-label={t("gen.message")}
                   />
                   {busy && (
                     <Button variant="secondary" onClick={stop} aria-label={t("chat.stop")} className="size-9 rounded-xl px-0">
@@ -845,7 +843,7 @@ export function ChatPage() {
                   )}
                   {busy ? (
                     (draft.trim() || files.length > 0) && (
-                      <Button variant="primary" onClick={submit} aria-label="Add to queue" title="Sent when the reply finishes" className="size-9 rounded-xl px-0">
+                      <Button variant="primary" onClick={submit} aria-label={t("gen.add_queue")} title={t("gen.queue_title")} className="size-9 rounded-xl px-0">
                         <ListPlus className="size-4" />
                       </Button>
                     )
@@ -859,7 +857,7 @@ export function ChatPage() {
               <div className="mt-1.5 flex justify-center gap-3 text-[11.5px] text-muted">
                 <span>{busy ? t("chat.queue_hint") : t("chat.send_hint")}</span>
                 {usage && (
-                  <span className={cx("tabular-nums", usage.tokens > usage.context * 0.75 && "text-straw")} title={autoCompact ? "When it fills, older messages are summarised to make room." : "Auto-compaction is off: a full context stops the chat."}>
+                  <span className={cx("tabular-nums", usage.tokens > usage.context * 0.75 && "text-straw")} title={t(autoCompact ? "gen.compact_on" : "gen.compact_off")}>
                     {t("chat.tokens", { used: kTokens(usage.tokens), total: kTokens(usage.context) })}
                   </span>
                 )}
@@ -871,7 +869,7 @@ export function ChatPage() {
 
       <aside className="w-[272px] shrink-0 overflow-y-auto border-l border-line bg-surface/40 px-4 py-5">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">Generation</h2>
+          <h2 className="font-semibold">{t("gen.title")}</h2>
         </div>
         <PresetBar
           model={ready ? (runtime?.model ?? null) : null}
@@ -887,59 +885,59 @@ export function ChatPage() {
         {recommended && selected === "recommended" && (
           <p className="-mt-2 mb-4 text-[12px] text-muted" title={samplingText(recommended.sampling)}>
             {recommended.publisher === "Ollama"
-              ? `From ${recommended.id}'s Ollama Modelfile.`
+              ? t("gen.from_ollama", { model: recommended.id })
               : recommended.source
-                ? `From ${recommended.source}.`
-                : `${recommended.publisher}'s recommended settings for ${shortName(recommended.id)}.`}
+                ? t("gen.from", { source: recommended.source ?? "" })
+                : t("gen.publisher", { publisher: recommended.publisher ?? "", model: shortName(recommended.id) })}
           </p>
         )}
         <div className="flex flex-col gap-4">
-          <Field label="System prompt">
+          <Field label={t("gen.system")}>
             <textarea
               value={settings.system}
               onChange={(e) => set("system")(e.target.value)}
               rows={4}
-              placeholder="You are a helpful assistant."
+              placeholder={t("gen.system_placeholder")}
               className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 placeholder:text-muted focus:border-accent focus:outline-none"
             />
           </Field>
           <ProjectFolder project={project} onChange={setProject} />
-          <Slider label="Temperature" value={settings.temperature} min={0} max={2} step={0.05} onChange={set("temperature")} />
+          <Slider label={t("gen.temperature")} value={settings.temperature} min={0} max={2} step={0.05} onChange={set("temperature")} />
           <Slider label="Top P" value={settings.top_p} min={0} max={1} step={0.01} onChange={set("top_p")} />
           <Slider label="Top K" value={settings.top_k} min={0} max={200} step={1} onChange={set("top_k")} />
           <Slider label="Min P" value={settings.min_p} min={0} max={1} step={0.01} onChange={set("min_p")} />
-          <Slider label="Repeat penalty" value={settings.repeat_penalty} min={1} max={2} step={0.01} onChange={set("repeat_penalty")} />
-          <Slider label="Presence penalty" value={settings.presence_penalty} min={0} max={2} step={0.05} onChange={set("presence_penalty")} />
-          <Field label="Max new tokens" hint={thinks ? "Thinking counts toward this." : undefined}>
+          <Slider label={t("gen.repeat")} value={settings.repeat_penalty} min={1} max={2} step={0.01} onChange={set("repeat_penalty")} />
+          <Slider label={t("gen.presence")} value={settings.presence_penalty} min={0} max={2} step={0.05} onChange={set("presence_penalty")} />
+          <Field label={t("gen.max_tokens")} hint={thinks ? t("gen.thinking_counts") : undefined}>
             <Input type="number" min={16} value={settings.max_tokens} onChange={(e) => set("max_tokens")(Number(e.target.value))} />
           </Field>
           <div>
-            <Toggle label="Auto-compact long chats" checked={autoCompact} onChange={changeAutoCompact} />
-            <p className="text-[12px] text-muted">When the model's context fills, summarise the oldest messages instead of stopping.</p>
+            <Toggle label={t("gen.auto_compact")} checked={autoCompact} onChange={changeAutoCompact} />
+            <p className="text-[12px] text-muted">{t("gen.auto_compact_hint")}</p>
           </div>
           {!comparing && <ToolsControl value={chatTools} onChange={changeTools} />}
           {reasoning && thinks && !comparing && (
             <div className="flex flex-col gap-3 border-t border-line pt-4">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
-                <Brain className="size-3.5" /> Thinking
+                <Brain className="size-3.5" /> {t("gen.thinking")}
               </h3>
-              {reasoning.toggle && <Toggle label="Think before answering" checked={thinking.on} onChange={(on) => changeThinking({ on })} />}
+              {reasoning.toggle && <Toggle label={t("gen.think")} checked={thinking.on} onChange={(on) => changeThinking({ on })} />}
               {reasoning.effort && (
-                <Field label="Reasoning effort">
+                <Field label={t("gen.effort")}>
                   <Select value={thinking.effort} onChange={(e) => changeThinking({ effort: e.target.value as Thinking["effort"] })}>
-                    <option value="default">Model default</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
+                    <option value="default">{t("gen.model_default")}</option>
+                    <option value="low">{t("gen.low")}</option>
+                    <option value="medium">{t("gen.medium")}</option>
+                    <option value="high">{t("gen.high")}</option>
                   </Select>
                 </Field>
               )}
               {(!reasoning.toggle || thinking.on) && (
-                <Field label="Thinking budget" hint="Most tokens to spend thinking before answering. Empty for no limit.">
-                  <Input type="number" min={0} step={256} placeholder="No limit" value={thinking.budget || ""} onChange={(e) => changeThinking({ budget: Math.max(0, Number(e.target.value) || 0) })} />
+                <Field label={t("gen.budget")} hint={t("gen.budget_hint")}>
+                  <Input type="number" min={0} step={256} placeholder={t("gen.no_limit")} value={thinking.budget || ""} onChange={(e) => changeThinking({ budget: Math.max(0, Number(e.target.value) || 0) })} />
                 </Field>
               )}
-              <p className="text-[12px] text-muted">Remembered for {runtime?.model}.</p>
+              <p className="text-[12px] text-muted">{t("gen.remembered", { model: runtime?.model ?? "" })}</p>
             </div>
           )}
           {!comparing && <ModelSettings stats={stats} />}
