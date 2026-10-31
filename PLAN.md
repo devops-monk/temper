@@ -298,6 +298,23 @@ temper/
 
 ---
 
+## Phase 13: Running models like a service
+
+Ideas from reviewing other local-model CLIs, written fresh for Temper. Most of it is in the `temper` command and the engine it talks to, so a server, a script or an agent can drive Temper with no window open.
+
+- [ ] **13.1 Load on demand**: an API request that names a downloaded model that isn't loaded loads it first, instead of answering with the chat model. A model loaded this way unloads after its own idle time (`ttl`), and memory is made by unloading the least recently used on-demand model. A Settings toggle turns it off.
+- [ ] **13.2 Loaded models from the terminal**: `temper ps` lists what's loaded (model, engine, context, memory, idle time, ttl); `temper unload <model>` or `--all`; `temper load` gains `--ttl`, `--gpu` (offload share), `--alias` (the name requests use), `--estimate-only` (the memory it would take, without loading) and `-y` (load past a fit warning).
+- [ ] **13.3 Scriptable output and status**: `--json` on `models`, `ps`, `runs` and `status`; `temper status` (engine, address, loaded models, running jobs, disk) and `temper version`.
+- [ ] **13.4 `temper get` and `temper import`**: search Hugging Face from the terminal, pick the quant that fits this computer (or `--quant`), and download with a progress bar; `temper get owner/repo` skips the search. `temper import <file or folder>` adds a model you have, with `--copy` or `--move` into the models folder (it is referenced in place by default).
+- [ ] **13.5 Chat commands**: the `temper chat` REPL gains `/model` (switch), `/system`, `/think on|off|auto`, `/stats` (tokens, tokens per second, time to first token), `/save` (to Temper's chats), `/help`, and multi-line input.
+- [ ] **13.6 Request log**: `temper log` streams what the API is doing as it happens: each request, its key, model, tokens and speed, with `--json`; `--content` adds the prompts and replies. The Connect monitor shows the same. Content is kept in memory only and never written to disk.
+- [ ] **13.7 Background service**: `temper daemon up|down|status` runs the engine detached from any terminal; "Start Temper at login" (Settings, or `temper daemon install`) registers a launchd agent, a Task Scheduler task or a systemd user unit. Covers 10.8's systemd unit.
+- [ ] **13.8 Engines from the terminal**: `temper engines` lists the installed inference engines and their versions, `temper engines use <name>` picks one, and `temper engines update` fetches the latest llama.cpp build for this hardware; `temper engines survey` shows what each can use (GPU, memory, backends).
+- [ ] **13.9 Starter projects**: `temper create` scaffolds a small app wired to the local API (Python or TypeScript: chat, tool calling, retrieval over a folder), with a README and a named API key filled in.
+- [ ] **13.10 Linked devices**: add another computer running Temper by its address and a named API key. Its models appear in Models and Chat as "on <device>", requests for them go there, and a preferred device decides which copy answers when both have the model. Lets a laptop use a desktop's GPU.
+
+---
+
 ## Running it today (developers)
 
 ```bash
