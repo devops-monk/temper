@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import home
@@ -153,8 +153,29 @@ def _unpack(data: bytes, name: str, dest: Path) -> None:
         inner.rmdir()
 
 
+# llama.cpp's Linux builds are made on Ubuntu 24.04 and need its C library or newer.
+MIN_GLIBC = (2, 38)
+
+
+def glibc_too_old() -> str | None:
+    """Why the Linux builds can't run here, when the C library is older than they need."""
+    if platform.system() != "Linux":
+        return None
+    lib, version = platform.libc_ver()
+    try:
+        found = tuple(int(n) for n in version.split(".")[:2])
+    except ValueError:
+        return None
+    if lib != "glibc" or found >= MIN_GLIBC:
+        return None
+    return (f"llama.cpp's Linux builds need glibc {'.'.join(map(str, MIN_GLIBC))} or newer (Ubuntu 24.04, Debian 13, Fedora 39 or later), "
+            f"and this system has {version}. Install llama.cpp from your package manager or build it, and Temper uses the llama-server on your PATH.")
+
+
 def install(report: Report = _quiet, backend: str | None = None) -> Path:
     """Downloads and unpacks the pinned llama.cpp build for this machine. Safe to call again."""
+    if why := glibc_too_old():
+        raise RuntimeError(why)
     key = build_key(backend)
     final = build_dir(key)
     if (final / ".complete").is_file():
@@ -324,6 +345,8 @@ def status():
 def install_endpoint(req: InstallRequest):
     from .jobs import registry
 
+    if why := glibc_too_old():
+        raise HTTPException(409, why)
     job = registry.create("download", f"llama.cpp {TAG}")
     job.progress = 0.0
 
