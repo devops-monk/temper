@@ -30,6 +30,19 @@ cat notes.md | temper chat "Summarise this"
 temper chat                        # chat until /bye; /clear starts over
 ```
 
+Inside `temper chat`:
+
+| Command | Does |
+|---------|------|
+| `/model [name]` | talk to another loaded model, or a downloaded one (it loads); no name lists them |
+| `/system [text]` | set or clear the system prompt |
+| `/think on\|off\|auto` | show a thinking model's reasoning, ask it not to think, or think quietly |
+| `/stats` | tokens, tokens per second and time to first token of the last reply |
+| `/save [title]` | keep the conversation in Temper's chats (again to update it) |
+| `/clear`, `/bye` | start over, end |
+
+Write several lines between `"""` marks. `temper chat --model <name>` starts with another model.
+
 `temper load` refuses a model that doesn't look like it fits; `-y` tries anyway. `--gpu-layers N` keeps some
 layers on the CPU (0 runs it all there). An `--alias` is the name API requests use for the model.
 

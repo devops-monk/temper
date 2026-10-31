@@ -423,12 +423,25 @@ def unload_cmd(args: list[str]) -> int:
     return 0
 
 
-def _reply(c: httpx.Client, messages: list[dict]) -> str:
-    """Streams one reply to stdout, leaving out a thinking model's reasoning, and returns it."""
+DIM, PLAIN = ("\033[2m", "\033[0m") if sys.stdout.isatty() else ("", "")
+
+
+def _reply(c: httpx.Client, messages: list[dict], model: str | None = None, think: str = "auto") -> tuple[str, str, dict]:
+    """Streams one reply to stdout and returns it, its reasoning and its stats.
+
+    A thinking model's reasoning is left out, or shown dimmed with think="on"; think="off" asks the
+    model not to think, where its template allows that.
+    """
     from .anthropic_api import ThinkFilter
 
-    think, text = ThinkFilter(), ""
-    with c.stream("POST", "/v1/chat/completions", json={"messages": messages, "stream": True}) as r:
+    body: dict = {"messages": messages, "stream": True, "stream_options": {"include_usage": True}}
+    if model:
+        body["model"] = model
+    if think == "off":
+        body["chat_template_kwargs"] = {"enable_thinking": False}  # templates without the switch ignore it
+    think_filter, text, reasoning, usage = ThinkFilter(), "", "", {}
+    start, first, shown = time.monotonic(), None, False
+    with c.stream("POST", "/v1/chat/completions", json=body) as r:
         if r.status_code >= 400:
             r.read()
             _check(r)
@@ -436,52 +449,188 @@ def _reply(c: httpx.Client, messages: list[dict]) -> str:
             if not line.startswith("data:") or line[5:].strip() == "[DONE]":
                 continue
             try:
-                delta = (json.loads(line[5:]).get("choices") or [{}])[0].get("delta") or {}
+                chunk = json.loads(line[5:])
             except ValueError:
                 continue
-            part = think.feed(delta.get("content") or "")
+            usage = chunk.get("usage") or usage
+            delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+            if thought := delta.get("reasoning_content") or delta.get("reasoning") or "":
+                first = first or time.monotonic()
+                reasoning += thought
+                if think == "on":
+                    print(f"{DIM}{thought}{PLAIN}", end="", flush=True)
+                    shown = True
+            part = think_filter.feed(delta.get("content") or "")
             if not text:
                 part = part.lstrip()  # what a thinking block leaves before the answer
             if part:
+                first = first or time.monotonic()
+                if shown:
+                    print("\n")  # the answer starts below the reasoning
+                    shown = False
                 text += part
                 print(part, end="", flush=True)
-    if rest := (think.flush() if text else think.flush().lstrip()):
+    if rest := (think_filter.flush() if text else think_filter.flush().lstrip()):
         text += rest
         print(rest, end="")
     print()
-    return text
+    took = time.monotonic() - start
+    out = usage.get("completion_tokens")
+    stats = {
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": out,
+        "seconds": round(took, 2),
+        "first_token_seconds": round(first - start, 2) if first else None,
+        "tokens_per_second": round(out / (took - (first - start)), 1) if out and first and took > first - start else None,
+    }
+    return text, reasoning, stats
+
+
+CHAT_HELP = """Commands:
+  /model [name]        the model to talk to: a loaded one, or a downloaded one to load (no name lists them)
+  /system [text]       set the system prompt (no text clears it)
+  /think on|off|auto   show a thinking model's reasoning, ask it not to think, or think quietly (the default)
+  /stats               tokens, speed and time to first token of the last reply
+  /save [title]        keep this conversation in Temper's chats
+  /clear               start over
+  /bye                 end (or Ctrl-D)
+Start a line with \"\"\" to write several lines, and end with \"\"\" on a line of its own."""
+
+
+class Repl:
+    """`temper chat` with no prompt: a conversation, with the commands in CHAT_HELP."""
+
+    def __init__(self, c: httpx.Client, system: str | None) -> None:
+        self.c, self.system = c, system
+        self.model: str | None = None  # None: chat's model
+        self.think, self.history, self.stats, self.chat_id = "auto", [], None, None
+
+    def messages(self) -> list[dict]:
+        return ([{"role": "system", "content": self.system}] if self.system else []) + self.history
+
+    def read(self) -> str | None:
+        """One message: a line, or a block between \"\"\" lines. None at the end of input."""
+        try:
+            line = input("> ")
+            if not line.lstrip().startswith('"""'):
+                return line
+            lines = [line.lstrip()[3:]]
+            while not lines[-1].rstrip().endswith('"""') or len(lines) == 1 and lines[0].strip() == "":
+                lines.append(input(". "))
+            lines[-1] = lines[-1].rstrip()[:-3]
+            return "\n".join(lines).strip("\n")
+        except EOFError:
+            print(file=sys.stderr)
+            return None
+
+    def command(self, line: str) -> bool:
+        """Runs a /command; False when it ends the chat."""
+        name, _, arg = line[1:].partition(" ")
+        arg = arg.strip()
+        if name in ("bye", "exit", "quit"):
+            return False
+        if name == "help":
+            print(CHAT_HELP)
+        elif name == "clear":
+            self.history, self.chat_id = [], None
+            print("Started over.")
+        elif name == "system":
+            self.system = arg or None
+            print(f"System prompt set." if arg else "System prompt cleared.")
+        elif name == "think":
+            if arg not in ("on", "off", "auto"):
+                print(f"/think on, off or auto (now {self.think}).")
+            else:
+                self.think = arg
+                print({"on": "Showing the reasoning.", "off": "Asking the model not to think.", "auto": "Thinking quietly."}[arg])
+        elif name == "model":
+            self.pick_model(arg)
+        elif name == "stats":
+            self.show_stats()
+        elif name == "save":
+            self.save(arg)
+        else:
+            print(f"There's no /{name}. /help lists the commands.")
+        return True
+
+    def pick_model(self, wanted: str) -> None:
+        models = _check(self.c.get("/v1/models")).get("data") or []
+        if not wanted:
+            for m in models:
+                mark = "*" if m["id"] == self.model or (self.model is None and m is models[0] and m.get("loaded", True)) else " "
+                print(f"{mark} {m['id']}" + ("" if m.get("loaded", True) else "  (loads when chosen)"))
+            return
+        match = next((m for m in models if m["id"].lower() == wanted.lower()), None) or next((m for m in models if wanted.lower() in m["id"].lower()), None)
+        if match is None:
+            print(f"No model called {wanted!r}. /model lists them.")
+            return
+        self.model = match["id"]
+        print(f"Talking to {self.model}" + ("" if match.get("loaded", True) else "; it loads with your next message") + ".")
+
+    def show_stats(self) -> None:
+        s = self.stats
+        if not s:
+            print("No reply yet.")
+            return
+        parts = [f"{s['completion_tokens']} tokens" if s["completion_tokens"] is not None else None,
+                 f"{s['tokens_per_second']} tokens/s" if s["tokens_per_second"] else None,
+                 f"first token after {s['first_token_seconds']} s" if s["first_token_seconds"] is not None else None,
+                 f"{s['seconds']} s in all",
+                 f"{s['prompt_tokens']} tokens of prompt" if s["prompt_tokens"] is not None else None]
+        print(", ".join(p for p in parts if p))
+
+    def save(self, title: str) -> None:
+        if not self.history:
+            print("Nothing to save yet.")
+            return
+        body = {"messages": self.messages(), "model": self.model}
+        if self.chat_id:
+            _check(self.c.put(f"/api/chats/{self.chat_id}/messages", json=body))
+            if title:
+                _check(self.c.patch(f"/api/chats/{self.chat_id}", json={"title": title}))
+        else:
+            chat = _check(self.c.post("/api/chats", json={**body, "title": title or None}))
+            self.chat_id = chat["id"]
+        print("Saved in Temper's chats. /save again keeps it up to date.")
+
+    def run(self) -> int:
+        print("Chatting with the model loaded in Temper. /help lists the commands; /bye (or Ctrl-D) ends.", file=sys.stderr)
+        while (line := self.read()) is not None:
+            if not line.strip():
+                continue
+            if line.startswith("/") and not line.startswith("//"):
+                if not self.command(line.strip()):
+                    return 0
+                continue
+            self.history.append({"role": "user", "content": line.removeprefix("/")})  # // sends a line that starts with /
+            try:
+                text, reasoning, self.stats = _reply(self.c, self.messages(), self.model, self.think)
+            except CliError as e:
+                self.history.pop()
+                print(e, file=sys.stderr)
+                continue
+            self.history.append({"role": "assistant", "content": text, **({"reasoning": reasoning} if reasoning else {}), **({"model": self.model} if self.model else {})})
+        return 0
 
 
 def chat_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper chat", description="Ask the loaded model once, or chat with it until /bye.")
     p.add_argument("prompt", nargs="*", help="ask this once and print the reply (or pipe it in)")
     p.add_argument("--system", help="a system prompt")
+    p.add_argument("--model", help="a loaded model to ask, or a downloaded one to load (default chat's model)")
     a = p.parse_args(args)
     engine = running()
-    loaded_model(engine)
-    messages = [{"role": "system", "content": a.system}] if a.system else []
+    if not a.model:
+        loaded_model(engine)
     with _client(engine) as c:
         prompt = " ".join(a.prompt) or (sys.stdin.read() if not sys.stdin.isatty() else "")
         if prompt.strip():
-            _reply(c, [*messages, {"role": "user", "content": prompt}])
+            messages = [{"role": "system", "content": a.system}] if a.system else []
+            _reply(c, [*messages, {"role": "user", "content": prompt}], a.model)
             return 0
-        print("Chatting with the model loaded in Temper. /clear starts over, /bye (or Ctrl-D) ends.", file=sys.stderr)
-        history = list(messages)
-        while True:
-            try:
-                line = input("> ")
-            except EOFError:
-                print(file=sys.stderr)
-                return 0
-            if line.strip() in ("/bye", "/exit", "/quit"):
-                return 0
-            if line.strip() == "/clear":
-                history = list(messages)
-                continue
-            if not line.strip():
-                continue
-            history.append({"role": "user", "content": line})
-            history.append({"role": "assistant", "content": _reply(c, history)})
+        repl = Repl(c, a.system)
+        repl.model = a.model
+        return repl.run()
 
 
 def _bar(done: float, total: float, speed: float | None = None) -> None:
@@ -834,7 +983,7 @@ USAGE = """usage:
   temper import <file or folder> [--copy | --move]
   temper status [--json]
   temper version
-  temper chat ["prompt"] [--system "..."]
+  temper chat ["prompt"] [--system "..."] [--model M]
   temper train <config.yaml> [--set key=value ...] [--dry-run]
   temper runs [--json]
   temper export <run> [--format gguf] [--quant q4_k_m] [--imatrix]

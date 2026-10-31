@@ -290,3 +290,56 @@ def test_import_points_at_a_link_not_its_blob(engine, tmp_path, capsys):
     link.symlink_to(blob)
     assert cli.main(["import", str(link)]) == 0
     assert "`temper load tiny-Q4_K_M.gguf` loads it" in capsys.readouterr().out
+
+
+def _stream_client(chunks, seen):
+    """A client whose /v1/chat/completions streams `chunks` and records each request body."""
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+        return httpx.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
+
+    return httpx.Client(base_url="http://model", transport=httpx.MockTransport(handler))
+
+
+def test_a_reply_counts_its_tokens_and_hides_or_shows_reasoning(capsys):
+    chunks = [
+        {"choices": [{"delta": {"reasoning_content": "12 and 3..."}}]},
+        {"choices": [{"delta": {"content": "36"}}]},
+        {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 9}},
+    ]
+    seen = []
+    text, reasoning, stats = cli._reply(_stream_client(chunks, seen), [{"role": "user", "content": "12*3?"}], model="tiny")
+    assert (text, reasoning) == ("36", "12 and 3...") and capsys.readouterr().out == "36\n"
+    assert stats["prompt_tokens"] == 20 and stats["completion_tokens"] == 9 and stats["first_token_seconds"] is not None
+    assert seen[0]["model"] == "tiny" and seen[0]["stream_options"] == {"include_usage": True} and "chat_template_kwargs" not in seen[0]
+    cli._reply(_stream_client(chunks, seen), [], think="on")
+    assert "12 and 3..." in capsys.readouterr().out
+    cli._reply(_stream_client(chunks, seen), [], think="off")
+    assert seen[-1]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_the_chat_repl_reads_blocks_and_runs_commands(monkeypatch, capsys):
+    typed = iter(['"""', "first line", 'second line"""', "/system Be brief.", "/think sideways", "/think off", "//etc is a path", "/stats", "/nope", "/bye"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+    seen = []
+    chunks = [{"choices": [{"delta": {"content": "ok"}}]}, {"choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}]
+    repl = cli.Repl(_stream_client(chunks, seen), None)
+    assert repl.run() == 0
+    out = capsys.readouterr().out
+    assert seen[0]["messages"] == [{"role": "user", "content": "first line\nsecond line"}]
+    assert seen[1]["messages"][0] == {"role": "system", "content": "Be brief."} and seen[1]["messages"][-1]["content"] == "/etc is a path"
+    assert seen[1]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "/think on, off or auto (now auto)" in out and "1 tokens" in out and "There's no /nope" in out
+
+
+def test_save_keeps_the_conversation_in_tempers_chats(engine):
+    repl = cli.Repl(engine, "Be brief.")
+    repl.history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+    repl.save("from the terminal")
+    chat = engine.get(f"/api/chats/{repl.chat_id}").json()
+    assert chat["title"] == "from the terminal" and [m["content"] for m in chat["messages"]] == ["Be brief.", "hi", "hello"]
+    repl.history += [{"role": "user", "content": "again"}, {"role": "assistant", "content": "sure"}]
+    repl.save("")
+    assert len(engine.get(f"/api/chats/{repl.chat_id}").json()["messages"]) == 5  # the same chat, brought up to date
