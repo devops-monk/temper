@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { openExternal } from "../lib/engine";
+import { useT } from "../lib/i18n";
 import { Input } from "./ui";
 
 interface Package {
@@ -52,6 +53,7 @@ function PackageLink({ p }: { p: Package }) {
 }
 
 function LicenseGroup({ group }: { group: Group }) {
+  const t = useT();
   return (
     <li className="border-t border-line py-3 first:border-t-0">
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px]">
@@ -60,7 +62,7 @@ function LicenseGroup({ group }: { group: Group }) {
         ))}
       </div>
       <details className="mt-1.5">
-        <summary className="cursor-pointer text-[12.5px] text-muted hover:text-text">{group.license || "Licence"} text</summary>
+        <summary className="cursor-pointer text-[12.5px] text-muted hover:text-text">{t("lic.text", { license: group.license || t("lic.licence") })}</summary>
         <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-surface-2 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap">{group.text}</pre>
       </details>
     </li>
@@ -68,6 +70,7 @@ function LicenseGroup({ group }: { group: Group }) {
 }
 
 export function LicensesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<Licenses | null>(null);
   const [query, setQuery] = useState("");
@@ -103,19 +106,19 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose: () =
         <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
           <div>
             <h2 id="licenses-title" className="text-[17px] font-semibold">
-              Open-source licences
+              {t("lic.title")}
             </h2>
-            <p className="mt-0.5 text-[13px] text-muted">Temper is licensed under Apache-2.0 and includes the open-source software below.</p>
+            <p className="mt-0.5 text-[13px] text-muted">{t("lic.about")}</p>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label="Close">
+          <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label={t("lic.close")}>
             <X className="size-4" />
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <section className="py-4">
-            <h3 className="font-semibold">Downloaded on your computer</h3>
+            <h3 className="font-semibold">{t("lic.downloaded")}</h3>
             <p className="mt-1 text-[13px] text-muted">
-              First-run setup and the Models page install these from their publishers. They run under their own licences, and Temper does not modify them.
+              {t("lic.downloaded_hint")}
             </p>
             <ul className="mt-2 grid grid-cols-1 gap-x-6 text-[13px] sm:grid-cols-2">
               {DOWNLOADED.map(([name, license, url]) => (
@@ -131,11 +134,11 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose: () =
 
           <section className="py-4">
             <div className="flex items-center justify-between gap-4">
-              <h3 className="font-semibold">Included in Temper{total ? ` (${total} packages)` : ""}</h3>
-              <Input className="h-8 max-w-56 text-[13px]" placeholder="Find a package" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Find a package" />
+              <h3 className="font-semibold">{total ? t("lic.included_n", { n: total }) : t("lic.included")}</h3>
+              <Input className="h-8 max-w-56 text-[13px]" placeholder={t("lic.find")} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t("lic.find")} />
             </div>
             {!data ? (
-              <p className="mt-3 text-[13px] text-muted">Loading…</p>
+              <p className="mt-3 text-[13px] text-muted">{t("lic.loading")}</p>
             ) : groups.length ? (
               <ul className="mt-2">
                 {groups.map((g, i) => (
@@ -143,7 +146,7 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose: () =
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-[13px] text-muted">No package matches “{query}”.</p>
+              <p className="mt-3 text-[13px] text-muted">{t("lic.none", { query })}</p>
             )}
           </section>
         </div>
