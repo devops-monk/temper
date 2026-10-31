@@ -6,6 +6,7 @@ import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
 import { OnDemand } from "../components/OnDemand";
 import { CopyButton, Notice, PageHeader, cx } from "../components/ui";
+import { useT, withNodes } from "../lib/i18n";
 import { useApp } from "../lib/store";
 
 interface Recipe {
@@ -151,6 +152,7 @@ bearer_token_env_var = "TEMPER_API_KEY"
 function Tabs({ recipes, active, onChange, url, token, model }: { recipes: Recipe[]; active: string; onChange: (id: string) => void; url: string; token: string; model: string }) {
   const recipe = recipes.find((r) => r.id === active) ?? recipes[0];
   const snippet = recipe.body(url, token, model);
+  const t = useT();
   return (
     <>
       <div className="flex flex-wrap gap-1 border-b border-line" role="tablist">
@@ -168,7 +170,7 @@ function Tabs({ recipes, active, onChange, url, token, model }: { recipes: Recip
       </div>
       <div className="relative mt-3 rounded-lg border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[12px] text-muted">
-          <span className="font-mono">{recipe.where}</span>
+          <span className="font-mono">{recipe.where === "terminal" ? t("connect.terminal") : recipe.where}</span>
           <CopyButton text={snippet} />
         </div>
         <pre className="overflow-x-auto p-4 font-mono text-[12.5px] leading-relaxed">{snippet}</pre>
@@ -179,6 +181,9 @@ function Tabs({ recipes, active, onChange, url, token, model }: { recipes: Recip
 
 export function ConnectPage() {
   const { engine, runtime } = useApp();
+  const t = useT();
+  const cmd = (text: string) => <span className="font-mono text-[12.5px] text-text">{text}</span>;
+  const code = (text: string) => <span className="font-mono text-[12.5px]">{text}</span>;
   const [active, setActive] = useState(RECIPES[0].id);
   const [activeMcp, setActiveMcp] = useState(MCP_RECIPES[0].id);
   const [reveal, setReveal] = useState(false);
@@ -188,21 +193,21 @@ export function ConnectPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Connect" description="Use the model loaded in Temper from coding agents, editors and your own code through OpenAI- and Anthropic-compatible APIs." />
+      <PageHeader title={t("nav.connect")} description={t("connect.description")} />
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-5">
         <dl className="mb-5 grid max-w-[760px] grid-cols-[120px_1fr_auto] items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
-          <dt className="text-muted">Base URL</dt>
+          <dt className="text-muted">{t("connect.base_url")}</dt>
           <dd className="font-mono text-[12.5px]">{url}/v1</dd>
           <CopyButton text={`${url}/v1`} />
-          <dt className="text-muted">Temper's key</dt>
+          <dt className="text-muted">{t("connect.key")}</dt>
           <dd className="font-mono text-[12.5px]">
             {reveal ? token : "•".repeat(24)}{" "}
             <button className="ml-2 font-sans text-accent hover:underline" onClick={() => setReveal(!reveal)}>
-              {reveal ? "Hide" : "Show"}
+              {reveal ? t("connect.hide") : t("connect.show")}
             </button>
           </dd>
           <CopyButton text={token} />
-          <dt className="text-muted">Model</dt>
+          <dt className="text-muted">{t("connect.model")}</dt>
           <dd className="font-mono text-[12.5px]">{model}</dd>
           <span />
         </dl>
@@ -211,78 +216,69 @@ export function ConnectPage() {
 
         {runtime?.state !== "ready" && (
           <div className="mb-5 max-w-[760px]">
-            <Notice>No model is loaded. Requests that name a downloaded model load it while loading on demand is on; others fail until you load one on the Models page.</Notice>
+            <Notice>{t("connect.no_model")}</Notice>
           </div>
         )}
 
         <div className="max-w-[760px]">
           <Tabs recipes={RECIPES} active={active} onChange={setActive} url={url} token={token} model={model} />
           <p className="mt-4 text-[13px] text-muted">
-            The key stays the same when Temper restarts, so these configs keep working. From a terminal, <span className="font-mono text-[12.5px] text-text">temper start claude</span> (or{" "}
-            <span className="font-mono text-[12.5px] text-text">codex</span>, <span className="font-mono text-[12.5px] text-text">opencode</span>, <span className="font-mono text-[12.5px] text-text">aider</span>) starts the agent
-            already pointed at the loaded model. Claude Code reads a long system prompt and many tool descriptions, so load the model with a context of 32K or more, and pick one that's good at
-            calling tools.
+            {withNodes(t("connect.tip"), { start: cmd("temper start claude"), codex: cmd("codex"), opencode: cmd("opencode"), aider: cmd("aider") })}
           </p>
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">Other apps</h2>
+          <h2 className="text-[15px] font-semibold">{t("connect.other_apps")}</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">
-            Many apps look for a local model at Ollama's or llama.cpp's usual address. Temper can answer there too, on this computer only. Like Ollama, those addresses take no key.
+            {t("connect.other_apps_hint")}
           </p>
           <DiscoverySettings />
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">Other devices</h2>
-          <p className="mt-1 mb-3 text-[13px] text-muted">Let phones and other computers on your home network use the loaded model.</p>
+          <h2 className="text-[15px] font-semibold">{t("connect.other_devices")}</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">{t("connect.other_devices_hint")}</p>
           <LanAccess />
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">Linked devices</h2>
+          <h2 className="text-[15px] font-semibold">{t("connect.linked")}</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">
-            Use another computer's models from this one, such as a desktop's GPU from a laptop. On that computer, turn on serving on the network and make an API key, then link it here.
-            Ask for its models as <span className="font-mono text-[12.5px]">model@device</span>; a model only it has can be asked for by name alone. The preferred device answers for
-            models both computers have.
+            {withNodes(t("connect.linked_hint"), { name: code("model@device") })}
           </p>
           <Devices />
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">Decisions</h2>
+          <h2 className="text-[15px] font-semibold">{t("connect.decisions")}</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">
-            Typed answers for your apps: yes or no, one of a set, labels or a score, each with a reason. Save a question by name and an app sends only the text, to{" "}
-            <span className="font-mono text-[12.5px]">/v1/decisions/name</span>. The loaded model answers, or a classifier you trained on the Train page.
+            {withNodes(t("connect.decisions_hint"), { path: code("/v1/decisions/name") })}
           </p>
           <Decisions />
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">API keys</h2>
+          <h2 className="text-[15px] font-semibold">{t("connect.api_keys")}</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">
-            Give each app or device its own key instead of Temper's, so you can see what each one uses and revoke it on its own. These keys open the model API (
-            <span className="font-mono text-[12.5px]">/v1</span>) and nothing else.
+            {withNodes(t("connect.api_keys_hint"), { path: code("/v1") })}
           </p>
           <ApiKeys />
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">Requests</h2>
-          <p className="mt-1 mb-3 text-[13px] text-muted">The latest calls to the model API, including Temper's own chats.</p>
+          <h2 className="text-[15px] font-semibold">{t("connect.requests")}</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">{t("connect.requests_hint")}</p>
           <ApiMonitor />
         </div>
 
         <div className="mt-8 max-w-[760px]">
-          <h2 className="text-[15px] font-semibold">MCP server</h2>
+          <h2 className="text-[15px] font-semibold">{t("connect.mcp")}</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">
-            Agents that speak the Model Context Protocol can use Temper as a server at <span className="font-mono text-[12.5px]">{url}/mcp</span>: list and load this computer's models, ask
-            them questions, and follow or cancel downloads, training and exports. It uses the same key.
+            {withNodes(t("connect.mcp_hint"), { url: code(`${url}/mcp`) })}
           </p>
           <Tabs recipes={MCP_RECIPES} active={activeMcp} onChange={setActiveMcp} url={url} token={token} model={model} />
           <p className="mt-4 text-[13px] text-muted">
-            Or, from a terminal: <span className="font-mono text-[12.5px] text-text">temper mcp add claude</span> (or <span className="font-mono text-[12.5px] text-text">codex</span>, <span className="font-mono text-[12.5px] text-text">cursor</span>,{" "}
-            <span className="font-mono text-[12.5px] text-text">vscode</span>) adds it for you, and <span className="font-mono text-[12.5px] text-text">temper doctor --mcp</span> checks it.
+            {withNodes(t("connect.mcp_tip"), { add: cmd("temper mcp add claude"), codex: cmd("codex"), cursor: cmd("cursor"), vscode: cmd("vscode"), doctor: cmd("temper doctor --mcp") })}
           </p>
         </div>
       </div>

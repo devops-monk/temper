@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { Fragment, type ReactNode, createElement, useCallback } from "react";
 import { create } from "zustand";
 import en from "../locales/en.json";
 import es from "../locales/es.json";
@@ -60,4 +60,9 @@ export const t = (key: Key, vars?: Vars) => translate(useLanguage.getState().lan
 export function useT() {
   const language = useLanguage((s) => s.language);
   return useCallback((key: Key, vars?: Vars) => translate(language, key, vars), [language]);
+}
+
+/** A translated sentence with {placeholders} filled by elements, such as a command shown as code. */
+export function withNodes(text: string, nodes: Record<string, ReactNode>): ReactNode[] {
+  return text.split(/\{(\w+)\}/).map((part, i) => createElement(Fragment, { key: i }, i % 2 ? (part in nodes ? nodes[part] : `{${part}}`) : part));
 }
