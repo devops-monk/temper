@@ -96,3 +96,23 @@ def test_training_setups_are_fitted_to_the_memory_there_is():
     assert not hopeless["fits"] and (hopeless["max_seq_length"], hopeless["lora_r"], hopeless["batch_size"]) == (512, 8, 1)
     short = fit({**QWEN3_06B, "max_position_embeddings": 1024}, 64)
     assert short["max_seq_length"] == 1024
+
+
+def test_sliding_window_layers_cache_only_their_window():
+    base = {"hidden_size": 2560, "num_hidden_layers": 34, "num_attention_heads": 8, "num_key_value_heads": 4, "head_dim": 256,
+            "intermediate_size": 10240, "vocab_size": 262144, "sliding_window": 1024}
+    gemma3 = m.shape_from_config({**base, "model_type": "gemma3_text", "sliding_window_pattern": 6})
+    assert (gemma3.kv_layers, gemma3.sliding_layers, gemma3.sliding_window) == (5, 29, 1024)
+    full = m.shape_from_config({k: v for k, v in base.items() if k != "sliding_window"})
+    per_token = 2 * 4 * 256 * 2
+    assert m.kv_cache_bytes(full, 32768) == 34 * 32768 * per_token
+    assert m.kv_cache_bytes(gemma3, 32768) == (5 * 32768 + 29 * 1024) * per_token
+    assert m.kv_cache_bytes(gemma3, 512) == 34 * 512 * per_token  # a context shorter than the window
+    typed = m.shape_from_config({**base, "layer_types": ["sliding_attention", "full_attention"] * 17})
+    assert (typed.kv_layers, typed.sliding_layers) == (17, 17)
+    qwen = m.shape_from_config({**base, "model_type": "qwen2"})  # its window is off unless use_sliding_window
+    assert (qwen.kv_layers, qwen.sliding_layers) == (None, 0)
+    meta = {"general.architecture": "gemma3", "gemma3.block_count": 34, "gemma3.embedding_length": 2560, "gemma3.attention.head_count": 8,
+            "gemma3.attention.head_count_kv": 4, "gemma3.attention.key_length": 256, "gemma3.attention.sliding_window": 1024}
+    g = m.shape_from_gguf(meta, 0)
+    assert (g.kv_layers, g.sliding_layers, g.sliding_window) == (5, 29, 1024)

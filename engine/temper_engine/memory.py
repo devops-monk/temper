@@ -43,13 +43,33 @@ class Shape:
     vocab: int
     params: int  # total parameters
     context_max: int | None = None
-    # Layers that keep a KV cache; hybrid models (linear attention, sliding windows) keep fewer.
+    # Layers that keep a KV cache for the whole context; hybrid models (linear attention, sliding windows) keep fewer.
     kv_layers: int | None = None
     experts: int = 0
+    # Sliding-window layers (Gemma 2 and 3, gpt-oss...) cache only the last `sliding_window` tokens.
+    sliding_layers: int = 0
+    sliding_window: int | None = None
 
     @property
     def cached_layers(self) -> int:
         return self.kv_layers or self.layers
+
+
+def _sliding_from_config(c: dict) -> tuple[int, int | None]:
+    """(sliding-window layers, window) from a Hugging Face config: by layer_types, or Gemma's fixed patterns."""
+    window = c.get("sliding_window")
+    if not window:
+        return 0, None
+    layers, types = c["num_hidden_layers"], c.get("layer_types") or []
+    if types:
+        return sum(t == "sliding_attention" for t in types), window
+    kind = c.get("model_type", "")
+    if kind == "gemma2":
+        return layers - layers // 2, window  # alternating, starting with a sliding layer
+    if kind.startswith("gemma3"):
+        pattern = c.get("sliding_window_pattern") or 6  # five sliding layers to every full one
+        return layers - layers // pattern, window
+    return 0, None  # a window that's off by default (Qwen2's use_sliding_window), or applies to every layer
 
 
 def _params_from_config(c: dict) -> int:
@@ -69,11 +89,21 @@ def _params_from_config(c: dict) -> int:
     return layers * (attn + mlp) + embed
 
 
+# What transformers assumes for settings a config leaves out (Gemma 3's multimodal configs give only a few).
+CONFIG_DEFAULTS = {
+    "gemma3_text": {"num_attention_heads": 8, "num_key_value_heads": 4, "head_dim": 256, "vocab_size": 262208, "sliding_window": 4096, "sliding_window_pattern": 6},
+}
+
+
 def shape_from_config(c: dict) -> Shape:
     c = {**c, **c.get("text_config", {})}  # multimodal models nest the language model's settings
+    c = {**CONFIG_DEFAULTS.get(c.get("model_type", ""), {}), **c}
     heads = c["num_attention_heads"]
     layer_types = c.get("layer_types") or []
     full = sum(t in ("full_attention", "attention") for t in layer_types) if layer_types else None
+    sliding, window = _sliding_from_config(c)
+    if sliding and full is None:
+        full = c["num_hidden_layers"] - sliding
     return Shape(
         layers=c["num_hidden_layers"],
         hidden=c["hidden_size"],
@@ -86,6 +116,8 @@ def shape_from_config(c: dict) -> Shape:
         context_max=c.get("max_position_embeddings"),
         kv_layers=full or None,
         experts=c.get("num_experts") or c.get("num_local_experts") or c.get("n_routed_experts") or 0,
+        sliding_layers=sliding,
+        sliding_window=window,
     )
 
 
@@ -187,6 +219,19 @@ def shape_from_gguf(meta: dict, file_size: int) -> Shape:
         kv = max(kv)
     if get("full_attention_interval"):
         kv_layers = layers // get("full_attention_interval")
+    sliding, window = 0, get("attention.sliding_window")
+    pattern = get("attention.sliding_window_pattern")
+    if window:
+        if isinstance(pattern, list):  # per layer: true where the layer slides
+            sliding = sum(1 for x in pattern if x)
+        elif isinstance(pattern, int) and pattern > 1:
+            sliding = layers - layers // pattern
+        elif arch.startswith("gemma3"):
+            sliding = layers - layers // 6
+        elif arch == "gemma2":
+            sliding = layers - layers // 2
+    if sliding:
+        kv_layers = (kv_layers or layers) - sliding
     head_dim = get("attention.key_length") or hidden // heads
     return Shape(
         layers=layers,
@@ -200,6 +245,8 @@ def shape_from_gguf(meta: dict, file_size: int) -> Shape:
         context_max=get("context_length"),
         kv_layers=kv_layers,
         experts=get("expert_count", 0) or 0,
+        sliding_layers=sliding,
+        sliding_window=window if sliding else None,
     )
 
 
@@ -280,8 +327,9 @@ def verdict(total: int, budget: dict) -> Verdict:
 
 
 def kv_cache_bytes(shape: Shape, context: int, bytes_per_value: float = 2.0) -> int:
-    """K and V for every cached layer at f16, which llama.cpp uses by default."""
-    return int(2 * shape.cached_layers * shape.kv_heads * shape.head_dim * context * bytes_per_value)
+    """K and V for every cached layer at f16, which llama.cpp uses by default. Sliding-window layers hold only their window."""
+    tokens = shape.cached_layers * context + shape.sliding_layers * min(context, shape.sliding_window or context)
+    return int(2 * shape.kv_heads * shape.head_dim * tokens * bytes_per_value)
 
 
 def inference_estimate(shape: Shape, weights: int, context: int, cache_bytes: float = 2.0) -> dict:
