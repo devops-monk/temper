@@ -469,11 +469,13 @@ async def aroute(body: dict) -> tuple[RuntimeManager, str, dict]:
     return await run_in_threadpool(route, body)
 
 
-def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | None = None, model: str | None = None) -> str:
+def complete(messages: list[dict], max_tokens: int = 1024, temperature: float | None = None, model: str | None = None, response_format: dict | None = None) -> str:
     """One whole reply from a loaded model (chat's, or `model`), with a thinking model's reasoning left out."""
     body = {"messages": messages, "max_tokens": max_tokens, "stream": False, **({"model": model} if model else {})}
     if temperature is not None:
         body["temperature"] = temperature
+    if response_format is not None:
+        body["response_format"] = response_format
     server, url, body = route(body)
     r = httpx.post(url, json=body, headers=getattr(server, "headers", None), timeout=None)
     if r.status_code != 200:

@@ -51,7 +51,46 @@ Agents send long prompts, so pick a model with a large context (32K or more) and
 ## Tools for agents (MCP)
 
 Temper is also an MCP server: an agent can list, load and unload your local models, ask one a question,
-and follow or cancel Temper's jobs (downloads, training, exports). Add it with `temper mcp add claude` (or `codex`, `cursor`, `vscode`).
+ask for a typed decision (below), and follow or cancel Temper's jobs (downloads, training, exports). Add it with
+`temper mcp add claude` (or `codex`, `cursor`, `vscode`).
+
+## Decisions
+
+When your code needs a value rather than prose (is this spam, which team gets this ticket, how positive is
+this review), ask for a decision. The answer is yes or no, one of a set of choices, the labels that apply,
+or a whole-number score, with a one-sentence reason. The model is held to that shape where its server
+supports structured output (llama.cpp, vLLM, SGLang); otherwise Temper reads the answer from the reply, and
+a reply it can't read is an error, not a guess. Answers are asked for at temperature 0, so the same text
+gets the same answer.
+
+```bash
+curl http://127.0.0.1:8765/v1/decide -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{
+  "question": "How should support prioritise this ticket?",
+  "kind": "choice", "choices": ["low", "normal", "urgent"],
+  "text": "Nobody can sign in since the update."
+}'
+# {"kind": "choice", "answer": "urgent", "reason": "No one can sign in.", "seconds": 0.7}
+```
+
+`kind` is `yes_no` (the answer is `true` or `false`), `choice`, `labels` (a list) or `score` (with `"scale": [1, 5]`;
+the default is 1 to 10). `instructions` says how to decide: definitions, examples, edge cases. `texts` in place of
+`text` decides each of up to 100 texts and answers with `results`. `model` picks a model loaded alongside chat's,
+or one on a linked device.
+
+**Saved decisions** keep the question and its options under a name, so an app sends only the text:
+`POST /v1/decisions/ticket-priority` with `{"text": "..."}`. Make them under *Connect → Decisions*, where you can
+also try one on some text, or with `temper decide`:
+
+```bash
+temper decide "Is this a refund request?" -t "It broke, I want my money back"     # yes  (reason)
+temper decide "What is it?" -c bug,feature,praise --lines < feedback.txt           # one answer per line
+temper decide "How formal is it?" --score 1-5 -t "yo" --json
+temper decide "Is this spam?" --save is-spam --instructions "Colleagues are never spam."
+temper decide -s is-spam < message.txt
+temper decide --list
+```
+
+Named API keys work for decisions, since they're under `/v1`.
 
 ## API keys
 

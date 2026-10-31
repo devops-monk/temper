@@ -5,7 +5,7 @@ its API (sent as `Authorization: Bearer <token>`). It answers each request with 
 push anything of its own, so GET has no event stream.
 
 Tools: what's loaded, the models on this computer, loading and unloading one, asking the loaded
-model (or one loaded alongside it), and listing, following and cancelling jobs (downloads,
+model (or one loaded alongside it), typed decisions (decisions.py), and listing, following and cancelling jobs (downloads,
 training, exports).
 """
 
@@ -84,6 +84,16 @@ def _ask(args: dict) -> Any:
     return complete(messages, int(args.get("max_tokens") or 1024), temperature, args.get("model")) or "(The model wrote nothing.)"
 
 
+def _decide(args: dict) -> Any:
+    from .decisions import Decision, decide, get
+
+    if args.get("saved"):
+        d = get(str(args["saved"]))
+    else:
+        d = Decision(**{k: args[k] for k in ("question", "kind", "choices", "scale", "instructions", "model") if args.get(k) is not None})
+    return decide(d, args.get("text"))
+
+
 def _jobs(args: dict) -> Any:
     from .jobs import list_jobs
 
@@ -132,12 +142,29 @@ TOOLS = {
         ),
         _ask,
     ),
+    "decide": (
+        "Asks a local model for a typed answer about some text: yes/no, one of `choices`, a score on `scale`, or the `labels` (from `choices`) that apply; "
+        "with a one-sentence reason. Or runs a decision saved in Temper by its name (`saved`).",
+        _schema(
+            {
+                "question": {"type": "string", "description": "Such as: Is this email asking for a refund?"},
+                "text": {"type": "string", "description": "What the question is about"},
+                "kind": {"type": "string", "enum": ["yes_no", "choice", "score", "labels"]},
+                "choices": {"type": "array", "items": {"type": "string"}},
+                "scale": {"type": "array", "items": {"type": "integer"}, "description": "[low, high], default [1, 10]"},
+                "instructions": {"type": "string", "description": "How to decide: definitions, examples, edge cases"},
+                "saved": {"type": "string", "description": "The name of a saved decision; then only `text` is needed"},
+                "model": {"type": "string"},
+            }
+        ),
+        _decide,
+    ),
     "list_jobs": ("Temper's jobs (downloads, training runs, exports and installs), newest first.", _schema({"kind": {"type": "string", "description": "download, train, export, …"}, "limit": {"type": "integer"}}), _jobs),
     "get_job": ("One job's status, progress and latest log lines.", _schema({"id": {"type": "string"}}, ["id"]), _job),
     "cancel_job": ("Cancels a running job.", _schema({"id": {"type": "string"}}, ["id"]), _cancel),
 }
 # Tools that only read; the others change what's loaded or running.
-READ_ONLY = {"temper_status", "list_models", "list_jobs", "get_job"}
+READ_ONLY = {"temper_status", "list_models", "decide", "list_jobs", "get_job"}
 
 
 def _call(name: str, args: dict) -> dict:

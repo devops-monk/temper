@@ -117,6 +117,18 @@ temper stems song.mp3 [-o folder]                 # vocals, drums, bass, other, 
 
 See [Speech to text](speech.md).
 
+## Decisions
+
+```bash
+temper decide "Is this a refund request?" -t "..."     # or the text on standard input
+temper decide "Which team?" -c billing,tech,sales | -l a,b,c | --score 1-10 [--lines] [--json]
+temper decide "..." --save NAME [--instructions "..."]
+temper decide -s NAME -t "..."
+temper decide --list
+```
+
+See [Decisions](connect.md#decisions).
+
 ## Images
 
 ```bash

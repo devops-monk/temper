@@ -1421,6 +1421,64 @@ def image_cmd(args: list[str]) -> int:
     return 0
 
 
+def decide_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper decide", description="A typed answer from a model: yes or no, a choice, a score or labels, with its reason.")
+    p.add_argument("question", nargs="?", help="what to decide, such as \"Is this a refund request?\"")
+    p.add_argument("--text", "-t", help="what it's about (default: standard input, when it isn't a terminal)")
+    p.add_argument("--choices", "-c", help="comma-separated: answer with one of them")
+    p.add_argument("--labels", "-l", help="comma-separated: answer with each that applies")
+    p.add_argument("--score", help="a scale, such as 1-10: answer with a number on it")
+    p.add_argument("--lines", action="store_true", help="decide each line of the text separately")
+    p.add_argument("--saved", "-s", help="run a saved decision by name instead of a question")
+    p.add_argument("--save", help="save the question and its options under this name, then exit")
+    p.add_argument("--instructions", help="how to decide: definitions, examples, edge cases")
+    p.add_argument("--model", help="a model loaded alongside chat's, or model@device")
+    p.add_argument("--list", action="store_true", help="list saved decisions")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        if a.list:
+            saved = _check(c.get("/api/decisions"))["decisions"]
+            if a.json:
+                print(json.dumps(saved, indent=2))
+            else:
+                _table([[d["name"], d["kind"], d["question"]] for d in saved] or [["No saved decisions yet."]])
+            return 0
+        body: dict = {}
+        if not a.saved:
+            if not a.question:
+                p.error("give a question, or --saved NAME")
+            body = {"question": a.question, "kind": "yes_no", "instructions": a.instructions}
+            if a.choices or a.labels:
+                body.update(kind="choice" if a.choices else "labels", choices=[x.strip() for x in (a.choices or a.labels).split(",")])
+            elif a.score:
+                low, _, high = a.score.partition("-")
+                if not (low.lstrip("-").isdigit() and high.lstrip("-").isdigit()):
+                    p.error("--score is LOW-HIGH, such as 1-10")
+                body.update(kind="score", scale=[int(low), int(high)])
+        if a.save:
+            _check(c.put(f"/api/decisions/{a.save}", json={**body, "model": a.model}))
+            print(f"Saved. Apps can POST {{\"text\": ...}} to /v1/decisions/{a.save}, or run: temper decide -s {a.save} -t \"...\"")
+            return 0
+        text = a.text if a.text is not None else (sys.stdin.read() if not sys.stdin.isatty() else None)
+        if text is not None and a.lines:
+            body["texts"] = [line for line in text.splitlines() if line.strip()]
+        else:
+            body["text"] = text
+        if a.model:
+            body["model"] = a.model
+        out = _check(c.post(f"/v1/decisions/{a.saved}" if a.saved else "/v1/decide", json=body))
+    if a.json:
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        return 0
+    show = lambda v: "yes" if v is True else "no" if v is False else ", ".join(v) if isinstance(v, list) else str(v)  # noqa: E731
+    if "results" in out:
+        _table([[show(r["answer"]), t[:70]] for r, t in zip(out["results"], body["texts"], strict=True)])
+    else:
+        print(show(out["answer"]) + (f"  ({out['reason']})" if out.get("reason") else ""))
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1497,7 +1555,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1521,6 +1579,7 @@ USAGE = """usage:
   temper say ["text"] [--voice V] [--speed S] [-o out.mp3] | --voices | --install
   temper stems <file> [-o folder] | --install
   temper image ["prompt"] [--from pic] [--size WxH] [-n N] [--seed S] [--lora L] [-o folder] | --models | --install [--model M]
+  temper decide "question" [-t text | < file] [--choices a,b | --labels a,b | --score 1-10] [--lines] [--save NAME] | -s NAME | --list
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey

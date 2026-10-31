@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
+import { Decisions } from "../components/Decisions";
 import { Devices } from "../components/Devices";
 import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
@@ -246,6 +247,15 @@ export function ConnectPage() {
             models both computers have.
           </p>
           <Devices />
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">Decisions</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">
+            Typed answers for your apps: yes or no, one of a set, labels or a score, each with a reason. Save a question by name and an app sends only the text, to{" "}
+            <span className="font-mono text-[12.5px]">/v1/decisions/name</span>. The loaded model answers.
+          </p>
+          <Decisions />
         </div>
 
         <div className="mt-8 max-w-[760px]">
