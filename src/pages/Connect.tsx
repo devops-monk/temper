@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
+import { LanAccess } from "../components/LanAccess";
 import { CopyButton, Notice, PageHeader, cx } from "../components/ui";
 import { useApp } from "../lib/store";
 
@@ -216,6 +217,12 @@ export function ConnectPage() {
             already pointed at the loaded model. Claude Code reads a long system prompt and many tool descriptions, so load the model with a context of 32K or more, and pick one that's good at
             calling tools.
           </p>
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">Other devices</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">Let phones and other computers on your home network use the loaded model.</p>
+          <LanAccess />
         </div>
 
         <div className="mt-8 max-w-[760px]">
