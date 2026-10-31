@@ -105,6 +105,16 @@ choosing passages by keyword overlap, so no embedding model is needed). Each com
 README. It also makes an API key named after the folder and writes it, with Temper's address and the model, to
 `.env`, which is in the project's `.gitignore`. Revoke the key under Connect → API keys when you're done with it.
 
+## Speech to text
+
+```bash
+temper speech install                       # Whisper, in its own environment
+temper speech use turbo                     # or small, large; downloads it if needed
+temper transcribe talk.m4a -f srt -o talk.srt
+```
+
+See [Speech to text](speech.md).
+
 ## Linked devices
 
 ```bash

@@ -250,9 +250,9 @@ def _install(job: Job, engine: str) -> None:
         job.finish("done", engine=engine)
 
 
-def install_venv(job: Job, folder: Path, packages: list[str], name: str) -> bool:
-    """Makes a Python 3.12 venv at `folder` with `packages`, logging to `job`, and marks it with .installed.
-    False if the job was cancelled (and is finished as such)."""
+def install_venv(job: Job, folder: Path, packages: list[str], name: str, no_deps: list[str] = ()) -> bool:
+    """Makes a Python 3.12 venv at `folder` with `packages` (and `no_deps` without their requirements), logging to
+    `job`, and marks it with .installed. False if the job was cancelled (and is finished as such)."""
     from .llamacpp import uv_binary
 
     uv = uv_binary()
@@ -261,6 +261,8 @@ def install_venv(job: Job, folder: Path, packages: list[str], name: str) -> bool
         [uv, "venv", "--python", "3.12", "--allow-existing", str(folder)],
         [uv, "pip", "install", "--python", str(_venv_python(folder)), *packages],
     ]
+    if no_deps:
+        steps.append([uv, "pip", "install", "--python", str(_venv_python(folder)), "--no-deps", *no_deps])
     for i, cmd in enumerate(steps):
         job.log("$ " + " ".join(Path(c).name if j == 0 else c for j, c in enumerate(cmd)))
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")

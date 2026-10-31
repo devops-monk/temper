@@ -249,7 +249,7 @@ temper/
 
 - [ ] **9.1 Image generation**: text-to-image and image editing with diffusion models (stable-diffusion.cpp for GGUF, diffusers for PyTorch), LoRA loading, ControlNet, gallery.
 - [ ] **9.2 Video generation**: text/image-to-video models.
-- [ ] **9.3 Speech-to-text**: Whisper (whisper.cpp) dictation in the composer and file transcription.
+- [x] **9.3 Speech-to-text**: Whisper dictation in the composer and file transcription. Whisper is installed on request into its own environment (Settings → Speech to text, or `temper speech install`): mlx-whisper on Apple Silicon, without the PyTorch it only needs for converting models, and faster-whisper elsewhere (CUDA when its libraries are present, else CPU). PyAV decodes any FFmpeg format. A worker keeps the model loaded for 10 minutes; Chat starts loading it when recording begins. Models: Large v3 Turbo, Small or Large v3. Files are transcribed as a job with progress and saved as text, SRT, WebVTT and JSON (`temper transcribe <file> -f srt`, `--translate`). OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/translations`. *Built on Python backends rather than whisper.cpp, which publishes no macOS or Linux binaries to pin. Tested live on an M1 Pro: installed in about a minute (470 MB, no torch); dictation took 1.4 s warm and 34 s cold; a 3.5-minute file took 23 s; SRT output from the API; dictation through the Chat composer in a browser, with a recording stood in for the microphone. Not tested: the Tauri app's own microphone permission prompt, and faster-whisper on Windows or Linux (covered only by a stand-in worker in the unit tests).*
 - [ ] **9.4 Text-to-speech**: voice library and audio gallery.
 - [ ] **9.5 Music and audio editing models.**
 

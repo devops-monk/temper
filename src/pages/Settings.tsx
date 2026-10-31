@@ -2,6 +2,7 @@ import { Minus, Monitor, Moon, Plus, RotateCw, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
+import { SpeechSettings } from "../components/SpeechSettings";
 import { CodeSandbox } from "../components/Tools";
 import { McpServers } from "../components/McpServers";
 import { WebSearch } from "../components/WebSearch";
@@ -306,6 +307,7 @@ export function SettingsPage() {
           {engine?.status === "running" && <McpServers />}
 
           {engine?.status === "running" && <Engines />}
+          {engine?.status === "running" && <SpeechSettings />}
 
           {engine?.status === "running" && <StatsSection />}
 

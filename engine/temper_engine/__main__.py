@@ -18,7 +18,7 @@ def _exit_with_parent(pid: int) -> None:
 
 
 # The `temper` subcommands answered by cli.py.
-CLI = ("start", "mcp", "models", "load", "ps", "unload", "status", "version", "get", "import", "log", "daemon", "engines", "create", "devices", "chat", "train", "runs", "export", "serve")
+CLI = ("start", "mcp", "models", "load", "ps", "unload", "status", "version", "get", "import", "log", "daemon", "engines", "create", "devices", "transcribe", "speech", "chat", "train", "runs", "export", "serve")
 
 
 def main() -> None:

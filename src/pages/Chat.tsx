@@ -12,6 +12,7 @@ import { useT } from "../lib/i18n";
 import { CHAT_CONTEXT } from "../components/LoadButton";
 import { ModelSettings, type ReplyStats } from "../components/ModelSettings";
 import { Compare } from "../components/Compare";
+import { Dictate } from "../components/Dictate";
 import { PresetBar, type Preset } from "../components/Presets";
 import { PromptQueue, type Queued } from "../components/PromptQueue";
 import { ReplyText, ThinkingBlock } from "../components/Reply";
@@ -796,6 +797,10 @@ export function ChatPage() {
                   <Button variant="ghost" onClick={() => void pickFiles().then(addFiles)} disabled={!ready} aria-label={t("chat.attach")} title={t("chat.attach_hint")} className="size-9 rounded-xl px-0 text-muted">
                     <Paperclip className="size-[18px]" />
                   </Button>
+                  <Dictate disabled={!ready} onText={(text) => {
+                    setDraft((d) => (d.trim() ? `${d.trimEnd()} ${text}` : text));
+                    setTimeout(() => input.current?.focus());
+                  }} />
                   <PromptLibrary
                     open={library || slash !== null}
                     onOpenChange={(open) => {

@@ -24,6 +24,8 @@ dependencies = [
   "tzdata>=2024.1; sys_platform == 'win32'",
   # `temper train config.yaml`.
   "pyyaml>=6",
+  # Audio uploads to /v1/audio/transcriptions.
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

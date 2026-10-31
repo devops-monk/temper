@@ -1200,6 +1200,74 @@ def devices_cmd(args: list[str]) -> int:
     return 0
 
 
+def transcribe_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper transcribe", description="Speech to text with Whisper, on this computer.")
+    p.add_argument("file", help="an audio or video file (anything FFmpeg reads)")
+    p.add_argument("--format", "-f", choices=["txt", "srt", "vtt", "json"], default="txt", help="what to print or write (default txt)")
+    p.add_argument("--language", "-l", help="the spoken language's code, like en or de (default: detected)")
+    p.add_argument("--translate", action="store_true", help="English text from speech in any language")
+    p.add_argument("--output", "-o", help="write it to this file instead of printing it")
+    a = p.parse_args(args)
+    path = os.path.abspath(a.file)
+    with _client(running()) as c:
+        job = _check(c.post("/api/speech/jobs", json={"path": path, "language": a.language, "task": "translate" if a.translate else "transcribe"}))
+        print(f"Transcribing {Path(path).name}…", file=sys.stderr)
+        end = follow(c, job["id"], logs=False)
+    if end.get("status") != "done":
+        raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+    files = (end.get("result") or {}).get("files") or {}
+    text = Path(files[a.format]).read_text(encoding="utf-8")
+    if a.output:
+        Path(a.output).write_text(text, encoding="utf-8")
+        print(f"Wrote {a.output}. All formats are in {Path(files['txt']).parent}.", file=sys.stderr)
+    else:
+        print(text, end="" if text.endswith("\n") else "\n")
+    return 0
+
+
+def speech_cmd(args: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="temper speech", description="Speech to text: whether it's installed, and its model.")
+    sub = p.add_subparsers(dest="action")
+    sub.add_parser("install", help="install Whisper into its own environment")
+    sub.add_parser("remove", help="remove it")
+    use = sub.add_parser("use", help="pick the model, downloading it if needed")
+    use.add_argument("model", help="a model id, or turbo, small or large")
+    a = p.parse_args(args)
+    with _client(running()) as c:
+        st = _check(c.get("/api/speech"))
+        if a.action == "install":
+            if st["installed"]:
+                print(f"Speech to text ({st['backend']}) is installed already.")
+                return 0
+            end = follow(c, _check(c.post("/api/speech/install"))["id"], logs=False)
+            if end.get("status") != "done":
+                raise CliError(end.get("error") or f"It ended {end.get('status')}.")
+            print(f"Installed speech to text ({st['backend']}).")
+        elif a.action == "remove":
+            _check(c.delete("/api/speech"))
+            print("Removed speech to text. Downloaded models stay; delete them on the Models page.")
+        elif a.action == "use":
+            words = {"turbo": "Large v3 Turbo", "small": "Small", "large": "Large v3"}
+            m = next((m for m in st["models"] if a.model in (m["id"], m["id"].split("/")[-1]) or words.get(a.model.lower()) == m["name"]), None)
+            if m is None:
+                raise CliError(f"Pick one of: {', '.join(m['id'] for m in st['models'])} (or turbo, small, large).")
+            if not m["downloaded"]:
+                print(f"Downloading {m['id']} ({_size(m['size'])})…", file=sys.stderr)
+                end = follow(c, _check(c.post("/api/hub/download", json={"repo_id": m["id"]}))["id"], logs=False)
+                if end.get("status") != "done":
+                    raise CliError(end.get("error") or f"The download ended {end.get('status')}.")
+            _check(c.put("/api/speech/model", json={"model": m["id"]}))
+            print(f"Speech to text now uses {m['name']} ({m['id']}).")
+        else:
+            _table([
+                ["Speech to text", f"{st['backend']}, " + ("installed" if st["installed"] else "not installed (`temper speech install`)")],
+                ["Model", st["model"] + ("" if any(m["id"] == st["model"] and m["downloaded"] for m in st["models"]) else " (not downloaded: `temper speech use`)")],
+            ])
+            print()
+            _table([["MODEL", "SIZE", ""], *[[m["id"], _size(m["size"]), "downloaded" if m["downloaded"] else ""] for m in st["models"]]])
+    return 0
+
+
 def status_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper status", description="Whether Temper is running, and what it's doing.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1276,7 +1344,7 @@ def serve_cmd(args: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd}
 
 
 USAGE = """usage:
@@ -1296,6 +1364,8 @@ USAGE = """usage:
   temper serve [--host H] [--port N]
   temper daemon up|down|status|install|uninstall
   temper create <folder> [--template chat|tools|rag] [--lang python|typescript] [--model M]
+  temper transcribe <file> [--format txt|srt|vtt|json] [--language xx] [--translate] [-o out]
+  temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey
   temper start claude|codex|opencode|aider [agent arguments]
