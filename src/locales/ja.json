@@ -1775,5 +1775,17 @@
   "eng.newest": "これは 1 週間以上前に公開された最新のビルドです。",
   "eng.back_to": "{tag} に戻す",
   "eng.upgrade_transformers": "transformers を更新",
-  "eng.upgrade_title": "この transformers が知らない新しいモデル向けです。置き換えたバージョンは戻せるよう記録します。"
+  "eng.upgrade_title": "この transformers が知らない新しいモデル向けです。置き換えたバージョンは戻せるよう記録します。",
+  "shared.title": "GPU メモリ",
+  "shared.limit_default": "{total} のうち {limit}（既定）",
+  "shared.limit_custom": "{total} のうち {limit}（引き上げ済み）",
+  "shared.more": "増やす",
+  "shared.hide": "閉じる",
+  "shared.mac_about": "GPU はこの Mac のメモリを共有し、macOS はその一部しか使わせません。それより大きいモデルは遅くなるか動きません。{suggested} に上げると、残りは macOS とアプリに残ります。パスワードが必要なので、ターミナルで実行してください。",
+  "shared.mac_raise": "Mac を再起動するまで引き上げる:",
+  "shared.mac_keep": "再起動後も維持する（macOS は起動時に /etc/sysctl.conf を読みます）:",
+  "shared.mac_reset": "macOS の既定に戻す:",
+  "shared.amd_about": "この AMD プロセッサーの GPU は BIOS で確保された {carve} の専用メモリを持ち、残りはカーネルの上限までシステムメモリから借ります。上限を {suggested} に上げると、より大きなモデルを GPU で動かせます。再起動後に有効になり、管理者権限が必要です。",
+  "shared.amd_raise": "カーネルの起動パラメーター（GRUB）に上限を追加して再起動:",
+  "shared.amd_bios": "BIOS によっては GPU 専用分の「UMA frame buffer」を増やせます。通常はカーネルの上限で十分で、GPU が使っていないときはメモリが空いたままになります。"
 }

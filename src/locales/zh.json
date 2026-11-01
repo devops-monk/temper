@@ -1775,5 +1775,17 @@
   "eng.newest": "这是至少一周前发布的最新版本。",
   "eng.back_to": "回到 {tag}",
   "eng.upgrade_transformers": "升级 transformers",
-  "eng.upgrade_title": "用于比当前 transformers 更新的模型。被替换的版本会保留，以便回退。"
+  "eng.upgrade_title": "用于比当前 transformers 更新的模型。被替换的版本会保留，以便回退。",
+  "shared.title": "GPU 内存",
+  "shared.limit_default": "{total} 中的 {limit}（默认）",
+  "shared.limit_custom": "{total} 中的 {limit}（已提高）",
+  "shared.more": "分配更多",
+  "shared.hide": "隐藏",
+  "shared.mac_about": "GPU 与这台 Mac 共享内存，macOS 只允许它使用其中一部分。超过这个大小的模型会很慢或无法运行。提高到 {suggested} 会把其余内存留给 macOS 和你的应用。这些命令需要你的密码，请在“终端”中运行。",
+  "shared.mac_raise": "提高（重启 Mac 前有效）：",
+  "shared.mac_keep": "重启后保留（macOS 启动时会读取 /etc/sysctl.conf）：",
+  "shared.mac_reset": "恢复 macOS 默认值：",
+  "shared.amd_about": "这颗 AMD 处理器的 GPU 有 {carve} 专用内存（在 BIOS 中划出），其余从系统内存借用，上限由内核决定。把上限提高到 {suggested} 能让更大的模型在 GPU 上运行。重启后生效，需要管理员权限。",
+  "shared.amd_raise": "把上限加入内核启动参数（GRUB），然后重启：",
+  "shared.amd_bios": "有些 BIOS 也可以为 GPU 设置更大的“UMA frame buffer”。通常内核上限就足够了，而且 GPU 不用时内存仍可供其他程序使用。"
 }

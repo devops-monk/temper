@@ -16,6 +16,11 @@ are kept.
   rather than Q8_0) or a smaller context length.
 - Long contexts cost memory as well as speed. 8K–32K is plenty for chat; agents need 32K or more.
 - If another app is holding GPU memory, close it, or unload the model in Temper and load it again.
+- On a Mac, or a PC with an AMD processor's built-in graphics, the GPU uses only part of the computer's memory.
+  macOS gives it about two thirds; Linux gives an AMD APU half. **Settings → This computer → GPU memory** shows
+  the current limit and the commands that raise it. They need an administrator, so Temper doesn't run them for
+  you. On a Mac, `sudo sysctl iogpu.wired_limit_mb=…` lasts until the next restart. On Linux, the
+  `ttm.pages_limit` boot parameter takes effect after one.
 
 ## Training runs out of memory
 

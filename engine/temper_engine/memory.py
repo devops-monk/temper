@@ -306,8 +306,9 @@ def memory_budget() -> dict:
         if out and out.strip().isdigit():
             limit = int(out.strip()) * MB
         if not limit:
-            # macOS's default GPU working-set limit: about two thirds of memory, three quarters above 36 GB.
-            limit = int(vm.total * (0.75 if vm.total > 36 * GB else 0.67))
+            from .igpu import mac_default
+
+            limit = mac_default(vm.total)  # macOS's own: about two thirds of memory, three quarters above 36 GB
         return {"kind": "unified", "device": hardware.cpu_name(), "total": limit, "free": min(limit, vm.available)}
     return {"kind": "ram", "device": hardware.cpu_name(), "total": vm.total, "free": vm.available}
 
@@ -432,7 +433,7 @@ def chat_advice(est: dict, budget: dict, context: int) -> list[str]:
     if est["weights"] > budget["total"] * 0.7:
         tips.append("Pick a smaller quantization (for example Q4_K_M instead of Q8_0) or a smaller model.")
     if budget["kind"] == "unified" and est["total"] > budget["free"]:
-        tips.append("Close other apps to free memory; macOS lets the GPU use about two thirds of it.")
+        tips.append("Close other apps to free memory, or let the GPU use more of it: Settings → This computer → GPU memory.")
     return tips
 
 

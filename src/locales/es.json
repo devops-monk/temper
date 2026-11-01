@@ -1775,5 +1775,17 @@
   "eng.newest": "Es la versión más nueva publicada hace al menos una semana.",
   "eng.back_to": "Volver a {tag}",
   "eng.upgrade_transformers": "Actualizar transformers",
-  "eng.upgrade_title": "Para un modelo más nuevo de lo que conoce este transformers. Se guarda la versión reemplazada para poder volver."
+  "eng.upgrade_title": "Para un modelo más nuevo de lo que conoce este transformers. Se guarda la versión reemplazada para poder volver.",
+  "shared.title": "Memoria de la GPU",
+  "shared.limit_default": "{limit} de {total} (predeterminado)",
+  "shared.limit_custom": "{limit} de {total} (aumentado)",
+  "shared.more": "Darle más",
+  "shared.hide": "Ocultar",
+  "shared.mac_about": "La GPU comparte la memoria de este Mac, y macOS solo le deja usar una parte. Un modelo más grande va lento o no funciona. Subirlo a {suggested} deja el resto para macOS y tus apps. Necesitan tu contraseña, así que ejecútalos en Terminal.",
+  "shared.mac_raise": "Subirlo hasta que el Mac se reinicie:",
+  "shared.mac_keep": "Mantenerlo tras reiniciar (macOS lee /etc/sysctl.conf al arrancar):",
+  "shared.mac_reset": "Volver al valor predeterminado de macOS:",
+  "shared.amd_about": "La GPU de este procesador AMD tiene {carve} propios, reservados en la BIOS, y toma el resto de la memoria del sistema hasta el límite del kernel. Subir el límite a {suggested} permite ejecutar modelos más grandes en la GPU. Se aplica tras reiniciar y necesita un administrador.",
+  "shared.amd_raise": "Añade el límite a los parámetros de arranque del kernel (GRUB) y reinicia:",
+  "shared.amd_bios": "Algunas BIOS también ofrecen un \"UMA frame buffer\" mayor para la parte propia de la GPU. El límite del kernel suele bastar, y deja la memoria libre cuando la GPU no la usa."
 }

@@ -61,7 +61,7 @@ def test_update_keeps_the_build_before_for_rollback(monkeypatch, mac, tmp_path):
     def archive(*a, **k):
         data = io.BytesIO()
         with tarfile.open(fileobj=data, mode="w:gz") as tar:
-            info = tarfile.TarInfo("build/bin/llama-server")
+            info = tarfile.TarInfo("build/bin/llama-server" + (".exe" if llamacpp.os.name == "nt" else ""))
             info.size = 2
             tar.addfile(info, io.BytesIO(b"#!"))
         return data.getvalue()

@@ -1,6 +1,7 @@
 import { Minus, Monitor, Moon, Plus, RotateCw, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Accounts } from "../components/Accounts";
+import { SharedMemory } from "../components/SharedMemory";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
 import { SpeechSettings } from "../components/SpeechSettings";
@@ -338,6 +339,7 @@ export function SettingsPage() {
                     {g.name}, {bytes(g.memory_total)} {g.unified_memory ? t("settings.unified") : "VRAM"}
                   </Row>
                 ))}
+                <SharedMemory />
                 <Row label={t("settings.free_disk")}>{bytes(system.disk.free)}</Row>
                 <Row label={t("settings.chat_runtime")}>{system.capabilities.gguf_inference ? <Badge tone="ok">{t("settings.llama_found")}</Badge> : <Badge tone="warn">{t("settings.llama_missing")}</Badge>}</Row>
                 <Row label={t("settings.trainer")}>{system.capabilities.trainer ? <Badge tone="ok">{system.capabilities.trainer === "mlx" ? "MLX" : "PyTorch"}</Badge> : <Badge tone="warn">{t("settings.not_installed")}</Badge>}</Row>
