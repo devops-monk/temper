@@ -4,7 +4,13 @@ Training data is a list of examples of what you want the model to do. Open **Dat
 
 - a file: `.jsonl`, `.json`, `.csv` or `.parquet` (drop it on the window, or open it with Temper)
 - a Hugging Face dataset id, such as `openai/gsm8k` (pick the subset and split if it has several)
-- a web address: an `https://` link, or a public file in S3 (`s3://`) or Google Cloud Storage (`gs://`)
+- a web address: an `https://` link, a file in S3 (`s3://`), or a public one in Google Cloud Storage (`gs://`)
+
+A private S3 bucket works with the credentials the AWS tools already use: `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` in the environment, or a profile in `~/.aws/credentials` (`AWS_PROFILE` picks one), with
+the region from `AWS_REGION` or `~/.aws/config`. If the bucket is in another region, Temper follows it. For an
+S3-compatible service such as Cloudflare R2, MinIO or Backblaze B2, set `AWS_ENDPOINT_URL_S3` to its address.
+The file is downloaded once into Temper's cache.
 
 ## Formats
 

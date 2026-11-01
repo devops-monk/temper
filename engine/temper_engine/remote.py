@@ -2,18 +2,28 @@
 
 A remote file is downloaded once into Temper's cache and from then on read like a local one, so
 preparing, previewing and training all work the same. Previews of JSONL and CSV stream only the first
-rows instead of the whole file. Private buckets would need credentials and a signing client, which
-Temper doesn't have yet: their addresses fail with the storage service's own "access denied".
+rows instead of the whole file.
+
+Private S3 buckets work with the credentials the AWS tools use: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+(and AWS_SESSION_TOKEN), or a profile in ~/.aws/credentials (AWS_PROFILE, else "default"), with the region from
+AWS_REGION or ~/.aws/config. Requests are signed with AWS Signature Version 4. AWS_ENDPOINT_URL_S3 points s3://
+at an S3-compatible service instead (Cloudflare R2, MinIO, Backblaze B2). Private gs:// files aren't supported.
 """
 
 from __future__ import annotations
 
+import configparser
 import csv
 import hashlib
+import hmac
 import io
 import json
+import os
 import re
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from itertools import islice
+from urllib.parse import quote
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -54,9 +64,95 @@ def cached(source: str) -> Path:
     return folder / f"{key}{suffix(source)}"
 
 
+# --- S3 credentials and signing --------------------------------------------------------------------
+
+
+def s3_credentials() -> dict | None:
+    """The AWS tools' credentials and region: from the environment, else ~/.aws (AWS_PROFILE, or "default")."""
+    profile = os.environ.get("AWS_PROFILE") or "default"
+    creds = {"key": os.environ.get("AWS_ACCESS_KEY_ID"), "secret": os.environ.get("AWS_SECRET_ACCESS_KEY"), "token": os.environ.get("AWS_SESSION_TOKEN")}
+    aws = Path(os.environ.get("AWS_SHARED_CREDENTIALS_FILE") or Path.home() / ".aws" / "credentials")
+    if not (creds["key"] and creds["secret"]) and aws.is_file():
+        files = configparser.ConfigParser()
+        files.read(aws)
+        if files.has_section(profile):
+            section = files[profile]
+            creds = {"key": section.get("aws_access_key_id"), "secret": section.get("aws_secret_access_key"), "token": section.get("aws_session_token")}
+    if not (creds["key"] and creds["secret"]):
+        return None
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    config = Path(os.environ.get("AWS_CONFIG_FILE") or Path.home() / ".aws" / "config")
+    if not region and config.is_file():
+        files = configparser.ConfigParser()
+        files.read(config)
+        section = "default" if profile == "default" else f"profile {profile}"
+        region = files.get(section, "region", fallback=None) if files.has_section(section) else None
+    return {**creds, "region": region or "us-east-1"}
+
+
+def sign(method: str, address: str, creds: dict, headers: dict | None = None, now: datetime | None = None) -> dict:
+    """The headers that sign a request with AWS Signature Version 4, for S3 (the payload left unsigned)."""
+    now = now or datetime.now(timezone.utc)
+    stamp, day = now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%Y%m%d")
+    parts = urlparse(address)
+    host = parts.netloc
+    out = {**(headers or {}), "host": host, "x-amz-date": stamp, "x-amz-content-sha256": (headers or {}).get("x-amz-content-sha256", "UNSIGNED-PAYLOAD")}
+    if creds.get("token"):
+        out["x-amz-security-token"] = creds["token"]
+    names = sorted(k.lower() for k in out)
+    lower = {k.lower(): str(v).strip() for k, v in out.items()}
+    canonical = "\n".join([
+        method,
+        quote(parts.path or "/", safe="/~"),
+        "&".join(sorted(f"{quote(k, safe='~')}={quote(v, safe='~')}" for k, _, v in (p.partition("=") for p in parts.query.split("&") if p))),
+        "".join(f"{n}:{lower[n]}\n" for n in names),
+        ";".join(names),
+        lower["x-amz-content-sha256"],
+    ])
+    scope = f"{day}/{creds['region']}/s3/aws4_request"
+    to_sign = "\n".join(["AWS4-HMAC-SHA256", stamp, scope, hashlib.sha256(canonical.encode()).hexdigest()])
+    key = f"AWS4{creds['secret']}".encode()
+    for part in (day, creds["region"], "s3", "aws4_request"):
+        key = hmac.new(key, part.encode(), hashlib.sha256).digest()
+    signature = hmac.new(key, to_sign.encode(), hashlib.sha256).hexdigest()
+    out.pop("host")
+    out["Authorization"] = f"AWS4-HMAC-SHA256 Credential={creds['key']}/{scope}, SignedHeaders={';'.join(names)}, Signature={signature}"
+    return out
+
+
+def _s3_address(bucket: str, key: str, region: str) -> str:
+    endpoint = os.environ.get("AWS_ENDPOINT_URL_S3") or os.environ.get("AWS_ENDPOINT_URL")
+    if endpoint:  # S3-compatible services take the bucket in the path
+        return f"{endpoint.rstrip('/')}/{bucket}/{key}"
+    return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+
+
+@contextmanager
+def _open(source: str):
+    """A streamed GET of the source: an s3:// one signed when there are credentials, following the bucket's region."""
+    m = re.match(r"s3://([^/]+)/(.+)", source.strip(), re.I)
+    creds = s3_credentials() if m else None
+    if not creds:
+        with httpx.stream("GET", url(source), follow_redirects=True, timeout=60) as r:
+            yield r
+        return
+    bucket, key = m.group(1), m.group(2)
+    region = creds["region"]
+    for _ in range(2):
+        address = _s3_address(bucket, key, region)
+        with httpx.stream("GET", address, headers=sign("GET", address, {**creds, "region": region}), timeout=60) as r:
+            moved = r.headers.get("x-amz-bucket-region")
+            if r.status_code in (301, 400) and moved and moved != region:
+                region = moved  # the bucket lives elsewhere: sign again for its region
+                continue
+            yield r
+            return
+
+
 def _error(r: httpx.Response, address: str) -> ValueError:
     if r.status_code in (401, 403):
-        return ValueError(f"{address} isn't public (the server said {r.status_code}). Download it yourself and choose the file instead.")
+        hint = " With AWS credentials (environment or ~/.aws), Temper signs s3:// requests." if address.startswith("s3://") or ".s3." in address else ""
+        return ValueError(f"{address} isn't public, or the credentials can't read it (the server said {r.status_code}).{hint} Or download it yourself and choose the file instead.")
     return ValueError(f"Couldn't fetch {address}: the server said {r.status_code}.")
 
 
@@ -65,9 +161,9 @@ def fetch(source: str, refresh: bool = False, log=None) -> Path:
     path = cached(source)
     if path.is_file() and not refresh:
         return path
-    address = url(source)
+    address = source.strip() if source.strip().lower().startswith("s3://") else url(source)
     tmp = path.with_suffix(path.suffix + ".part")
-    with httpx.stream("GET", address, follow_redirects=True, timeout=60) as r:
+    with _open(source) as r:
         if r.status_code != 200:
             raise _error(r, address)
         total = int(r.headers.get("content-length") or 0)
@@ -90,9 +186,9 @@ def head_rows(source: str, limit: int) -> list[dict]:
         from .datasets import _local
 
         return _local(fetch(source), limit) if ext == ".json" else _parquet(fetch(source), limit)
-    address = url(source)
+    address = source.strip() if source.strip().lower().startswith("s3://") else url(source)
     lines: list[str] = []
-    with httpx.stream("GET", address, follow_redirects=True, timeout=60) as r:
+    with _open(source) as r:
         if r.status_code != 200:
             raise _error(r, address)
         for line in r.iter_lines():
