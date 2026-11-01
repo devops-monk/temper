@@ -45,6 +45,19 @@ jobs:
           curl -fs -o /dev/null http://127.0.0.1:8765/ui/
           docker exec temper llama-server --version
           docker exec temper temper models
+      # The whole path a new user takes: download a tiny model (about 145 MB), load it, and get a reply,
+      # from the CLI and from the OpenAI-compatible API.
+      - name: A tiny model downloads, loads and answers
+        run: |
+          docker exec temper temper get bartowski/SmolLM2-135M-Instruct-GGUF --quant Q8_0 -y
+          docker exec temper temper load SmolLM2-135M-Instruct-Q8_0.gguf
+          reply=$(docker exec temper temper chat "Name the capital of France.")
+          echo "CLI reply: $reply"
+          test -n "$reply"
+          key=$(docker exec temper cat /data/api-key)
+          curl -fs http://127.0.0.1:8765/v1/chat/completions -H "Authorization: Bearer $key" -H "Content-Type: application/json" \
+            -d '{"messages":[{"role":"user","content":"Say hello."}],"max_tokens":16}' | tee reply.json
+          python3 -c "import json; r = json.load(open('reply.json')); assert r['choices'][0]['message']['content'].strip(), r"
       - if: failure()
         run: docker logs temper
 
