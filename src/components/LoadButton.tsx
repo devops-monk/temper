@@ -36,6 +36,9 @@ export interface Engine {
   version: string | null;
   /** Picked for model folders (Settings, or `temper engines use`). */
   preferred: boolean;
+  /** The transformers in its environment, and the one the last upgrade replaced (Transformers, vLLM, SGLang). */
+  transformers?: string | null;
+  transformers_previous?: string | null;
 }
 
 let enginesCache: Promise<Engine[]> | null = null;

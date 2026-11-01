@@ -120,3 +120,40 @@ def test_versions_come_from_each_engines_own_environment(monkeypatch):
     site = engines.venv("transformers") / ("Lib/site-packages" if engines.os.name == "nt" else "lib/python3.12/site-packages")
     (site / "transformers-4.57.1.dist-info").mkdir(parents=True)
     assert engines.version("transformers") == "4.57.1" and engines.version("vllm") is None
+
+
+def test_a_model_newer_than_the_engines_transformers_asks_for_an_upgrade(tmp_path, monkeypatch):
+    site = engines.venv("transformers") / ("Lib/site-packages" if engines.os.name == "nt" else "lib/python3.12/site-packages")
+    (site / "transformers-4.57.1.dist-info").mkdir(parents=True)
+    new = folder(tmp_path / "new", {"architectures": ["Qwen4ForCausalLM"], "transformers_version": "5.2.0"})
+    old = folder(tmp_path / "old", {"architectures": ["QwenForCausalLM"], "transformers_version": "4.50.0"})
+    assert engines.needs_newer_transformers("transformers", str(new)) == ("5.2.0", "4.57.1")
+    assert engines.needs_newer_transformers("transformers", str(old)) is None
+    assert engines.needs_newer_transformers("mlx", str(new)) is None
+    monkeypatch.setattr(engines, "python_for", lambda e: "/py" if e == "transformers" else None)
+    monkeypatch.setattr(engines, "supported", lambda e: None)
+    with pytest.raises(Exception, match="transformers 5.2.0, newer than the 4.57.1"):
+        RuntimeManager().load(LoadRequest(path=str(new), engine="transformers"))
+
+    # The upgrade remembers what it replaced, and rolling back puts it back.
+    installed = []
+
+    def pip(job, engine, *args):
+        installed.append(args)
+        version = args[-1].split("==")[1] if "==" in args[-1] else "5.3.0"
+        for d in site.glob("transformers-*.dist-info"):
+            d.rmdir()
+        (site / f"transformers-{version}.dist-info").mkdir()
+
+    monkeypatch.setattr(engines, "_pip", pip)
+    job = engines.registry.create("engine-install", "test")
+    engines.registry.jobs.pop(job.id)
+    engines._upgrade(job, "transformers")
+    assert job.result["after"] == "5.3.0" and installed[-1] == ("--upgrade", "transformers")
+    listed = {e["id"]: e for e in client.get("/api/runtime/engines", headers=AUTH).json()["engines"]}
+    assert listed["transformers"]["transformers"] == "5.3.0" and listed["transformers"]["transformers_previous"] == "4.57.1"
+    job = engines.registry.create("engine-install", "test")
+    engines.registry.jobs.pop(job.id)
+    engines._rollback(job, "transformers", "4.57.1")
+    assert installed[-1] == ("transformers==4.57.1",) and engines.package_version("transformers", "transformers") == "4.57.1"
+    assert client.post("/api/runtime/engines/transformers/rollback-transformers", headers=AUTH).status_code == 409  # nothing left to go back to

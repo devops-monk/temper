@@ -1768,5 +1768,12 @@
   "remote.tools": "允许通过链接使用工具",
   "remote.tools_off": "工具、代码沙箱和项目文件夹在这台电脑上运行，因此对链接关闭。",
   "remote.tools_on": "通过链接登录的管理员可以在这台电脑上运行工具。",
-  "remote.link_hint": "在手机或另一台电脑上打开并登录。任何拿到链接的人都能看到登录页；用完后请停止它。"
+  "remote.link_hint": "在手机或另一台电脑上打开并登录。任何拿到链接的人都能看到登录页；用完后请停止它。",
+  "eng.check_newer": "检查更新的版本",
+  "eng.update_to": "更新到 {tag}",
+  "eng.newer_title": "至少发布一周的最新官方版本，已用其公布的 SHA-256 校验。下次加载模型时生效。",
+  "eng.newest": "这是至少一周前发布的最新版本。",
+  "eng.back_to": "回到 {tag}",
+  "eng.upgrade_transformers": "升级 transformers",
+  "eng.upgrade_title": "用于比当前 transformers 更新的模型。被替换的版本会保留，以便回退。"
 }

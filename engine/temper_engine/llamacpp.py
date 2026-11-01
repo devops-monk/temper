@@ -2,6 +2,10 @@
 
 Nothing is installed system-wide. Every download is checked against a pinned SHA-256. A llama.cpp
 already on PATH (Homebrew, winget) is used when Temper has not installed its own.
+
+A newer build can be installed from the app when a new model needs one (update()): the newest official release at
+least a week old, checked against the SHA-256 GitHub publishes for it. The build it replaced is kept, so rollback()
+goes back to it. The converter stays at the pinned tag.
 """
 
 from __future__ import annotations
@@ -90,17 +94,36 @@ def build_key(backend: str | None = None) -> tuple[str, str, str]:
     raise RuntimeError(f"There is no llama.cpp build for {system} {machine}")
 
 
-def build_dir(key: tuple[str, str, str]) -> Path:
-    return root() / f"{TAG}-{key[1].lower()}-{key[2]}"
+def build_dir(key: tuple[str, str, str], tag: str = TAG) -> Path:
+    return root() / f"{tag}-{key[1].lower()}-{key[2]}"
+
+
+def _builds(tag: str) -> list[Path]:
+    return [d for d in sorted(root().glob(f"{tag}-*")) if not d.name.endswith("-converter") and (d / ".complete").is_file()]
+
+
+def _chosen() -> dict:
+    """The newer build installed from the app, and the one before it: {"tag", "previous"}."""
+    try:
+        data = json.loads((root() / "chosen.json").read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def active_tag() -> str:
+    """The build in use: one installed by update(), else the one this version of Temper pins."""
+    tag = _chosen().get("tag")
+    return tag if isinstance(tag, str) and root().is_dir() and _builds(tag) else TAG
 
 
 def installed_build() -> Path | None:
-    """Temper's own llama.cpp, if installed (any variant)."""
+    """Temper's own llama.cpp, if installed (any variant): the build in use, else the pinned one."""
     if not root().is_dir():
         return None
-    for d in sorted(root().glob(f"{TAG}-*")):
-        if (d / ".complete").is_file():
-            return d
+    for tag in dict.fromkeys((active_tag(), TAG)):
+        if found := _builds(tag):
+            return found[0]
     return None
 
 
@@ -172,20 +195,20 @@ def glibc_too_old() -> str | None:
             f"and this system has {version}. Install llama.cpp from your package manager or build it, and Temper uses the llama-server on your PATH.")
 
 
-def install(report: Report = _quiet, backend: str | None = None) -> Path:
-    """Downloads and unpacks the pinned llama.cpp build for this machine. Safe to call again."""
+def install(report: Report = _quiet, backend: str | None = None, tag: str = TAG, archives: list[tuple[str, str]] | None = None) -> Path:
+    """Downloads and unpacks the pinned llama.cpp build for this machine (or `tag`'s `archives`). Safe to call again."""
     if why := glibc_too_old():
         raise RuntimeError(why)
     key = build_key(backend)
-    final = build_dir(key)
+    final = build_dir(key, tag)
     if (final / ".complete").is_file():
-        report(f"llama.cpp {TAG} is already installed", 1.0)
+        report(f"llama.cpp {tag} is already installed", 1.0)
         return final
     root().mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".install-", dir=root()))
     try:
-        for name, sha in _BUILDS[key]:
-            data = _download(f"{RELEASES}/{name}", sha, report, name)
+        for name, sha in archives or _BUILDS[key]:
+            data = _download(f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{name}", sha, report, name)
             part = staging / name.split(".")[0]
             part.mkdir()
             _unpack(data, name, part)
@@ -197,13 +220,87 @@ def install(report: Report = _quiet, backend: str | None = None) -> Path:
         for f in staging.iterdir():
             if f.is_file() and not f.suffix and os.name != "nt":
                 f.chmod(0o755)
-        (staging / ".complete").write_text(json.dumps({"tag": TAG, "build": key[2]}))
+        (staging / ".complete").write_text(json.dumps({"tag": tag, "build": key[2]}))
         shutil.rmtree(final, ignore_errors=True)
         staging.rename(final)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    report(f"Installed llama.cpp {TAG}", 1.0)
+    report(f"Installed llama.cpp {tag}", 1.0)
     return final
+
+
+# --- Newer builds ------------------------------------------------------------------------------------
+
+MIN_AGE_DAYS = 7  # a release has had a week for problems to show before it's offered
+_newer: tuple[float, dict | None] = (0.0, None)
+
+
+def _number(tag: str) -> int:
+    return int(tag.lstrip("b")) if tag.lstrip("b").isdigit() else 0
+
+
+def _releases():
+    """llama.cpp's releases, newest first. It publishes several a day, so a week back takes a few pages."""
+    for page in (1, 2, 3):
+        r = httpx.get("https://api.github.com/repos/ggml-org/llama.cpp/releases", params={"per_page": 100, "page": page}, headers={"Accept": "application/vnd.github+json"}, timeout=15)
+        r.raise_for_status()
+        yield from r.json()
+
+
+def newer(fresh: bool = False) -> dict | None:
+    """The newest official llama.cpp release at least MIN_AGE_DAYS old with this machine's build, if it's newer than
+    the build in use: {"tag", "published", "archives": [(name, sha256)]}. Asked of GitHub at most once an hour."""
+    import time
+    from datetime import datetime, timezone
+
+    global _newer
+    if not fresh and time.time() - _newer[0] < 3600:
+        return _newer[1]
+    key = build_key()
+    found = None
+    for release in _releases():
+        published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
+        # (llama.cpp marks every release a prerelease, so that says nothing.)
+        if release.get("draft") or (datetime.now(timezone.utc) - published).days < MIN_AGE_DAYS:
+            continue
+        digests = {a["name"]: a.get("digest") or "" for a in release.get("assets", [])}
+        names = [name.replace(TAG, release["tag_name"]) for name, _ in _BUILDS[key]]
+        if not all(digests.get(n, "").startswith("sha256:") for n in names):
+            continue  # its build for this machine is missing or unchecked: try an older release
+        if _number(release["tag_name"]) > _number(active_tag()):
+            found = {"tag": release["tag_name"], "published": release["published_at"], "archives": [(n, digests[n].removeprefix("sha256:")) for n in names]}
+        break
+    _newer = (time.time(), found)
+    return found
+
+
+def update(report: Report = _quiet) -> str:
+    """Installs the newer build and uses it from the next model load, keeping the one it replaces for rollback()."""
+    global _newer
+    found = newer(fresh=True)
+    if not found:
+        report(f"llama.cpp {active_tag()} is the newest build", 1.0)
+        return active_tag()
+    before = active_tag()
+    install(report, tag=found["tag"], archives=found["archives"])
+    (root() / "chosen.json").write_text(json.dumps({"tag": found["tag"], "previous": before}))
+    _newer = (0.0, None)
+    for d in root().iterdir():  # only the new build, the one before it and the pinned one stay
+        if d.is_dir() and d.name[:1] == "b" and not d.name.endswith("-converter") and d.name.split("-")[0] not in (found["tag"], before, TAG):
+            shutil.rmtree(d, ignore_errors=True)
+    return found["tag"]
+
+
+def rollback() -> str:
+    """Goes back to the build update() replaced."""
+    previous = _chosen().get("previous") or TAG
+    if not _builds(previous):
+        raise RuntimeError(f"llama.cpp {previous} isn't on this computer any more.")
+    if previous == TAG:
+        (root() / "chosen.json").unlink(missing_ok=True)
+    else:
+        (root() / "chosen.json").write_text(json.dumps({"tag": previous, "previous": None}))
+    return previous
 
 
 def converter_dir() -> Path:
@@ -332,7 +429,9 @@ def status():
     build = installed_build()
     server = binary("llama-server")
     return {
-        "tag": TAG,
+        "tag": active_tag(),
+        "pinned": TAG,
+        "previous": _chosen().get("previous") if active_tag() != TAG else None,
         "managed": build is not None,
         "path": str(build) if build else None,
         "server": server,
@@ -364,6 +463,47 @@ def install_endpoint(req: InstallRequest):
 
     registry.run_thread(job, run)
     return job.summary()
+
+
+@router.get("/newer")
+def newer_endpoint(fresh: bool = False):
+    try:
+        found = newer(fresh)
+    except (httpx.HTTPError, ValueError, KeyError) as e:
+        raise HTTPException(502, f"Couldn't ask GitHub for llama.cpp's releases: {e}") from e
+    return {"active": active_tag(), "newer": {k: found[k] for k in ("tag", "published")} if found else None}
+
+
+@router.post("/update")
+def update_endpoint():
+    from .jobs import registry
+
+    if not installed_build():
+        raise HTTPException(409, "Temper's own llama.cpp isn't installed; one found elsewhere is updated where it came from.")
+    job = registry.create("download", "Update llama.cpp")
+    job.progress = 0.0
+
+    def run(job):
+        def report(message: str, progress: float | None) -> None:
+            if progress is not None:
+                job.progress = progress
+                job.emit("progress", value=progress)
+            if not message.startswith(("llama", "cudart")) or progress in (0.0, 1.0):
+                job.log(message)
+
+        job.finish("done", tag=update(report))
+
+    registry.run_thread(job, run)
+    return job.summary()
+
+
+@router.post("/rollback")
+def rollback_endpoint():
+    try:
+        rollback()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    return status()
 
 
 def run_streamed(cmd: list[str], env: dict[str, str] | None = None) -> None:

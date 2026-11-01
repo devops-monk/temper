@@ -206,6 +206,9 @@ class RuntimeManager:
             raise HTTPException(400, f"{engines.ENGINES[engine]['name']} can't load this model's format.")
         if req.adapter and not (Path(req.adapter) / "adapter_config.json").is_file():
             raise HTTPException(404, "The fine-tuned adapter isn't in that run's folder any more.")
+        if newer := engines.needs_newer_transformers(engine, folder):
+            raise HTTPException(409, f"This model was saved by transformers {newer[0]}, newer than the {newer[1]} {engines.ENGINES[engine]['name']} has. "
+                                     "Upgrade it under Settings → Engines (or `temper engines upgrade-transformers`), then load it again.")
         settings = model_settings.resolve(req.path, req.model_dump())
         cmd = engines.command(engine, folder, settings, 0, req.adapter)  # checks the engine is installed
         self.unload()

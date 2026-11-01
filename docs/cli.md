@@ -249,10 +249,22 @@ temper engines survey              # this computer's CPU, memory and GPUs, and w
 temper engines use transformers    # load model folders with Transformers (GGUF files always use llama.cpp); `auto` undoes it
 temper engines install transformers   # or vllm, sglang (Linux with an NVIDIA or AMD GPU); `remove` takes it out again
 temper engines update              # install Temper's own llama.cpp build when it's using one found on PATH
+temper engines update --newer      # a newer llama.cpp build, for a model the pinned one can't run
+temper engines rollback            # back to the build before
+temper engines upgrade-transformers transformers   # or vllm, sglang: a newer transformers in its environment
+temper engines rollback-transformers transformers  # back to the one it replaced
 ```
 
 Each Temper release pins a llama.cpp build that it is tested with and checks downloads against a checksum, so
-`update` installs that build rather than the newest one. Updating Temper brings newer builds.
+`update` installs that build rather than the newest one. When a new model needs a newer llama.cpp, `update
+--newer` (or **Settings → Inference engines → Check for a newer build**) installs the newest official release
+that's at least a week old, checked against the SHA-256 GitHub publishes for it. Models load on it from their
+next load, and the build it replaced is kept, so `rollback` goes straight back. The GGUF converter stays at the
+pinned build.
+
+A model saved by a newer `transformers` than an engine's environment has may use an architecture that
+transformers doesn't know, so loading it says so. `upgrade-transformers` installs the newest transformers there
+and remembers the version it replaced for `rollback-transformers`.
 
 ## Status and scripting
 

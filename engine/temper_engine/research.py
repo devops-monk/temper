@@ -57,9 +57,20 @@ def _live(run: dict) -> dict:
     return run
 
 
+def _retrying(action):
+    """Windows refuses to read a file while it's being replaced, and to replace one being read: try again briefly."""
+    for attempt in range(20):
+        try:
+            return action()
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.02)
+
+
 def load(rid: str) -> dict:
     try:
-        return _live(json.loads(_path(rid).read_text(encoding="utf-8")))
+        return _live(json.loads(_retrying(lambda: _path(rid).read_text(encoding="utf-8"))))
     except OSError:
         raise HTTPException(404, "There's no research run with that id.") from None
 
@@ -68,7 +79,7 @@ def save(run: dict) -> None:
     run["updated"] = time.time()
     tmp = _path(run["id"]).with_suffix(".tmp")
     tmp.write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(_path(run["id"]))
+    _retrying(lambda: tmp.replace(_path(run["id"])))
 
 
 def _ask(prompt: str, max_tokens: int = 800, system: str | None = None) -> str:

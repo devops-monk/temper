@@ -75,7 +75,7 @@ def version(engine: str) -> str | None:
         from . import llamacpp
 
         if llamacpp.installed_build():
-            return llamacpp.TAG
+            return llamacpp.active_tag()
         server = hardware.llama_server_path()
         if not server:
             return None
@@ -94,10 +94,7 @@ def version(engine: str) -> str | None:
             return metadata.version(dist)
         except metadata.PackageNotFoundError:
             return None
-    site = "Lib/site-packages" if os.name == "nt" else "lib/python*/site-packages"
-    for found in venv(engine).glob(f"{site}/{module}-*.dist-info"):
-        return found.name[len(module) + 1:-len(".dist-info")]
-    return None
+    return package_version(engine, module)
 
 
 def preferred() -> str | None:
@@ -115,8 +112,11 @@ def available() -> list[dict]:
         else:
             why = supported(engine)
             ready = why is None and python_for(engine) is not None
+        has_transformers = ready and engine in ("transformers", "vllm", "sglang")
         out.append({"id": engine, "name": info["name"], "available": ready, "unsupported": why, "installable": bool(info.get("packages")) and not why,
-                    "formats": info["formats"], "version": version(engine) if ready else None, "preferred": engine == chosen})
+                    "formats": info["formats"], "version": version(engine) if ready else None, "preferred": engine == chosen,
+                    "transformers": package_version(engine, "transformers") if has_transformers else None,
+                    "transformers_previous": (prefs.load().get("transformers_rollback") or {}).get(engine) if has_transformers else None})
     return out
 
 
@@ -254,6 +254,68 @@ def translate(engine: str, body: dict) -> dict:
     return out
 
 
+# --- Upgrading transformers for a new model ------------------------------------------------------------
+
+
+def package_version(engine: str, package: str) -> str | None:
+    """A package's version in an engine's environment."""
+    site = "Lib/site-packages" if os.name == "nt" else "lib/python*/site-packages"
+    for found in venv(engine).glob(f"{site}/{package}-*.dist-info"):
+        return found.name[len(package) + 1:-len(".dist-info")]
+    return None
+
+
+def _older(have: str, need: str) -> bool:
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        return Version(have) < Version(need)
+    except InvalidVersion:
+        return False
+
+
+def needs_newer_transformers(engine: str, folder: str) -> tuple[str, str] | None:
+    """(needed, installed) when the model was saved by a newer transformers than `engine`'s environment has:
+    a model released after it may use an architecture it doesn't know."""
+    if engine not in ("transformers", "vllm", "sglang"):
+        return None
+    need = _read_json(Path(folder) / "config.json").get("transformers_version")
+    have = package_version(engine, "transformers")
+    return (need, have) if isinstance(need, str) and have and _older(have, need) else None
+
+
+def _pip(job: Job, engine: str, *args: str) -> None:
+    from .llamacpp import uv_binary
+
+    cmd = [uv_binary(), "pip", "install", "--python", str(_venv_python(venv(engine))), *args]
+    job.log("$ uv " + " ".join(cmd[1:]))
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    job.process = proc
+    assert proc.stdout
+    for line in proc.stdout:
+        if line.strip():
+            job.log(line.rstrip())
+    if proc.wait() != 0 and not job.cancel_requested:
+        raise RuntimeError(f"Installing {args[-1]} failed; the log says why.")
+
+
+def _upgrade(job: Job, engine: str) -> None:
+    before = package_version(engine, "transformers")
+    _pip(job, engine, "--upgrade", "transformers")
+    after = package_version(engine, "transformers")
+    if before and after and before != after:
+        prefs.update("transformers_rollback", {**(prefs.load().get("transformers_rollback") or {}), engine: before})
+    job.finish("done", engine=engine, before=before, after=after)
+
+
+def _rollback(job: Job, engine: str, version: str) -> None:
+    _pip(job, engine, f"transformers=={version}")
+    saved = prefs.load().get("transformers_rollback") or {}
+    saved.pop(engine, None)
+    prefs.update("transformers_rollback", saved)
+    job.finish("done", engine=engine, after=package_version(engine, "transformers"))
+
+
 # --- Installing -----------------------------------------------------------------------------------
 
 
@@ -325,6 +387,36 @@ def install(engine: str):
         raise HTTPException(409, why)
     job = registry.create("engine-install", f"Install {ENGINES[engine]['name']}")
     registry.run_thread(job, lambda j: _install(j, engine))
+    return job.summary()
+
+
+def _not_running(engine: str) -> None:
+    from .runtime import manager
+
+    if engine not in ENGINES or not ENGINES[engine].get("packages") or not python_for(engine):
+        raise HTTPException(404, f"{ENGINES.get(engine, {}).get('name', engine)} isn't installed.")
+    if manager.engine == engine and manager.state != "idle":
+        raise HTTPException(409, f"A model is running on {ENGINES[engine]['name']}. Unload it first.")
+
+
+@router.post("/{engine}/upgrade-transformers")
+def upgrade_transformers(engine: str):
+    """Installs the newest transformers in the engine's environment, for a model newer than the one it has."""
+    _not_running(engine)
+    job = registry.create("engine-install", f"Upgrade transformers for {ENGINES[engine]['name']}")
+    registry.run_thread(job, lambda j: _upgrade(j, engine))
+    return job.summary()
+
+
+@router.post("/{engine}/rollback-transformers")
+def rollback_transformers(engine: str):
+    """Puts back the transformers the last upgrade replaced."""
+    _not_running(engine)
+    version = (prefs.load().get("transformers_rollback") or {}).get(engine)
+    if not version:
+        raise HTTPException(409, "There's no earlier transformers to go back to.")
+    job = registry.create("engine-install", f"Put back transformers {version}")
+    registry.run_thread(job, lambda j: _rollback(j, engine, version))
     return job.summary()
 
 

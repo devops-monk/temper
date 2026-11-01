@@ -1768,5 +1768,12 @@
   "remote.tools": "Permitir herramientas por el enlace",
   "remote.tools_off": "Las herramientas, el entorno de código y las carpetas de proyecto se ejecutan en este ordenador, así que están desactivados para el enlace.",
   "remote.tools_on": "Los administradores que inicien sesión por el enlace pueden ejecutar herramientas en este ordenador.",
-  "remote.link_hint": "Ábrelo en un teléfono u otro ordenador e inicia sesión. Cualquiera con el enlace ve la página de inicio de sesión; detenlo cuando termines."
+  "remote.link_hint": "Ábrelo en un teléfono u otro ordenador e inicia sesión. Cualquiera con el enlace ve la página de inicio de sesión; detenlo cuando termines.",
+  "eng.check_newer": "Buscar una versión más nueva",
+  "eng.update_to": "Actualizar a {tag}",
+  "eng.newer_title": "La versión oficial más nueva con al menos una semana, comprobada con su SHA-256 publicado. Los modelos la usan desde la próxima carga.",
+  "eng.newest": "Es la versión más nueva publicada hace al menos una semana.",
+  "eng.back_to": "Volver a {tag}",
+  "eng.upgrade_transformers": "Actualizar transformers",
+  "eng.upgrade_title": "Para un modelo más nuevo de lo que conoce este transformers. Se guarda la versión reemplazada para poder volver."
 }

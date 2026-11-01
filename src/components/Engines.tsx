@@ -1,4 +1,4 @@
-import { Download, Trash2 } from "lucide-react";
+import { Download, RotateCw, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/engine";
 import { type Key, useT } from "../lib/i18n";
@@ -24,6 +24,10 @@ export function Engines() {
   const { jobs, refreshJobs } = useApp();
   const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // llama.cpp: a newer build than the one in use (undefined until asked), and the one an update replaced.
+  const [newer, setNewer] = useState<{ tag: string; published: string } | null | undefined>(undefined);
+  const [checking, setChecking] = useState(false);
+  const [previous, setPrevious] = useState<string | null>(null);
   const existing = jobs.find((j) => j.kind === "engine-install" && j.status === "running");
   const jobId = started ?? existing?.id ?? null;
   const { status, events } = useJob(jobId);
@@ -32,20 +36,46 @@ export function Engines() {
   const lastLine = [...events].reverse().find((e) => e.event === "log")?.line as string | undefined;
   const failure = events.find((e) => e.event === "status" && e.status === "failed")?.error as string | undefined;
 
+  useEffect(() => void api<{ previous: string | null }>("/api/llamacpp").then((r) => setPrevious(r.previous), () => {}), [status]);
   useEffect(() => {
     if (status && status !== "running") {
       refresh();
       void refreshJobs();
+      setNewer(undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  async function install(id: string) {
+  async function start(path: string) {
     setError(null);
     try {
-      const job = await api<Job>(`/api/runtime/engines/${id}/install`, { method: "POST" });
+      const job = await api<Job>(path, { method: "POST" });
       setStarted(job.id);
       void refreshJobs();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const install = (id: string) => start(`/api/runtime/engines/${id}/install`);
+
+  async function check() {
+    setError(null);
+    setChecking(true);
+    try {
+      setNewer((await api<{ newer: { tag: string; published: string } | null }>("/api/llamacpp/newer?fresh=true")).newer);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function rollback() {
+    setError(null);
+    try {
+      setPrevious((await api<{ previous: string | null }>("/api/llamacpp/rollback", { method: "POST" })).previous);
+      refresh();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -88,6 +118,39 @@ export function Engines() {
                 {e.preferred && folderEngines.length > 1 && <Badge>{t("eng.folders")}</Badge>}
               </div>
               <p className="text-[12px] text-muted">{e.unsupported ?? (ABOUT[e.id] ? t(ABOUT[e.id]) : null)}</p>
+              {e.id === "llama.cpp" && e.available && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
+                  {newer === undefined ? (
+                    <Button size="sm" variant="ghost" onClick={() => void check()} disabled={checking || installing}>
+                      <RotateCw className={checking ? "size-3.5 animate-spin" : "size-3.5"} /> {t("eng.check_newer")}
+                    </Button>
+                  ) : newer ? (
+                    <Button size="sm" onClick={() => void start("/api/llamacpp/update")} disabled={installing} title={t("eng.newer_title")}>
+                      <Download className="size-3.5" /> {t("eng.update_to", { tag: newer.tag })}
+                    </Button>
+                  ) : (
+                    <span className="text-muted">{t("eng.newest")}</span>
+                  )}
+                  {previous && (
+                    <Button size="sm" variant="ghost" onClick={() => void rollback()} disabled={installing}>
+                      <Undo2 className="size-3.5" /> {t("eng.back_to", { tag: previous })}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {e.transformers && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
+                  <span className="font-mono text-muted">transformers {e.transformers}</span>
+                  <Button size="sm" variant="ghost" onClick={() => void start(`/api/runtime/engines/${e.id}/upgrade-transformers`)} disabled={installing} title={t("eng.upgrade_title")}>
+                    <RotateCw className="size-3.5" /> {t("eng.upgrade_transformers")}
+                  </Button>
+                  {e.transformers_previous && (
+                    <Button size="sm" variant="ghost" onClick={() => void start(`/api/runtime/engines/${e.id}/rollback-transformers`)} disabled={installing}>
+                      <Undo2 className="size-3.5" /> {t("eng.back_to", { tag: e.transformers_previous })}
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
             {folderEngines.length > 1 && e.available && e.id !== "llama.cpp" && (
               <Button size="sm" variant="ghost" onClick={() => void prefer(e.preferred ? null : e.id)}>

@@ -1008,7 +1008,11 @@ def engines_cmd(args: list[str]) -> int:
     use.add_argument("engine", help="mlx, transformers, vllm or sglang; `auto` picks by format again")
     sub.add_parser("install", help="install an engine into its own environment").add_argument("engine")
     sub.add_parser("remove", help="remove an installed engine").add_argument("engine")
-    sub.add_parser("update", help="install the llama.cpp build this version of Temper uses, for this hardware")
+    update = sub.add_parser("update", help="install the llama.cpp build this version of Temper uses, for this hardware")
+    update.add_argument("--newer", action="store_true", help="install the newest llama.cpp release at least a week old instead, for a model that needs it")
+    sub.add_parser("rollback", help="go back to the llama.cpp build before the last `update --newer`")
+    sub.add_parser("upgrade-transformers", help="install the newest transformers in an engine's environment, for a newer model").add_argument("engine")
+    sub.add_parser("rollback-transformers", help="put back the transformers the last upgrade replaced").add_argument("engine")
     sub.add_parser("survey", help="what each engine can use here: GPU, memory, backends").add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     a = p.parse_args(args)
     with _client(running()) as c:
@@ -1056,6 +1060,24 @@ def engines_cmd(args: list[str]) -> int:
             _check(c.delete(f"/api/runtime/engines/{engine}"))
             print(f"Removed {names[engine]['name']}.")
             return 0
+        elif a.action == "update" and a.newer:
+            found = _check(c.get("/api/llamacpp/newer", params={"fresh": "true"}))
+            if not found["newer"]:
+                print(f"llama.cpp {found['active']} is the newest build released at least a week ago.")
+                return 0
+            job = _check(c.post("/api/llamacpp/update"))
+            print(f"Installing llama.cpp {found['newer']['tag']}; models load on it from the next load. `temper engines rollback` goes back.")
+            end = follow(c, job["id"], logs=True)
+        elif a.action == "rollback":
+            llama = _check(c.post("/api/llamacpp/rollback"))
+            print(f"Back to llama.cpp {llama['tag']}, from the next model load.")
+            return 0
+        elif a.action in ("upgrade-transformers", "rollback-transformers"):
+            engine = known(a.engine)
+            job = _check(c.post(f"/api/runtime/engines/{engine}/{a.action}"))
+            end = follow(c, job["id"], logs=False)
+            if end.get("status") == "done":
+                print(f"{names[engine]['name']} has transformers {end.get('result', {}).get('after') or 'installed'}.")
         elif a.action == "update":
             llama = _check(c.get("/api/llamacpp"))
             if llama["managed"]:
@@ -1907,7 +1929,8 @@ USAGE = """usage:
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
   temper accounts [--json] | add <name> [--admin] | remove <name> | reset-password <name>
-  temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey
+  temper engines [--json] | use <engine>|auto | install|remove <engine> | update [--newer] | rollback | survey
+  temper engines upgrade-transformers|rollback-transformers <engine>
   temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode
   temper doctor --mcp"""
