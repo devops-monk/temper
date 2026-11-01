@@ -296,11 +296,12 @@ def update_chat(chat_id: str, req: ChatUpdate):
 
 @router.delete("/{chat_id}")
 def delete_chat(chat_id: str):
-    from . import generations, sandbox
+    from . import browser, generations, sandbox
 
     with db() as con:
         _mine(con, chat_id)
     generations.cancel_chat(chat_id)
+    browser.forget(chat_id)
     sandbox.forget(chat_id)  # the code sandbox's working folder for it
     with db() as con:
         con.execute("delete from messages_fts where chat_id = ?", (chat_id,))

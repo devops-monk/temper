@@ -1,6 +1,6 @@
-import { Check, ChevronRight, LoaderCircle, ShieldAlert, ShieldCheck, Wrench, X } from "lucide-react";
+import { Check, ChevronRight, Globe, LoaderCircle, ShieldAlert, ShieldCheck, Wrench, X } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
-import { api } from "../lib/engine";
+import { api, apiBlob } from "../lib/engine";
 import { useT, type Key } from "../lib/i18n";
 import { useApp } from "../lib/store";
 import type { Job } from "../lib/types";
@@ -134,6 +134,7 @@ export function ToolCard({ step, onApprove }: { step: ToolStep; onApprove?: OnAp
   const waiting = step.approval === "pending";
   const running = step.result === null && !waiting;
   const name = label(`tool.${step.name}`, mcpLabel(step.name));
+  const shot = step.name === "browse" && !step.error ? (step.result?.match(/screenshots\/([0-9a-f]{16}\.png)/)?.[1] ?? null) : null;
   const title = waiting ? t("tools.wants", { name }) : running ? t("tools.running", { name }) : step.approval === "declined" ? t("tools.declined", { name }) : step.error ? t("tools.failed", { name }) : t("tools.used", { name });
   return (
     <div className={cx("not-prose my-2 rounded-lg border bg-surface text-[12.5px]", waiting ? "border-accent/60" : "border-line")}>
@@ -163,8 +164,10 @@ export function ToolCard({ step, onApprove }: { step: ToolStep; onApprove?: OnAp
           )}
         </div>
       )}
+      {shot && !open && <Screenshot name={shot} />}
       {open && !running && !waiting && (
         <div className="flex flex-col gap-2 border-t border-line px-3 py-2">
+          {shot && <Screenshot name={shot} />}
           <div>
             <p className="text-[11.5px] font-medium text-muted">{t("tools.arguments")}</p>
             <pre className="mt-0.5 max-h-60 overflow-y-auto font-mono text-[12px] break-all whitespace-pre-wrap">{full(step.arguments)}</pre>
@@ -177,6 +180,29 @@ export function ToolCard({ step, onApprove }: { step: ToolStep; onApprove?: OnAp
       )}
     </div>
   );
+}
+
+/** A screenshot the browse tool took (engine browser.py), fetched with the engine's token. */
+function Screenshot({ name }: { name: string }) {
+  const t = useT();
+  const [src, setSrc] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    let url: string | null = null;
+    apiBlob(`/api/browser/screenshots/${name}`).then(
+      (blob) => setSrc((url = URL.createObjectURL(blob))),
+      () => setMissing(true),
+    );
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [name]);
+  if (missing) return <p className="px-3 pb-2 text-[12px] text-muted">{t("browser.shot_gone")}</p>;
+  return src ? (
+    <a href={src} target="_blank" rel="noreferrer" className="block px-3 pb-2">
+      <img src={src} alt={t("browser.shot")} className="max-h-80 w-full rounded-md border border-line object-contain object-left-top" />
+    </a>
+  ) : null;
 }
 
 /** Tool calls the model is still writing into its text (other engines' format), hidden until the engine takes them out. */
@@ -338,5 +364,74 @@ function SandboxChecks() {
         </ul>
       )}
     </div>
+  );
+}
+
+/** Settings: the browser the browse tool drives (engine browser.py), installed on demand. */
+export function BrowserSettings() {
+  const t = useT();
+  const { jobs, refreshJobs } = useApp();
+  const [info, setInfo] = useState<{ installed: boolean } | null>(null);
+  const [started, setStarted] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const jobId = started ?? jobs.find((j) => j.kind === "browser-install" && j.status === "running")?.id ?? null;
+  const { status, events } = useJob(jobId);
+  const installing = jobId !== null && (status === null || status === "running");
+  const progress = [...events].reverse().find((e) => e.event === "progress")?.value as number | undefined;
+  const lastLine = [...events].reverse().find((e) => e.event === "log")?.line as string | undefined;
+  const failure = events.find((e) => e.event === "status" && e.status === "failed")?.error as string | undefined;
+  useEffect(() => {
+    listed = null; // the browse tool is offered once the browser is installed
+    void api<{ installed: boolean }>("/api/browser").then(setInfo, () => {});
+  }, [status]);
+
+  async function add() {
+    setError(null);
+    try {
+      const job = await api<Job>("/api/browser/install", { method: "POST" });
+      setStarted(job.id);
+      void refreshJobs();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function remove() {
+    if (!confirm(t("browser.remove_confirm"))) return;
+    listed = null;
+    setInfo(await api<{ installed: boolean }>("/api/browser", { method: "DELETE" }).catch(() => info));
+  }
+
+  if (!info) return null;
+  return (
+    <Section title={t("browser.title")}>
+      <div className="flex flex-col gap-3 text-[13px]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex gap-2">
+            <Globe className="mt-0.5 size-4 shrink-0 text-muted" />
+            <span className="text-[12.5px] text-muted">{t(info.installed ? "browser.on" : "browser.about")}</span>
+          </span>
+          {info.installed ? (
+            <Button size="sm" variant="ghost" onClick={() => void remove()}>
+              {t("browser.remove")}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => void add()} disabled={installing}>
+              {t("browser.add")}
+            </Button>
+          )}
+        </div>
+        {installing && (
+          <div className="flex flex-col gap-1.5">
+            <ProgressBar value={progress ?? null} />
+            <p className="truncate font-mono text-[11.5px] text-muted" title={lastLine}>
+              {lastLine ?? "…"}
+            </p>
+          </div>
+        )}
+        {(error || (status === "failed" && failure)) && <p className="text-[12px] text-danger">{error ?? failure}</p>}
+        <p className="text-[12px] text-muted">{t("browser.safety")}</p>
+      </div>
+    </Section>
   );
 }

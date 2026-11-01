@@ -1787,5 +1787,16 @@
   "shared.mac_reset": "恢复 macOS 默认值：",
   "shared.amd_about": "这颗 AMD 处理器的 GPU 有 {carve} 专用内存（在 BIOS 中划出），其余从系统内存借用，上限由内核决定。把上限提高到 {suggested} 能让更大的模型在 GPU 上运行。重启后生效，需要管理员权限。",
   "shared.amd_raise": "把上限加入内核启动参数（GRUB），然后重启：",
-  "shared.amd_bios": "有些 BIOS 也可以为 GPU 设置更大的“UMA frame buffer”。通常内核上限就足够了，而且 GPU 不用时内存仍可供其他程序使用。"
+  "shared.amd_bios": "有些 BIOS 也可以为 GPU 设置更大的“UMA frame buffer”。通常内核上限就足够了，而且 GPU 不用时内存仍可供其他程序使用。",
+  "tool.browse": "浏览器",
+  "tool.browse.about": "在本机的浏览器中打开网页，并在其中点击、输入和截图，适用于表单、搜索和由脚本生成的页面。",
+  "browser.title": "浏览器",
+  "browser.about": "浏览器工具让模型可以在网页上点击和输入。它需要 Playwright 和 Chromium，约 350 MB。",
+  "browser.on": "已安装。在聊天的“生成”面板中打开浏览器工具。",
+  "browser.add": "安装",
+  "browser.remove": "移除",
+  "browser.remove_confirm": "移除浏览器？聊天中的截图会保留。",
+  "browser.safety": "每个聊天都有自己的 Cookie 和历史记录。浏览器只打开公开网页，绝不打开本机或局域网的页面；除非你另行选择，每个操作都会等待你的允许。",
+  "browser.shot": "页面截图",
+  "browser.shot_gone": "截图已不存在。"
 }

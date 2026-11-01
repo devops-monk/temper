@@ -1787,5 +1787,16 @@
   "shared.mac_reset": "macOS の既定に戻す:",
   "shared.amd_about": "この AMD プロセッサーの GPU は BIOS で確保された {carve} の専用メモリを持ち、残りはカーネルの上限までシステムメモリから借ります。上限を {suggested} に上げると、より大きなモデルを GPU で動かせます。再起動後に有効になり、管理者権限が必要です。",
   "shared.amd_raise": "カーネルの起動パラメーター（GRUB）に上限を追加して再起動:",
-  "shared.amd_bios": "BIOS によっては GPU 専用分の「UMA frame buffer」を増やせます。通常はカーネルの上限で十分で、GPU が使っていないときはメモリが空いたままになります。"
+  "shared.amd_bios": "BIOS によっては GPU 専用分の「UMA frame buffer」を増やせます。通常はカーネルの上限で十分で、GPU が使っていないときはメモリが空いたままになります。",
+  "tool.browse": "ブラウザ",
+  "tool.browse.about": "このコンピューターのブラウザでページを開き、クリック、入力、スクリーンショットを行います。フォーム、検索、スクリプトで作られるページ向けです。",
+  "browser.title": "ブラウザ",
+  "browser.about": "ブラウザツールを使うと、モデルがウェブページでクリックや入力をできます。Playwright と Chromium（約 350 MB）が必要です。",
+  "browser.on": "インストール済みです。チャットの生成パネルでブラウザツールをオンにしてください。",
+  "browser.add": "インストール",
+  "browser.remove": "削除",
+  "browser.remove_confirm": "ブラウザを削除しますか？チャットのスクリーンショットは残ります。",
+  "browser.safety": "チャットごとに Cookie と履歴が分かれます。ブラウザは公開ページだけを開き、このコンピューターやローカルネットワークのページは開きません。別の設定にしない限り、各操作はあなたの許可を待ちます。",
+  "browser.shot": "ページのスクリーンショット",
+  "browser.shot_gone": "スクリーンショットはもうありません。"
 }

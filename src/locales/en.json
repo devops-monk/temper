@@ -1787,5 +1787,16 @@
   "shared.mac_reset": "Back to macOS's default:",
   "shared.amd_about": "This AMD processor's GPU has {carve} of its own, set aside in the BIOS, and borrows the rest from system memory up to the kernel's limit. Raising the limit to {suggested} lets bigger models run on the GPU. It takes effect after a restart, and needs an administrator.",
   "shared.amd_raise": "Add the limit to the kernel's boot parameters (GRUB), then restart:",
-  "shared.amd_bios": "Some BIOSes also offer a bigger \"UMA frame buffer\" for the GPU's own share. The kernel limit is usually enough, and it leaves the memory free when the GPU isn't using it."
+  "shared.amd_bios": "Some BIOSes also offer a bigger \"UMA frame buffer\" for the GPU's own share. The kernel limit is usually enough, and it leaves the memory free when the GPU isn't using it.",
+  "tool.browse": "Browser",
+  "tool.browse.about": "Opens pages in a browser on this computer and clicks, types and takes screenshots there, for forms, searches and pages built by scripts.",
+  "browser.title": "Browser",
+  "browser.about": "The Browser tool lets the model click and type on web pages. It needs Playwright and Chromium, about 350 MB.",
+  "browser.on": "Installed. Turn on the Browser tool in a chat's Generation panel.",
+  "browser.add": "Install",
+  "browser.remove": "Remove",
+  "browser.remove_confirm": "Remove the browser? Chats keep their screenshots.",
+  "browser.safety": "Each chat has its own cookies and history. The browser opens public pages only, never this computer's or the local network's, and each action waits for you to allow it unless you choose otherwise.",
+  "browser.shot": "Screenshot of the page",
+  "browser.shot_gone": "The screenshot is no longer there."
 }

@@ -126,6 +126,18 @@ def _web(args: dict, ctx: dict) -> str:
     return web.read(url, int(args.get("part") or 1))
 
 
+def _browse(args: dict, ctx: dict) -> str:
+    from . import browser
+
+    return browser.browse(args, ctx.get("chat"))
+
+
+def _browser() -> bool:
+    from . import browser
+
+    return browser.installed()
+
+
 def _search(args: dict, ctx: dict) -> str:
     from . import search
 
@@ -215,6 +227,30 @@ TOOLS: dict[str, Tool] = {
             {"type": "object", "properties": {"url": {"type": "string", "description": "The page's full address, starting with https://"}, "part": {"type": "integer", "description": "Which part of a long page, from 1"}}, "required": ["url"]},
             _web,
             mode="ask",
+        ),
+        Tool(
+            "browse",
+            "Browser",
+            "Uses a web browser for pages that need clicking or typing: forms, searches, and pages their scripts fill in."
+            " Start with action open and a url; each result is the page as text with its links, buttons and fields numbered,"
+            " and click, type (text, and submit to press Enter) and select (text of the option) act on one by its number as ref."
+            " scroll (direction up or down) and back move around, and screenshot shows the person the page."
+            " The browser keeps this chat's cookies and history. To just read a page, read_web_page is quicker.",
+            {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["open", "click", "type", "select", "scroll", "back", "screenshot"]},
+                    "url": {"type": "string", "description": "For open: the page's full address"},
+                    "ref": {"type": "integer", "description": "For click, type and select: the number of the link, button or field"},
+                    "text": {"type": "string", "description": "For type: what to type; for select: the option's text"},
+                    "submit": {"type": "boolean", "description": "For type: press Enter afterwards"},
+                    "direction": {"type": "string", "enum": ["up", "down"], "description": "For scroll"},
+                },
+                "required": ["action"],
+            },
+            _browse,
+            mode="ask",
+            available=_browser,
         ),
         Tool(
             "run_javascript",

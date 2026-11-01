@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, accounts, anthropic_api, api_keys, attachments, catalog, chat_import, chats, classifiers, compaction, compare, convert, crashes, daemon, datasets, decisions, devices, discovery, doctor, embedders, engines, export, files, generations, hardware, hub, igpu, images, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, providers, publish, recipes, research, runtime, sandbox, search, skills, sources, speech, stems, storage, tts, tools, training, tunnel, usage
+from . import __version__, account, accounts, anthropic_api, api_keys, attachments, browser, catalog, chat_import, chats, classifiers, compaction, compare, convert, crashes, daemon, datasets, decisions, devices, discovery, doctor, embedders, engines, export, files, generations, hardware, hub, igpu, images, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, providers, publish, recipes, research, runtime, sandbox, search, skills, sources, speech, stems, storage, tts, tools, training, tunnel, usage
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health", "/api/accounts/status", "/api/accounts/login"}
@@ -41,6 +41,7 @@ async def lifespan(_app: FastAPI):
     knowledge.embedder.stop()
     speech.worker.stop()
     tts.worker.stop()
+    browser.worker.stop()
     images.worker.stop()
     classifiers.worker.stop()
     api_keys.flush()
@@ -98,7 +99,7 @@ def create_app(token: str = "") -> FastAPI:
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (accounts, attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, lan, discovery, llamacpp, recipes, research, decisions, knowledge, usage, crashes, daemon, devices, providers, tunnel, igpu, classifiers, embedders, images, speech, stems, tts):
+    for module in (accounts, attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, browser, search, skills, training, export, publish, datasets, files, lan, discovery, llamacpp, recipes, research, decisions, knowledge, usage, crashes, daemon, devices, providers, tunnel, igpu, classifiers, embedders, images, speech, stems, tts):
         app.include_router(module.router)
     lan.listener.app = app
     tunnel.tunnel.app = app

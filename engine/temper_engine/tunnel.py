@@ -39,7 +39,7 @@ BUILDS = {  # (system, machine): (asset, its SHA-256), from github.com/cloudflar
 }
 LINK = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 # What a request through the link can't reach while tools are off: they run on this computer.
-TOOL_PATHS = ("/mcp", "/api/sandbox", "/api/tools", "/api/mcp")
+TOOL_PATHS = ("/mcp", "/api/sandbox", "/api/browser", "/api/tools", "/api/mcp")
 
 # Whether the request being answered came through the tunnel.
 remote: contextvars.ContextVar[bool] = contextvars.ContextVar("remote", default=False)

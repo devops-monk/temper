@@ -5,7 +5,7 @@ import { SharedMemory } from "../components/SharedMemory";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
 import { SpeechSettings } from "../components/SpeechSettings";
-import { CodeSandbox } from "../components/Tools";
+import { BrowserSettings, CodeSandbox } from "../components/Tools";
 import { McpServers } from "../components/McpServers";
 import { WebSearch } from "../components/WebSearch";
 import { KnowledgeBases } from "../components/Knowledge";
@@ -310,6 +310,8 @@ export function SettingsPage() {
           {engine?.status === "running" && <SkillsSettings />}
 
           {engine?.status === "running" && <CodeSandbox />}
+
+          {engine?.status === "running" && <BrowserSettings />}
 
           {engine?.status === "running" && <KnowledgeBases />}
 

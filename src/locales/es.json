@@ -1787,5 +1787,16 @@
   "shared.mac_reset": "Volver al valor predeterminado de macOS:",
   "shared.amd_about": "La GPU de este procesador AMD tiene {carve} propios, reservados en la BIOS, y toma el resto de la memoria del sistema hasta el límite del kernel. Subir el límite a {suggested} permite ejecutar modelos más grandes en la GPU. Se aplica tras reiniciar y necesita un administrador.",
   "shared.amd_raise": "Añade el límite a los parámetros de arranque del kernel (GRUB) y reinicia:",
-  "shared.amd_bios": "Algunas BIOS también ofrecen un \"UMA frame buffer\" mayor para la parte propia de la GPU. El límite del kernel suele bastar, y deja la memoria libre cuando la GPU no la usa."
+  "shared.amd_bios": "Algunas BIOS también ofrecen un \"UMA frame buffer\" mayor para la parte propia de la GPU. El límite del kernel suele bastar, y deja la memoria libre cuando la GPU no la usa.",
+  "tool.browse": "Navegador",
+  "tool.browse.about": "Abre páginas en un navegador de este equipo y hace clic, escribe y toma capturas allí, para formularios, búsquedas y páginas creadas con scripts.",
+  "browser.title": "Navegador",
+  "browser.about": "La herramienta Navegador permite al modelo hacer clic y escribir en páginas web. Necesita Playwright y Chromium, unos 350 MB.",
+  "browser.on": "Instalado. Activa la herramienta Navegador en el panel Generación de un chat.",
+  "browser.add": "Instalar",
+  "browser.remove": "Quitar",
+  "browser.remove_confirm": "¿Quitar el navegador? Los chats conservan sus capturas.",
+  "browser.safety": "Cada chat tiene sus propias cookies e historial. El navegador abre solo páginas públicas, nunca las de este equipo ni de la red local, y cada acción espera tu permiso salvo que elijas otra cosa.",
+  "browser.shot": "Captura de la página",
+  "browser.shot_gone": "La captura ya no está."
 }
