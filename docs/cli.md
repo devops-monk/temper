@@ -124,6 +124,23 @@ named API keys instead (see [Connect](connect.md#api-keys)).
 key after `#` (the part of a link browsers never send to the server); open it, or open `/ui/` and type the key.
 The browser keeps it. Behind a reverse proxy, put HTTPS in front: the key travels with every request.
 
+**For several people:** add accounts, and the browser asks for a name and password instead of the key. Each
+person has their own chats and jobs. Members can chat with the loaded models and change their own password,
+nothing else: no settings, keys, models, files, project folders or tools that run on the server. Admins can do
+everything, and see the chats of the computer's owner (the ones the desktop app shows). Add them under
+**Settings → Accounts**, or on the server:
+
+```bash
+temper accounts add ann --admin    # the first account is an admin; asks for the password
+temper accounts add bob            # a member
+temper accounts                    # who has an account
+temper accounts reset-password bob # a forgotten password; signs bob out everywhere
+temper accounts remove bob
+```
+
+Passwords are kept as scrypt hashes in `users.json`, and sign-ins last 30 days. The engine's key still opens
+everything, as the owner. Ten wrong passwords in five minutes lock a name out for a while.
+
 **At boot on a Linux server:** `temper serve --systemd` prints a systemd service for the current user;
 
 ```bash

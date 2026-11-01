@@ -21,7 +21,8 @@ const ITEMS: { page: Page; label: Key; icon: ComponentType<{ className?: string 
 ];
 
 export function Rail() {
-  const { page, go, jobs } = useApp();
+  const { page, go, jobs, me } = useApp();
+  const member = !!me && !me.admin;
   const t = useT();
   const running = (kind: string) => jobs.some((j) => j.kind === kind && j.status === "running");
   const busy: Partial<Record<Page, boolean>> = { models: running("download") || running("convert"), train: running("train"), export: running("export"), recipes: running("recipe"), research: running("research"), datasets: running("prepare"), images: running("image") };
@@ -49,7 +50,7 @@ export function Rail() {
         <LogoMark className="size-[22px]" />
         <span className="text-[17px] font-semibold tracking-[-0.01em]">Temper</span>
       </div>
-      <div className="flex flex-col gap-0.5">{ITEMS.map((i) => item(i.page, t(i.label), i.icon))}</div>
+      <div className="flex flex-col gap-0.5">{ITEMS.filter((i) => !member || i.page === "chat").map((i) => item(i.page, t(i.label), i.icon))}</div>
       <div className="mt-auto">{item("settings", t("nav.settings"), Settings)}</div>
     </nav>
   );

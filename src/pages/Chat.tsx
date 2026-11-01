@@ -201,7 +201,8 @@ function CompactionDivider({ text }: { text: string }) {
 }
 
 export function ChatPage() {
-  const { runtime, go } = useApp();
+  const { runtime, go, me } = useApp();
+  const member = !!me && !me.admin; // a signed-in member (engine accounts.py): no project folders, tools or Models page
   const t = useT();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -694,10 +695,12 @@ export function ChatPage() {
                       t("chat.loading_hint")
                     ) : (
                       <>
-                        <p>{t("chat.load_hint")}</p>
-                        <Button variant="primary" className="mt-4" onClick={() => go("models")}>
-                          {t("chat.open_models")}
-                        </Button>
+                        <p>{t(member ? "chat.member_load_hint" : "chat.load_hint")}</p>
+                        {!member && (
+                          <Button variant="primary" className="mt-4" onClick={() => go("models")}>
+                            {t("chat.open_models")}
+                          </Button>
+                        )}
                       </>
                     )}
                   </EmptyState>
@@ -901,7 +904,7 @@ export function ChatPage() {
               className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 placeholder:text-muted focus:border-accent focus:outline-none"
             />
           </Field>
-          <ProjectFolder project={project} onChange={setProject} />
+          {!member && <ProjectFolder project={project} onChange={setProject} />}
           <Slider label={t("gen.temperature")} value={settings.temperature} min={0} max={2} step={0.05} onChange={set("temperature")} />
           <Slider label="Top P" value={settings.top_p} min={0} max={1} step={0.01} onChange={set("top_p")} />
           <Slider label="Top K" value={settings.top_k} min={0} max={200} step={1} onChange={set("top_k")} />
@@ -915,7 +918,7 @@ export function ChatPage() {
             <Toggle label={t("gen.auto_compact")} checked={autoCompact} onChange={changeAutoCompact} />
             <p className="text-[12px] text-muted">{t("gen.auto_compact_hint")}</p>
           </div>
-          {!comparing && <ToolsControl value={chatTools} onChange={changeTools} />}
+          {!comparing && !member && <ToolsControl value={chatTools} onChange={changeTools} />}
           {reasoning && thinks && !comparing && (
             <div className="flex flex-col gap-3 border-t border-line pt-4">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">

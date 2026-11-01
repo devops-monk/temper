@@ -32,12 +32,20 @@ export function applyTheme(theme: Theme) {
   else document.documentElement.dataset.theme = theme;
 }
 
+/** Who the interface is signed in as (engine accounts.py): an account, or none for the engine's own key. */
+export interface Me {
+  account: { name: string; admin: boolean } | null;
+  admin: boolean;
+  enabled: boolean;
+}
+
 interface AppState {
   page: Page;
   engine: EngineInfo | null;
   system: SystemInfo | null;
   runtime: RuntimeStatus | null;
   jobs: Job[];
+  me: Me | null;
   theme: Theme;
   /** Dataset picked on the Datasets page, handed to the training form. */
   pendingDataset: PendingDataset | null;
@@ -51,6 +59,7 @@ interface AppState {
   refreshSystem: () => Promise<void>;
   refreshRuntime: () => Promise<void>;
   refreshJobs: () => Promise<void>;
+  refreshAccount: () => Promise<void>;
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -59,6 +68,7 @@ export const useApp = create<AppState>((set, get) => ({
   system: null,
   runtime: null,
   jobs: [],
+  me: null,
   theme: readTheme(),
   pendingDataset: null,
   pendingBaseModel: null,
@@ -79,6 +89,7 @@ export const useApp = create<AppState>((set, get) => ({
     const engine = await fetchEngineInfo().catch(() => null);
     set({ engine });
     if (engine?.status === "running" && was !== "running") {
+      void get().refreshAccount();
       void get().refreshSystem();
       void get().refreshRuntime();
       void get().refreshJobs();
@@ -91,6 +102,12 @@ export const useApp = create<AppState>((set, get) => ({
   refreshRuntime: async () => {
     const runtime = await api<RuntimeStatus>("/api/runtime").catch(() => null);
     if (runtime) set({ runtime });
+  },
+  refreshAccount: async () => {
+    const me = await api<Me>("/api/accounts/me").catch(() => null);
+    set({ me });
+    // A member reaches chat and their own settings only.
+    if (me && !me.admin && !["chat", "settings"].includes(get().page)) set({ page: "chat" });
   },
   refreshJobs: async () => {
     const jobs = await api<Job[]>("/api/jobs").catch(() => null);

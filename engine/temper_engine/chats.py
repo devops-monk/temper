@@ -20,7 +20,7 @@ from typing import Iterator, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from . import home
+from . import accounts, home
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -79,8 +79,11 @@ def db() -> Iterator[sqlite3.Connection]:
             for column in ("reasoning", "attachments", "tools"):  # added with the reasoning view, attachments and tool calls
                 if column not in columns:
                     con.execute(f"alter table messages add column {column} text")
-            if "compaction" not in {r["name"] for r in con.execute("pragma table_info(chats)")}:  # added with auto-compaction
+            chat_columns = {r["name"] for r in con.execute("pragma table_info(chats)")}
+            if "compaction" not in chat_columns:  # added with auto-compaction
                 con.execute("alter table chats add column compaction text")
+            if "owner" not in chat_columns:  # added with accounts: a member's name, or null for the owner's
+                con.execute("alter table chats add column owner text")
             yield con
             con.commit()
         finally:
@@ -122,6 +125,14 @@ def _get(con: sqlite3.Connection, chat_id: str) -> sqlite3.Row:
     return row
 
 
+def _mine(con: sqlite3.Connection, chat_id: str) -> sqlite3.Row:
+    """The chat, if it belongs to whoever is asking (accounts.py): a member's own, or the owner's."""
+    row = _get(con, chat_id)
+    if row["owner"] != accounts.owner():
+        raise HTTPException(404, "That chat doesn't exist any more.")
+    return row
+
+
 def write_messages(con: sqlite3.Connection, chat_id: str, messages: list[dict]) -> None:
     """Replaces a chat's messages and their search index."""
     con.execute("delete from messages where chat_id = ?", (chat_id,))
@@ -148,7 +159,7 @@ def _fts_query(text: str) -> str:
 @router.get("")
 def list_chats(q: str = "", folder: str | None = None, source: str | None = None, limit: int = 500):
     with db() as con:
-        where, args = [], []
+        where, args = ["c.owner is ?"], [accounts.owner()]
         if folder is not None:
             where.append("c.folder = ?")
             args.append(folder)
@@ -168,17 +179,17 @@ def list_chats(q: str = "", folder: str | None = None, source: str | None = None
             except sqlite3.OperationalError:
                 pass  # a query FTS can't parse still matches titles
             if not ids:
-                return {"chats": [], "folders": _folders(con)}
+                return {"chats": [], "folders": _folders(con), "sources": {}}
             where.append(f"c.id in ({','.join('?' * len(ids))})")
             args.extend(ids)
         sql = (
             "select c.*, (select count(*) from messages m where m.chat_id = c.id) as count from chats c"
-            + (f" where {' and '.join(where)}" if where else "")
+            + f" where {' and '.join(where)}"
             + " order by c.pinned desc, c.updated desc limit ?"
         )
         rows = con.execute(sql, (*args, limit)).fetchall()
         chats = [{**_summary(r), **({"snippet": snippets[r["id"]]} if r["id"] in snippets else {})} for r in rows]
-        sources = {r["source"]: r["n"] for r in con.execute("select source, count(*) as n from chats where source is not null group by source")}
+        sources = {r["source"]: r["n"] for r in con.execute("select source, count(*) as n from chats where source is not null and owner is ? group by source", (accounts.owner(),))}
         return {"chats": chats, "folders": _folders(con), "sources": sources}
 
 
@@ -212,8 +223,8 @@ def create_chat(req: NewChat):
         if req.folder:
             _check_folder(con, req.folder)
         con.execute(
-            "insert into chats(id, title, model, folder, settings, created, updated) values (?, ?, ?, ?, ?, ?, ?)",
-            (chat_id, (req.title or title_from(messages)).strip(), req.model, req.folder, json.dumps(req.settings) if req.settings else None, now, now),
+            "insert into chats(id, title, model, folder, settings, created, updated, owner) values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (chat_id, (req.title or title_from(messages)).strip(), req.model, req.folder, json.dumps(req.settings) if req.settings else None, now, now, accounts.owner()),
         )
         write_messages(con, chat_id, messages)
         return _with_messages(con, chat_id)
@@ -233,6 +244,7 @@ def get_chat(chat_id: str):
     from . import generations
 
     with db() as con:
+        _mine(con, chat_id)
         chat = _with_messages(con, chat_id)
     # A reply still being written (generations.py): the page follows it from the start.
     gen = generations.for_chat(chat_id)
@@ -252,7 +264,7 @@ def save_messages(chat_id: str, req: SaveMessages):
     """Saves the whole thread; an untitled chat takes its title from the first message."""
     messages = [m.model_dump() for m in req.messages]
     with db() as con:
-        row = _get(con, chat_id)
+        row = _mine(con, chat_id)
         write_messages(con, chat_id, messages)
         con.execute(
             "update chats set updated = ?, title = ?, model = coalesce(?, model), settings = coalesce(?, settings), compaction = ? where id = ?",
@@ -270,7 +282,7 @@ class ChatUpdate(BaseModel):
 @router.patch("/{chat_id}")
 def update_chat(chat_id: str, req: ChatUpdate):
     with db() as con:
-        _get(con, chat_id)
+        _mine(con, chat_id)
         if req.title is not None:
             con.execute("update chats set title = ? where id = ?", (req.title.strip()[:200], chat_id))
         if req.pinned is not None:
@@ -286,6 +298,8 @@ def update_chat(chat_id: str, req: ChatUpdate):
 def delete_chat(chat_id: str):
     from . import generations, sandbox
 
+    with db() as con:
+        _mine(con, chat_id)
     generations.cancel_chat(chat_id)
     sandbox.forget(chat_id)  # the code sandbox's working folder for it
     with db() as con:
@@ -353,11 +367,13 @@ def export_to_file(chat_id: str, req: ExportToFile):
 
 
 def _folders(con: sqlite3.Connection) -> list[str]:
+    if accounts.owner() is not None:  # folders are the owner's; a member's chats have none
+        return []
     return [r["name"] for r in con.execute("select name from folders order by created")]
 
 
 def _check_folder(con: sqlite3.Connection, name: str) -> None:
-    if not con.execute("select 1 from folders where name = ?", (name,)).fetchone():
+    if accounts.owner() is not None or not con.execute("select 1 from folders where name = ?", (name,)).fetchone():
         raise HTTPException(404, f"There's no folder called {name}.")
 
 

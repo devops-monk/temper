@@ -113,3 +113,33 @@ test("a cloud provider's model answers in chat", async ({ page }) => {
     server.close();
   }
 });
+
+test("Settings adds an admin and a member, who signs in to their own chats", async ({ page, request }) => {
+  await seenTour(page);
+  const errors = watchErrors(page);
+  await page.goto("/#settings");
+  await page.getByLabel("Name", { exact: true }).fill("ann");
+  await page.getByLabel("Password, 8 or more characters").fill("password1");
+  await page.getByRole("button", { name: "Add the admin" }).click();
+  await expect(page.getByText("ann", { exact: true })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("bob");
+  await page.getByLabel("Password, 8 or more characters").fill("password2");
+  await page.getByRole("button", { name: "Add account" }).click();
+  await expect(page.getByText("bob", { exact: true })).toBeVisible();
+
+  const engine = "http://127.0.0.1:18765";
+  const login = await request.post(`${engine}/api/accounts/login`, { data: { name: "bob", password: "password2" } });
+  const bob = { Authorization: `Bearer ${(await login.json()).token}` };
+  await request.post(`${engine}/api/chats`, { headers: bob, data: { title: "bob's chat" } });
+  const theirs = await (await request.get(`${engine}/api/chats`, { headers: bob })).json();
+  expect(theirs.chats.map((c: { title: string }) => c.title)).toEqual(["bob's chat"]);
+  expect((await request.get(`${engine}/api/keys`, { headers: bob })).status()).toBe(403);
+  const owners = await (await request.get(`${engine}/api/chats`, { headers: { Authorization: "Bearer e2e" } })).json();
+  expect(owners.chats.map((c: { title: string }) => c.title)).not.toContain("bob's chat");
+
+  // Back to no accounts, for the next run's first launch.
+  page.on("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Remove bob" }).click();
+  await expect(page.getByRole("button", { name: "Remove bob" })).toBeHidden();
+  expect(errors).toEqual([]);
+});

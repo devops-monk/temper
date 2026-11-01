@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import attachments, providers, skills, tools
+from . import accounts, attachments, providers, skills, tools
 from .engines import translate
 from .instructions import with_instructions
 from .runtime import RuntimeManager, manager
@@ -245,6 +245,8 @@ def prepare(req: Prepare):
     """
     if manager.state != "ready":
         raise HTTPException(409, "No model is loaded. Load a model from the Models page first.")
+    if (req.project or req.tools) and not accounts.is_admin():  # a project folder and tools are this computer's
+        raise HTTPException(403, "Project folders and tools are on the computer Temper is on, so only an admin can use them.")
     server = manager
     context = _context(server)
     reserve = min(req.max_tokens, context // 4)

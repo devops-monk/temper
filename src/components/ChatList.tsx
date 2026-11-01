@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { useT } from "../lib/i18n";
 import { api, inTauri } from "../lib/engine";
 import { relativeDate } from "../lib/format";
+import { useApp } from "../lib/store";
 import { useJob } from "../lib/useJob";
 import { Button, Input, ProgressBar, cx } from "./ui";
 
@@ -59,6 +60,7 @@ function Snippet({ text }: { text: string }) {
 export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { activeId: string | null; version: number; onOpen: (id: string) => void; onNew: () => void; onDeleted: (id: string) => void }) {
   const [data, setData] = useState<ChatListData | null>(null);
   const t = useT();
+  const member = useApp((a) => !!a.me && !a.me.admin); // folders and imports are the owner's (engine accounts.py)
   const [query, setQuery] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState(false);
@@ -209,20 +211,24 @@ export function ChatList({ activeId, version, onOpen, onNew, onDeleted }: { acti
               t("chat.list"),
               chats.filter((c) => !c.pinned && !c.folder && !c.source),
               null,
-              <button className="hover:text-text" onClick={() => setNewFolder(true)} title={t("chat.new_folder")}>
-                <FolderPlus className="size-3.5" aria-label={t("chat.new_folder")} />
-              </button>,
+              member ? undefined : (
+                <button className="hover:text-text" onClick={() => setNewFolder(true)} title={t("chat.new_folder")}>
+                  <FolderPlus className="size-3.5" aria-label={t("chat.new_folder")} />
+                </button>
+              ),
             )}
             {imported.map((source) => group(`source:${source}`, t("chat.from", { source }), chats.filter((c) => c.source === source && !c.pinned && !c.folder), <History className="size-3" />, undefined, false))}
             {chats.length === 0 && <p className="px-2 py-3 text-[12.5px] text-muted">{t("chat.empty_list")}</p>}
           </>
         )}
       </div>
-      <div className="border-t border-line px-3 py-2">
-        <button className="flex items-center gap-1.5 text-[12.5px] text-muted hover:text-text" onClick={() => setImporting(true)}>
-          <Download className="size-3.5" /> {t("chat.import")}
-        </button>
-      </div>
+      {!member && (
+        <div className="border-t border-line px-3 py-2">
+          <button className="flex items-center gap-1.5 text-[12.5px] text-muted hover:text-text" onClick={() => setImporting(true)}>
+            <Download className="size-3.5" /> {t("chat.import")}
+          </button>
+        </div>
+      )}
       {importing && <ImportPanel onClose={() => setImporting(false)} onImported={load} />}
     </aside>
   );

@@ -36,6 +36,7 @@ class Job:
     created: float = field(default_factory=time.time)
     events: list[dict[str, Any]] = field(default_factory=list)
     cancel_requested: bool = False
+    owner: str | None = None  # the member who started it (accounts.py); None for the owner's
     process: subprocess.Popen | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -73,14 +74,20 @@ class Registry:
         self.jobs: dict[str, Job] = {}
 
     def create(self, kind: str, title: str) -> Job:
-        job = Job(kind=kind, title=title)
+        from . import accounts
+
+        job = Job(kind=kind, title=title, owner=accounts.owner())
         self.jobs[job.id] = job
         return job
 
     def get(self, job_id: str) -> Job:
-        if job_id not in self.jobs:
+        from . import accounts
+
+        job = self.jobs.get(job_id)
+        # A member sees only their own jobs; the owner and admins see everyone's.
+        if not job or (accounts.owner() is not None and job.owner != accounts.owner()):
             raise HTTPException(404, f"No job {job_id}")
-        return self.jobs[job_id]
+        return job
 
     def run_thread(self, job: Job, target: Callable[[Job], None]) -> None:
         def wrapper() -> None:
@@ -197,7 +204,10 @@ def emit_from_worker(event: str, **data: Any) -> None:
 
 @router.get("")
 def list_jobs(kind: str | None = None):
-    jobs = [j.summary() for j in registry.jobs.values() if kind is None or j.kind == kind]
+    from . import accounts
+
+    member = accounts.owner()
+    jobs = [j.summary() for j in registry.jobs.values() if (kind is None or j.kind == kind) and (member is None or j.owner == member)]
     return sorted(jobs, key=lambda j: j["created"], reverse=True)
 
 

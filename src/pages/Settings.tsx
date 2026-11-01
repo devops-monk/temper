@@ -1,5 +1,6 @@
 import { Minus, Monitor, Moon, Plus, RotateCw, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { Accounts } from "../components/Accounts";
 import { Diagnostics } from "../components/Diagnostics";
 import { Engines } from "../components/Engines";
 import { SpeechSettings } from "../components/SpeechSettings";
@@ -208,7 +209,8 @@ function StartAtLogin() {
 }
 
 export function SettingsPage() {
-  const { theme, setTheme, engine, system, refreshEngine, go } = useApp();
+  const { theme, setTheme, engine, system, refreshEngine, go, me } = useApp();
+  const member = !!me && !me.admin; // a member's settings are their appearance and account
   const t = useT();
   const setup = engine?.setup;
   const [licenses, setLicenses] = useState(false);
@@ -256,6 +258,11 @@ export function SettingsPage() {
             <ZoomControl />
             <LanguageControl />
           </Section>
+
+          <Accounts />
+
+          {!member && (
+          <>
 
           <Section
             title={t("settings.engine")}
@@ -347,6 +354,8 @@ export function SettingsPage() {
           <Diagnostics ready={engine?.status === "running"} installed={setup?.installed ?? "chat"} onReinstall={(profile, clean) => void reinstall(profile, clean)} />
 
           <Updates />
+          </>
+          )}
 
           <Section
             title={t("settings.about")}

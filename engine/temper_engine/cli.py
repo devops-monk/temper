@@ -1159,6 +1159,55 @@ def create_cmd(args: list[str]) -> int:
     return 0
 
 
+def _new_password(prompt: str) -> str:
+    import getpass
+
+    first = getpass.getpass(f"{prompt}: ")
+    if getpass.getpass("Again: ") != first:
+        raise CliError("The two passwords don't match.")
+    return first
+
+
+def accounts_cmd(args: list[str]) -> int:
+    from . import accounts
+
+    p = argparse.ArgumentParser(prog="temper accounts", description="Accounts for a Temper served to several people: an admin and the people they add. Works on this computer's files, so it needs no running engine.")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    sub = p.add_subparsers(dest="action")
+    add = sub.add_parser("add", help="add an account, asking for its password (the first must be an admin)")
+    add.add_argument("name")
+    add.add_argument("--admin", action="store_true", help="it can change settings and add accounts")
+    sub.add_parser("remove", help="remove an account and sign it out").add_argument("name")
+    sub.add_parser("reset-password", help="set a new password for an account, signing it out everywhere").add_argument("name")
+    a = p.parse_args(args)
+    try:
+        if a.action == "add":
+            if not accounts.enabled() and not a.admin:
+                raise CliError("Add an admin first: temper accounts add NAME --admin")
+            user = accounts.add(a.name, _new_password(f"Password for {a.name}"), a.admin)
+            print(f"Added {user['name']}" + (" as an admin." if user["admin"] else ".") + " The browser interface (temper serve) now asks for a name and password.")
+        elif a.action == "remove":
+            accounts.remove(a.name)
+            print(f"Removed {a.name}.")
+        elif a.action == "reset-password":
+            if not any(u["name"] == a.name for u in accounts.users()):
+                raise KeyError(a.name)
+            accounts.set_password(a.name, _new_password(f"New password for {a.name}"))
+            print(f"Set a new password for {a.name}, and signed it out everywhere.")
+        elif a.json:
+            print(json.dumps([accounts.public(u) for u in accounts.users()], indent=2))
+        elif not accounts.users():
+            print("No accounts: the browser interface asks for the engine's key. `temper accounts add NAME --admin` adds the first.")
+        else:
+            rows = [["NAME", "ROLE"]] + [[u["name"], "admin" if u.get("admin") else "member"] for u in accounts.users()]
+            _table(rows)
+    except KeyError:
+        raise CliError(f"No account called {a.name}.") from None
+    except ValueError as e:
+        raise CliError(str(e)) from None
+    return 0
+
+
 def devices_cmd(args: list[str]) -> int:
     p = argparse.ArgumentParser(prog="temper devices", description="Other computers running Temper whose models this one can use.")
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -1825,7 +1874,7 @@ def uninstall_cmd(args: list[str]) -> int:
     return 1 if failed else 0
 
 
-COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "embed": embed_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd, "eval": eval_cmd, "update": update_cmd, "uninstall": uninstall_cmd}
+COMMANDS = {"models": models_cmd, "load": load_cmd, "ps": ps_cmd, "unload": unload_cmd, "status": status_cmd, "version": version_cmd, "get": get_cmd, "import": import_cmd, "log": log_cmd, "daemon": daemon_cmd, "engines": engines_cmd, "create": create_cmd, "accounts": accounts_cmd, "devices": devices_cmd, "transcribe": transcribe_cmd, "speech": speech_cmd, "say": say_cmd, "stems": stems_cmd, "image": image_cmd, "decide": decide_cmd, "classify": classify_cmd, "embed": embed_cmd, "chat": chat_cmd, "train": train_cmd, "runs": runs_cmd, "export": export_cmd, "serve": serve_cmd, "eval": eval_cmd, "update": update_cmd, "uninstall": uninstall_cmd}
 
 
 USAGE = """usage:
@@ -1857,6 +1906,7 @@ USAGE = """usage:
   temper embed ["text"] [--model M] | train <name> <pairs.jsonl> [--base B] [--epochs N] | --list | --delete NAME
   temper speech [install | remove | use turbo|small|large]
   temper devices [--json] | add <address> --key K [--name N] | remove <name> | prefer <name>|this
+  temper accounts [--json] | add <name> [--admin] | remove <name> | reset-password <name>
   temper engines [--json] | use <engine>|auto | install|remove <engine> | update | survey
   temper start claude|codex|opencode|aider [agent arguments]
   temper mcp add claude|codex|cursor|vscode

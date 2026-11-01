@@ -235,7 +235,14 @@ class Start(BaseModel):
 
 @router.post("")
 async def start(req: Start):
+    from . import accounts
+
     _forget_old()
+    if req.chat_id:
+        with chats.db() as con:
+            chats._mine(con, req.chat_id)
+    if req.tools and not accounts.is_admin():
+        raise HTTPException(403, "Tools run on the computer Temper is on, so only an admin can use them.")
     running = for_chat(req.chat_id) if req.chat_id else None
     if running and running.task:  # one reply at a time per chat
         running.task.cancel()

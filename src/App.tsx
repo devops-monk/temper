@@ -32,13 +32,15 @@ function usePoll(fn: () => void, ms: number) {
 }
 
 export function App() {
-  const { page, engine, refreshEngine, refreshSystem, refreshRuntime, refreshJobs } = useApp();
+  const { page: chosen, engine, me, refreshEngine, refreshSystem, refreshRuntime, refreshJobs } = useApp();
   const ready = engine?.status === "running";
+  // A signed-in member (engine accounts.py) reaches chat and their own settings only.
+  const page = me && !me.admin && chosen !== "settings" ? "chat" : chosen;
   const initUpdates = useUpdates((u) => u.init);
 
   useEffect(initUpdates, [initUpdates]);
   useShortcuts();
-  useFirstRunTour(ready);
+  useFirstRunTour(ready && !!me?.admin);
   const dropping = useDesktopOpens(ready);
 
   usePoll(refreshEngine, ready ? 10_000 : 1_000);
