@@ -129,6 +129,17 @@ terminal. Keys are stored only as hashes, so copy a new key when it is shown.
 Only `/v1` is reachable from them, and only with an API key. Scan the QR code to copy the address.
 Turn it off when you don't need it.
 
+## From anywhere
+
+**Connect → Remote access** makes an HTTPS link to this Temper that works from anywhere, through a Cloudflare
+quick tunnel. You don't need a Cloudflare account. On first use Temper downloads `cloudflared` and checks its
+checksum. The link opens the browser interface's sign-in, so it only starts once there's an admin account
+(**Settings → Accounts**, or `temper accounts add NAME --admin`). Members who sign in through it can only chat.
+
+Tools, the code sandbox, project folders and Temper's MCP server run on this computer, so they're off for
+requests through the link. Turn on *Allow tools through the link* to let admins use them remotely. The link
+changes every time it starts, and stops when Temper does. Scan its QR code to open it on a phone.
+
 ## Linked devices
 
 A laptop can use a desktop's models, and its GPU. On the desktop, turn on *Serve the model API on this network*

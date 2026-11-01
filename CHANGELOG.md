@@ -13,6 +13,8 @@ Temper now makes pictures, listens and speaks, and runs like a service your othe
   replies that keep generating when the window closes, a prompt queue, a prompt library and AGENTS.md.
 - Tools: chat models can call tools, run Python and JavaScript in a sandbox (asking first), and use MCP
   servers. Small models' broken tool calls are repaired.
+- Remote access: an HTTPS link to Temper from anywhere through a Cloudflare quick tunnel, behind the
+  accounts' sign-in, with tools off for the link unless turned on.
 - Accounts for `temper serve`: an admin and members, each with their own chats and jobs, signed in with a
   password; `temper accounts reset-password` for a forgotten one.
 - Cloud providers: OpenAI, Anthropic, Google, OpenRouter or any OpenAI-compatible API next to local

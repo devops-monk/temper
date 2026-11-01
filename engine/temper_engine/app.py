@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
-from . import __version__, account, accounts, anthropic_api, api_keys, attachments, catalog, chat_import, chats, classifiers, compaction, compare, convert, crashes, daemon, datasets, decisions, devices, discovery, doctor, embedders, engines, export, files, generations, hardware, hub, images, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, providers, publish, recipes, research, runtime, sandbox, search, skills, sources, speech, stems, storage, tts, tools, training, usage
+from . import __version__, account, accounts, anthropic_api, api_keys, attachments, catalog, chat_import, chats, classifiers, compaction, compare, convert, crashes, daemon, datasets, decisions, devices, discovery, doctor, embedders, engines, export, files, generations, hardware, hub, images, instructions, jobs, knowledge, lan, library, loaded, llamacpp, mcp, mcp_server, memory, model_settings, ollama, presets, prompts, providers, publish, recipes, research, runtime, sandbox, search, skills, sources, speech, stems, storage, tts, tools, training, tunnel, usage
 
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]
 OPEN_PATHS = {"/api/health", "/api/accounts/status", "/api/accounts/login"}
@@ -31,6 +31,7 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(discovery.apply)
     yield
     await asyncio.to_thread(lan.listener.stop)
+    await asyncio.to_thread(tunnel.tunnel.stop)
     await asyncio.to_thread(discovery.stop_all)
     knowledge.watcher.stop()
     runtime.manager.unload()
@@ -97,9 +98,10 @@ def create_app(token: str = "") -> FastAPI:
     def health():
         return {"ok": True, "version": __version__}
 
-    for module in (accounts, attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, lan, discovery, llamacpp, recipes, research, decisions, knowledge, usage, crashes, daemon, devices, providers, classifiers, embedders, images, speech, stems, tts):
+    for module in (accounts, attachments, chat_import, chats, compaction, instructions, hardware, doctor, account, sources, storage, catalog, memory, hub, library, convert, ollama, jobs, model_settings, engines, loaded, runtime, anthropic_api, api_keys, generations, compare, presets, prompts, tools, mcp, mcp_server, sandbox, search, skills, training, export, publish, datasets, files, lan, discovery, llamacpp, recipes, research, decisions, knowledge, usage, crashes, daemon, devices, providers, tunnel, classifiers, embedders, images, speech, stems, tts):
         app.include_router(module.router)
     lan.listener.app = app
+    tunnel.tunnel.app = app
     discovery.token = token
     # The interface for a browser (`temper serve`): static files, open like any web page; the API it calls still
     # needs the key, which the page asks for.

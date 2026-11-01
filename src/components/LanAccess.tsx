@@ -14,7 +14,7 @@ interface Lan {
   url: string | null;
 }
 
-function Qr({ text }: { text: string }) {
+export function Qr({ text }: { text: string }) {
   const t = useT();
   const svg = useMemo(() => {
     const qr = qrcode(0, "M");

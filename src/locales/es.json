@@ -1757,5 +1757,16 @@
   "accounts.add_first": "Añadir el administrador",
   "gate.sign_in": "Iniciar sesión",
   "gate.sign_in_hint": "Inicia sesión con el nombre y la contraseña que te dio el administrador de tu Temper.",
-  "chat.member_load_hint": "No hay ningún modelo cargado. Pide al administrador de tu Temper que cargue uno."
+  "chat.member_load_hint": "No hay ningún modelo cargado. Pide al administrador de tu Temper que cargue uno.",
+  "connect.remote": "Acceso remoto",
+  "connect.remote_hint": "Un enlace HTTPS a este Temper desde cualquier lugar, mediante un túnel rápido de Cloudflare. No hace falta cuenta de Cloudflare. El enlace abre la página de inicio de sesión, así que añade cuentas primero. El enlace cambia cada vez que lo inicias y se detiene cuando Temper se cierra.",
+  "remote.needs_accounts": "Añade primero una cuenta de administrador, para que el enlace pida contraseña:",
+  "remote.start": "Iniciar el enlace",
+  "remote.stop": "Detener el enlace",
+  "remote.installing": "Descargando cloudflared…",
+  "remote.starting": "Iniciando…",
+  "remote.tools": "Permitir herramientas por el enlace",
+  "remote.tools_off": "Las herramientas, el entorno de código y las carpetas de proyecto se ejecutan en este ordenador, así que están desactivados para el enlace.",
+  "remote.tools_on": "Los administradores que inicien sesión por el enlace pueden ejecutar herramientas en este ordenador.",
+  "remote.link_hint": "Ábrelo en un teléfono u otro ordenador e inicia sesión. Cualquiera con el enlace ve la página de inicio de sesión; detenlo cuando termines."
 }

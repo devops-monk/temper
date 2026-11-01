@@ -1757,5 +1757,16 @@
   "accounts.add_first": "Add the admin",
   "gate.sign_in": "Sign in",
   "gate.sign_in_hint": "Sign in with the name and password your Temper's admin gave you.",
-  "chat.member_load_hint": "No model is loaded. Ask your Temper's admin to load one."
+  "chat.member_load_hint": "No model is loaded. Ask your Temper's admin to load one.",
+  "connect.remote": "Remote access",
+  "connect.remote_hint": "An HTTPS link to this Temper from anywhere, through a Cloudflare quick tunnel. No Cloudflare account is needed. The link opens the sign-in page, so add accounts first. The link changes each time you start it, and stops when Temper does.",
+  "remote.needs_accounts": "Add an admin account first, so the link asks for a password:",
+  "remote.start": "Start the link",
+  "remote.stop": "Stop the link",
+  "remote.installing": "Downloading cloudflared…",
+  "remote.starting": "Starting…",
+  "remote.tools": "Allow tools through the link",
+  "remote.tools_off": "Tools, the code sandbox and project folders run on this computer, so they're off for the link.",
+  "remote.tools_on": "Admins signed in through the link can run tools on this computer.",
+  "remote.link_hint": "Open it on a phone or another computer and sign in. Anyone with the link sees the sign-in page; stop it when you're done."
 }

@@ -3,6 +3,7 @@ import { ApiKeys, ApiMonitor } from "../components/ApiKeys";
 import { Decisions } from "../components/Decisions";
 import { Devices } from "../components/Devices";
 import { Providers } from "../components/Providers";
+import { RemoteAccess } from "../components/RemoteAccess";
 import { DiscoverySettings } from "../components/Discovery";
 import { LanAccess } from "../components/LanAccess";
 import { OnDemand } from "../components/OnDemand";
@@ -240,6 +241,12 @@ export function ConnectPage() {
           <h2 className="text-[15px] font-semibold">{t("connect.other_devices")}</h2>
           <p className="mt-1 mb-3 text-[13px] text-muted">{t("connect.other_devices_hint")}</p>
           <LanAccess />
+        </div>
+
+        <div className="mt-8 max-w-[760px]">
+          <h2 className="text-[15px] font-semibold">{t("connect.remote")}</h2>
+          <p className="mt-1 mb-3 text-[13px] text-muted">{t("connect.remote_hint")}</p>
+          <RemoteAccess />
         </div>
 
         <div className="mt-8 max-w-[760px]">

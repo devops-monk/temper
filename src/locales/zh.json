@@ -1757,5 +1757,16 @@
   "accounts.add_first": "添加管理员",
   "gate.sign_in": "登录",
   "gate.sign_in_hint": "使用 Temper 管理员给你的用户名和密码登录。",
-  "chat.member_load_hint": "尚未加载模型。请让 Temper 管理员加载一个。"
+  "chat.member_load_hint": "尚未加载模型。请让 Temper 管理员加载一个。",
+  "connect.remote": "远程访问",
+  "connect.remote_hint": "通过 Cloudflare 快速隧道，从任何地方用 HTTPS 链接访问这个 Temper。无需 Cloudflare 账户。链接会打开登录页，因此请先添加账户。每次启动链接都会改变，Temper 关闭时它也会停止。",
+  "remote.needs_accounts": "请先添加管理员账户，让链接要求输入密码：",
+  "remote.start": "启动链接",
+  "remote.stop": "停止链接",
+  "remote.installing": "正在下载 cloudflared…",
+  "remote.starting": "正在启动…",
+  "remote.tools": "允许通过链接使用工具",
+  "remote.tools_off": "工具、代码沙箱和项目文件夹在这台电脑上运行，因此对链接关闭。",
+  "remote.tools_on": "通过链接登录的管理员可以在这台电脑上运行工具。",
+  "remote.link_hint": "在手机或另一台电脑上打开并登录。任何拿到链接的人都能看到登录页；用完后请停止它。"
 }

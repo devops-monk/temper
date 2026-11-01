@@ -1757,5 +1757,16 @@
   "accounts.add_first": "管理者を追加",
   "gate.sign_in": "サインイン",
   "gate.sign_in_hint": "Temper の管理者から受け取った名前とパスワードでサインインしてください。",
-  "chat.member_load_hint": "モデルが読み込まれていません。Temper の管理者に読み込んでもらってください。"
+  "chat.member_load_hint": "モデルが読み込まれていません。Temper の管理者に読み込んでもらってください。",
+  "connect.remote": "リモートアクセス",
+  "connect.remote_hint": "Cloudflare のクイックトンネルで、どこからでもこの Temper に HTTPS リンクでアクセスできます。Cloudflare アカウントは不要です。リンクはサインインページを開くので、先にアカウントを追加してください。リンクは開始するたびに変わり、Temper が終了すると止まります。",
+  "remote.needs_accounts": "リンクがパスワードを求めるよう、先に管理者アカウントを追加してください:",
+  "remote.start": "リンクを開始",
+  "remote.stop": "リンクを停止",
+  "remote.installing": "cloudflared をダウンロード中…",
+  "remote.starting": "開始中…",
+  "remote.tools": "リンク経由のツールを許可",
+  "remote.tools_off": "ツール、コードサンドボックス、プロジェクトフォルダーはこのコンピューターで動くため、リンクではオフです。",
+  "remote.tools_on": "リンク経由でサインインした管理者は、このコンピューターでツールを実行できます。",
+  "remote.link_hint": "スマートフォンや別のコンピューターで開いてサインインしてください。リンクを知っている人は誰でもサインインページを見られます。使い終わったら停止してください。"
 }
